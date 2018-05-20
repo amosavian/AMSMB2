@@ -1,0 +1,62 @@
+#!/bin/sh
+set -e
+
+usage () {
+  echo "Usage: [VARIABLE...] $(basename $0) framework libname"
+  echo "  framework   Name of the framework to create"
+  echo "  libname     Name of the .a library"
+  echo ""
+  echo "  VARIABLEs are:"
+  echo "    ARCHS     Only build for specific architectures. Default is:"
+  echo "                armv7|armv7s|arm64|i686|x86_64"
+  echo "    PREFIX    Installation prefix for framework and static files."
+  echo ""
+  echo "  All additional parameters are passed to the configure script."
+  exit 1
+}
+
+# Sanity checks
+if [ "$#" -lt 2 ]; then
+  usage
+fi
+
+ICONFIGURE="$(dirname $0)/iconfigure"
+
+FRAMEWORK=$1
+LIBARCHIVE=$2
+
+shift 2
+
+if [ -z "$PREFIX" ]; then
+  PREFIX="$(pwd)"
+fi
+
+STATICDIR="$PREFIX/Static"
+FRAMEWORKDIR="$PREFIX/Frameworks/$FRAMEWORK.framework"
+
+if [ -z "$ARCHS" ]; then
+  ARCHS="i386 x86_64 armv7 armv7s arm64"
+fi
+
+# Build all architectures
+for ARCH in $ARCHS; do
+  make distclean || true
+  PREFIX="$STATICDIR/$ARCH" $ICONFIGURE $ARCH $@
+  make
+  make install
+done
+
+# Install header files
+PREFIX="$STATICDIR/$ARCH" $ICONFIGURE $ARCH --includedir="$FRAMEWORKDIR/Headers" $@
+make
+make install
+
+# Create multiarch archive
+for ARCH in $ARCHS; do
+  LIPOARCHS="$LIPOARCHS -arch $ARCH $STATICDIR/$ARCH/lib/$LIBARCHIVE"
+done
+lipo -create -output "$FRAMEWORKDIR/$FRAMEWORK" $LIPOARCHS
+
+echo "Success!"
+echo "Built $FRAMEWORK for architectures: $ARCHS"
+

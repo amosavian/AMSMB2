@@ -1,0 +1,512 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 50;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		79FDFE5E20AD439F00749FB5 /* AMSMB2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFE5420AD439F00749FB5 /* AMSMB2.framework */; };
+		79FDFE6320AD439F00749FB5 /* AMSMB2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFE6220AD439F00749FB5 /* AMSMB2Tests.swift */; };
+		79FDFE6520AD439F00749FB5 /* AMSMB2.h in Headers */ = {isa = PBXBuildFile; fileRef = 79FDFE5720AD439F00749FB5 /* AMSMB2.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		79FDFE6F20AD45C100749FB5 /* AMSMB2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFE6E20AD45C100749FB5 /* AMSMB2.swift */; };
+		79FDFE7A20AD541500749FB5 /* URL.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFE7920AD541500749FB5 /* URL.swift */; };
+		79FDFE7C20AD545D00749FB5 /* Context.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFE7B20AD545D00749FB5 /* Context.swift */; };
+		79FDFF0120AD852200749FB5 /* FileHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFF0020AD852200749FB5 /* FileHandle.swift */; };
+		79FDFF0820AD925000749FB5 /* libsmb2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFF0720AD925000749FB5 /* libsmb2.a */; };
+		79FDFF0A20ADA2B000749FB5 /* Directory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFF0920ADA2B000749FB5 /* Directory.swift */; };
+		79FDFF8220AF991000749FB5 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFF7620AF715100749FB5 /* libcrypto.a */; };
+		79FDFF8320AF991000749FB5 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFF7720AF715200749FB5 /* libssl.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		79FDFE5F20AD439F00749FB5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 79FDFE4B20AD439F00749FB5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 79FDFE5320AD439F00749FB5;
+			remoteInfo = AMSMB2;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		79FDFE5420AD439F00749FB5 /* AMSMB2.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AMSMB2.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		79FDFE5720AD439F00749FB5 /* AMSMB2.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AMSMB2.h; sourceTree = "<group>"; };
+		79FDFE5820AD439F00749FB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		79FDFE5D20AD439F00749FB5 /* AMSMB2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AMSMB2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		79FDFE6220AD439F00749FB5 /* AMSMB2Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AMSMB2Tests.swift; sourceTree = "<group>"; };
+		79FDFE6420AD439F00749FB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		79FDFE6E20AD45C100749FB5 /* AMSMB2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AMSMB2.swift; sourceTree = "<group>"; };
+		79FDFE7920AD541500749FB5 /* URL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URL.swift; sourceTree = "<group>"; };
+		79FDFE7B20AD545D00749FB5 /* Context.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Context.swift; sourceTree = "<group>"; };
+		79FDFF0020AD852200749FB5 /* FileHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHandle.swift; sourceTree = "<group>"; };
+		79FDFF0720AD925000749FB5 /* libsmb2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libsmb2.a; path = libsmb2/lib/libsmb2.a; sourceTree = "<group>"; };
+		79FDFF0920ADA2B000749FB5 /* Directory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Directory.swift; sourceTree = "<group>"; };
+		79FDFF7620AF715100749FB5 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcrypto.a; path = libsmb2/lib/libcrypto.a; sourceTree = "<group>"; };
+		79FDFF7720AF715200749FB5 /* libssl.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libssl.a; path = libsmb2/lib/libssl.a; sourceTree = "<group>"; };
+		79FDFF7A20AF735400749FB5 /* libcrypto.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libcrypto.dylib; path = ../../../../../usr/local/Cellar/openssl/1.0.2o_1/lib/libcrypto.dylib; sourceTree = "<group>"; };
+		79FDFF7B20AF735400749FB5 /* libssl.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libssl.dylib; path = ../../../../../usr/local/Cellar/openssl/1.0.2o_1/lib/libssl.dylib; sourceTree = "<group>"; };
+		79FDFF7E20AF736100749FB5 /* libssl.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libssl.a; path = ../../../../../usr/local/Cellar/openssl/1.0.2o_1/lib/libssl.a; sourceTree = "<group>"; };
+		79FDFF7F20AF736100749FB5 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcrypto.a; path = ../../../../../usr/local/Cellar/openssl/1.0.2o_1/lib/libcrypto.a; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		79FDFE5020AD439F00749FB5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79FDFF0820AD925000749FB5 /* libsmb2.a in Frameworks */,
+				79FDFF8220AF991000749FB5 /* libcrypto.a in Frameworks */,
+				79FDFF8320AF991000749FB5 /* libssl.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79FDFE5A20AD439F00749FB5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79FDFE5E20AD439F00749FB5 /* AMSMB2.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		79FDFE4A20AD439F00749FB5 = {
+			isa = PBXGroup;
+			children = (
+				79FDFE5620AD439F00749FB5 /* AMSMB2 */,
+				79FDFE6120AD439F00749FB5 /* AMSMB2Tests */,
+				79FDFE5520AD439F00749FB5 /* Products */,
+				79FDFF0220AD8DDF00749FB5 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		79FDFE5520AD439F00749FB5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				79FDFE5420AD439F00749FB5 /* AMSMB2.framework */,
+				79FDFE5D20AD439F00749FB5 /* AMSMB2Tests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		79FDFE5620AD439F00749FB5 /* AMSMB2 */ = {
+			isa = PBXGroup;
+			children = (
+				79FDFE5820AD439F00749FB5 /* Info.plist */,
+				79FDFE5720AD439F00749FB5 /* AMSMB2.h */,
+				79FDFE6E20AD45C100749FB5 /* AMSMB2.swift */,
+				79FDFE7B20AD545D00749FB5 /* Context.swift */,
+				79FDFF0920ADA2B000749FB5 /* Directory.swift */,
+				79FDFF0020AD852200749FB5 /* FileHandle.swift */,
+				79FDFE7920AD541500749FB5 /* URL.swift */,
+			);
+			path = AMSMB2;
+			sourceTree = "<group>";
+		};
+		79FDFE6120AD439F00749FB5 /* AMSMB2Tests */ = {
+			isa = PBXGroup;
+			children = (
+				79FDFE6220AD439F00749FB5 /* AMSMB2Tests.swift */,
+				79FDFE6420AD439F00749FB5 /* Info.plist */,
+			);
+			path = AMSMB2Tests;
+			sourceTree = "<group>";
+		};
+		79FDFF0220AD8DDF00749FB5 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				79FDFF7F20AF736100749FB5 /* libcrypto.a */,
+				79FDFF7E20AF736100749FB5 /* libssl.a */,
+				79FDFF7A20AF735400749FB5 /* libcrypto.dylib */,
+				79FDFF7B20AF735400749FB5 /* libssl.dylib */,
+				79FDFF7620AF715100749FB5 /* libcrypto.a */,
+				79FDFF7720AF715200749FB5 /* libssl.a */,
+				79FDFF0720AD925000749FB5 /* libsmb2.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		79FDFE5120AD439F00749FB5 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79FDFE6520AD439F00749FB5 /* AMSMB2.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		79FDFE5320AD439F00749FB5 /* AMSMB2 */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79FDFE6820AD439F00749FB5 /* Build configuration list for PBXNativeTarget "AMSMB2" */;
+			buildPhases = (
+				79FDFE4F20AD439F00749FB5 /* Sources */,
+				79FDFE5020AD439F00749FB5 /* Frameworks */,
+				79FDFE5120AD439F00749FB5 /* Headers */,
+				79FDFE5220AD439F00749FB5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AMSMB2;
+			productName = AMSMB2;
+			productReference = 79FDFE5420AD439F00749FB5 /* AMSMB2.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		79FDFE5C20AD439F00749FB5 /* AMSMB2Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 79FDFE6B20AD439F00749FB5 /* Build configuration list for PBXNativeTarget "AMSMB2Tests" */;
+			buildPhases = (
+				79FDFE5920AD439F00749FB5 /* Sources */,
+				79FDFE5A20AD439F00749FB5 /* Frameworks */,
+				79FDFE5B20AD439F00749FB5 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				79FDFE6020AD439F00749FB5 /* PBXTargetDependency */,
+			);
+			name = AMSMB2Tests;
+			productName = AMSMB2Tests;
+			productReference = 79FDFE5D20AD439F00749FB5 /* AMSMB2Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		79FDFE4B20AD439F00749FB5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 0930;
+				LastUpgradeCheck = 0930;
+				ORGANIZATIONNAME = Mousavian;
+				TargetAttributes = {
+					79FDFE5320AD439F00749FB5 = {
+						CreatedOnToolsVersion = 9.3.1;
+						LastSwiftMigration = 0930;
+					};
+					79FDFE5C20AD439F00749FB5 = {
+						CreatedOnToolsVersion = 9.3.1;
+					};
+				};
+			};
+			buildConfigurationList = 79FDFE4E20AD439F00749FB5 /* Build configuration list for PBXProject "AMSMB2" */;
+			compatibilityVersion = "Xcode 9.3";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 79FDFE4A20AD439F00749FB5;
+			productRefGroup = 79FDFE5520AD439F00749FB5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				79FDFE5320AD439F00749FB5 /* AMSMB2 */,
+				79FDFE5C20AD439F00749FB5 /* AMSMB2Tests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		79FDFE5220AD439F00749FB5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79FDFE5B20AD439F00749FB5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		79FDFE4F20AD439F00749FB5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79FDFE7C20AD545D00749FB5 /* Context.swift in Sources */,
+				79FDFE6F20AD45C100749FB5 /* AMSMB2.swift in Sources */,
+				79FDFE7A20AD541500749FB5 /* URL.swift in Sources */,
+				79FDFF0120AD852200749FB5 /* FileHandle.swift in Sources */,
+				79FDFF0A20ADA2B000749FB5 /* Directory.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79FDFE5920AD439F00749FB5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				79FDFE6320AD439F00749FB5 /* AMSMB2Tests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		79FDFE6020AD439F00749FB5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 79FDFE5320AD439F00749FB5 /* AMSMB2 */;
+			targetProxy = 79FDFE5F20AD439F00749FB5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		79FDFE6620AD439F00749FB5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.3;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		79FDFE6720AD439F00749FB5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 11.3;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		79FDFE6920AD439F00749FB5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AMSMB2/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/libsmb2/lib";
+				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SWIFT_INCLUDE_PATHS = "${SRCROOT}/libsmb2/**";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		79FDFE6A20AD439F00749FB5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AMSMB2/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				IPHONEOS_DEPLOYMENT_TARGET = 9.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/libsmb2/lib";
+				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2;
+				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
+				SKIP_INSTALL = YES;
+				SWIFT_INCLUDE_PATHS = "${SRCROOT}/libsmb2/**";
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		79FDFE6C20AD439F00749FB5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = AMSMB2Tests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2Tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		79FDFE6D20AD439F00749FB5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = AMSMB2Tests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2Tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 4.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		79FDFE4E20AD439F00749FB5 /* Build configuration list for PBXProject "AMSMB2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79FDFE6620AD439F00749FB5 /* Debug */,
+				79FDFE6720AD439F00749FB5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		79FDFE6820AD439F00749FB5 /* Build configuration list for PBXNativeTarget "AMSMB2" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79FDFE6920AD439F00749FB5 /* Debug */,
+				79FDFE6A20AD439F00749FB5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		79FDFE6B20AD439F00749FB5 /* Build configuration list for PBXNativeTarget "AMSMB2Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				79FDFE6C20AD439F00749FB5 /* Debug */,
+				79FDFE6D20AD439F00749FB5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 79FDFE4B20AD439F00749FB5 /* Project object */;
+}
