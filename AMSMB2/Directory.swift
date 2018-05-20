@@ -8,6 +8,7 @@
 
 import Foundation
 import SMB2
+
 typealias smb2dir = OpaquePointer
 
 /// NO THREAD-SAFE
@@ -49,13 +50,17 @@ class SMB2Directory: Collection {
     }
     
     var endIndex: Int {
-        var i = 0
+        return Swift.max(self.count - 1, 0)
+    }
+    
+    var count: Int {
         let currentPos = smb2_telldir(context.context, handle)
-        smb2_rewinddir(context.context, handle)
         defer {
             smb2_seekdir(context.context, handle, currentPos)
         }
         
+        smb2_rewinddir(context.context, handle)
+        var i = 0
         while smb2_readdir(context.context, handle) != nil {
             i += 1
         }
