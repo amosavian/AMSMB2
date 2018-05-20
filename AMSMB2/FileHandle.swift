@@ -133,7 +133,8 @@ class SMB2FileHanle {
         var result = 0
         var errorNo: Int32 = 0
         data.enumerateBytes { (bytes, dindex, stop) in
-            let rc = smb2_write(context.context, handle, UnsafeMutablePointer(mutating: bytes.baseAddress!), UInt32(bytes.count))
+            guard let baseAddress = bytes.baseAddress else { return }
+            let rc = smb2_write(context.context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count))
             if rc > 0 {
                 result += Int(rc)
                 stop = false
@@ -156,8 +157,9 @@ class SMB2FileHanle {
         
         var array = [UInt8](data)
         let result = try array.withUnsafeMutableBufferPointer { (bytes) -> Int32 in
+            guard let baseAddress = bytes.baseAddress else { return 0 }
             return try context.async_wait { (cbPtr) -> Int32 in
-                smb2_write_async(context.context, handle, bytes.baseAddress!, UInt32(bytes.count), SMB2Context.async_handler, cbPtr)
+                smb2_write_async(context.context, handle, baseAddress, UInt32(bytes.count), SMB2Context.async_handler, cbPtr)
             }
         }
         
@@ -175,7 +177,8 @@ class SMB2FileHanle {
         var result = 0
         var errorNo: Int32 = 0
         data.enumerateBytes { (bytes, dindex, stop) in
-            let rc = smb2_pwrite(context.context, handle, UnsafeMutablePointer(mutating: bytes.baseAddress!), UInt32(bytes.count), offset + UInt64(dindex))
+            guard let baseAddress = bytes.baseAddress else { return }
+            let rc = smb2_pwrite(context.context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count), offset + UInt64(dindex))
             if rc > 0 {
                 result += Int(rc)
                 stop = false

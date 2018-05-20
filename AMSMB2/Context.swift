@@ -189,8 +189,8 @@ extension SMB2Context {
     }
     
     static let async_handler: @convention(c) (_ smb2: UnsafeMutablePointer<smb2_context>?, _ status: Int32, _ command_data: UnsafeMutableRawPointer?, _ cbdata: UnsafeMutableRawPointer?) -> Void = { smb2, status, _, cbdata in
-        cbdata!.bindMemory(to: CBData.self, capacity: 1).pointee.errNo = status
-        cbdata!.bindMemory(to: CBData.self, capacity: 1).pointee.is_finished = true
+        cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.errNo = status
+        cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.is_finished = true
     }
     
     func async_wait(execute handler: (_ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> Int32 {
