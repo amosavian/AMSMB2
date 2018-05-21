@@ -98,7 +98,7 @@ public class AMSMB2: NSObject {
         }
     }
     
-    func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
+    fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
         dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
         dic[.fileResourceTypeKey] = stat.smb2_type == SMB2_TYPE_DIRECTORY ? URLFileResourceType.directory : URLFileResourceType.regular
         let modified = TimeInterval(stat.smb2_mtime) + TimeInterval(stat.smb2_mtime_nsec) / TimeInterval(NSEC_PER_SEC)
@@ -107,31 +107,47 @@ public class AMSMB2: NSObject {
         dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: created)
     }
     
+    fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
+        var contents = [[URLResourceKey: Any]]()
+        let dir = try SMB2Directory(path, on: self.context)
+        for ent in dir {
+            let name = NSString(utf8String: ent.name)
+            if [".", ".."].contains(name) { continue }
+            var result = [URLResourceKey: Any]()
+            result[.nameKey] = name
+            result[.pathKey] = name.map { (path as NSString).appendingPathComponent($0 as String) }
+            self.populateResourceValue(&result, stat: ent.st)
+            contents.append(result)
+        }
+        
+        if recursive {
+            let subDirectories = contents.filter { $0.filetype == .directory }
+            
+            for subDir in subDirectories {
+                guard let path = subDir.filepath else { continue }
+                contents.append(contentsOf: try listDirectory(path: path, recursive: true))
+            }
+        }
+        
+        return contents
+    }
+    
     /**
      Enumerates directory contents in the give path
      
      - Parameters:
        - atPath: path of directory to be enumerated.
        - completionHandler: closure will be run after enumerating is completed.
+       - recursive: subdirectories will enumerated if `true`.
        - contents: An array of `[URLResourceKey: Any]` which holds files' attributes. file name is stored in `.nameKey`.
        - error: `Error` if any occured during enumeration.
      */
     @objc
-    public func contentOfDirectory(atPath path: String,
+    public func contentOfDirectory(atPath path: String, recursive: Bool = false,
                                    completionHandler: @escaping (_ contents: [[URLResourceKey: Any]], _ error: Error?) -> Void) {
         q.async {
             do {
-                var contents = [[URLResourceKey: Any]]()
-                let dir = try SMB2Directory(path, on: self.context)
-                for ent in dir {
-                    let name = NSString(cString: ent.name, encoding: String.Encoding.utf8.rawValue)
-                    if [".", ".."].contains(name) { continue }
-                    var result = [URLResourceKey: Any]()
-                    result[.nameKey] = name
-                    self.populateResourceValue(&result, stat: ent.st)
-                    contents.append(result)
-                }
-                
+                let contents = try self.listDirectory(path: path, recursive: recursive)
                 completionHandler(contents, nil)
             } catch {
                 completionHandler([], error)
@@ -155,7 +171,9 @@ public class AMSMB2: NSObject {
             do {
                 let stat = try self.context.stat(path)
                 var result = [URLResourceKey: Any]()
-                result[.nameKey] = NSString(string: (path as NSString).lastPathComponent)
+                let name = NSString(string: (path as NSString).lastPathComponent)
+                result[.nameKey] = name
+                result[.pathKey] = (path as NSString).appendingPathComponent(name as String)
                 self.populateResourceValue(&result, stat: stat)
                 completionHandler(result, nil)
             } catch {
@@ -188,13 +206,34 @@ public class AMSMB2: NSObject {
      
      - Parameters:
        - atPath: path of directory to be removed.
+       - recursive: children items will be deleted if `true`.
        - completionHandler: closure will be run after operation is completed.
      */
     @objc
-    public func removeDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
+    public func removeDirectory(atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
+                if recursive {
+                    let list = try self.listDirectory(path: path, recursive: true)
+                    let sortedContents = list.sorted(by: {
+                        guard let firstPath = $0.filepath, let secPath = $1.filepath else {
+                            return false
+                        }
+                        return firstPath.localizedStandardCompare(secPath) == .orderedDescending
+                    })
+                    
+                    for item in sortedContents {
+                        guard let itemPath = item.filepath else { continue }
+                        if item.filetype == URLFileResourceType.directory {
+                            try self.context.rmdir(itemPath)
+                        } else {
+                            try self.context.unlink(itemPath)
+                        }
+                    }
+                }
+                
                 try self.context.rmdir(path)
+                
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -225,9 +264,9 @@ public class AMSMB2: NSObject {
      Moves/Renames an existing file at given path to a new location.
      
      - Parameters:
-     - atPath: path of file to be move.
-     - toPath: new location of file.
-     - completionHandler: closure will be run after operation is completed.
+       - atPath: path of file to be move.
+       - toPath: new location of file.
+       - completionHandler: closure will be run after operation is completed.
      */
     @objc
     public func moveItem(atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler) {
@@ -376,6 +415,26 @@ public class AMSMB2: NSObject {
         }
     }
     
+    fileprivate func copyContentsOfFile(atPath path: String, toPath: String,
+                                        progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
+        let fileRead = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
+        let size = try Int64(fileRead.fstat().smb2_size)
+        let fileWrite = try SMB2FileHanle(forCreatingAndWritingAtPath: toPath, on: self.context)
+        var offset: Int64 = 0
+        var eof = false
+        var shouldContinue = true
+        while !eof {
+            let data = try fileRead.read()
+            let written = try fileWrite.write(data: data)
+            offset += Int64(written)
+            
+            shouldContinue = progress?(offset, size) ?? true
+            eof = !shouldContinue || data.isEmpty
+        }
+        try fileWrite.fsync()
+        return shouldContinue
+    }
+    
     /**
      Copy file contents to a new location. With reporting progress on about every 64KB.
      
@@ -385,31 +444,58 @@ public class AMSMB2: NSObject {
      - Parameters:
        - atPath: path of file to be copied from.
        - toPath: path of new file to be copied to.
+       - recursive: copies directory structure and files if path is directory.
        - progress: reports progress of written bytes count so far and expected length of contents.
            User must return `true` if they want to continuing or `false` to abort copying.
-     - bytes: written bytes count.
-     - completionHandler: closure will be run after copying is completed.
+       - bytes: written bytes count.
+       - completionHandler: closure will be run after copying is completed.
      */
     @objc
-    public func copyContentsOfItem(atPath path: String, toPath: String,
+    public func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
                                    progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
                                    completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let fileRead = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
-                let size = try Int64(fileRead.fstat().smb2_size)
-                let fileWrite = try SMB2FileHanle(forCreatingAndWritingAtPath: toPath, on: self.context)
-                var offset: Int64 = 0
-                var eof = false
-                while !eof {
-                    let data = try fileRead.read()
-                    let written = try fileWrite.write(data: data)
-                    offset += Int64(written)
+                let stat = try self.context.stat(path)
+                if stat.smb2_type == SMB2_TYPE_DIRECTORY {
+                    try self.context.mkdir(toPath)
                     
-                    let shouldContinue = progress?(offset, size) ?? true
-                    eof = !shouldContinue || data.isEmpty
+                    let list = try self.listDirectory(path: path, recursive: true)
+                    let sortedContents = list.sorted(by: {
+                        guard let firstPath = $0.filepath, let secPath = $1.filepath else {
+                            return false
+                        }
+                        return firstPath.localizedStandardCompare(secPath) == .orderedAscending
+                    })
+                    
+                    let overallSize = list.reduce(0, { (result, value) -> Int64 in
+                        if value.filetype  == URLFileResourceType.regular {
+                            return result + (value.filesize ?? 0)
+                        } else {
+                            return result
+                        }
+                    })
+                    
+                    var totalCopied: Int64 = 0
+                    for item in sortedContents {
+                        guard let itemPath = item.filepath else { continue }
+                        let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
+                        if item.filetype == URLFileResourceType.directory {
+                            try self.context.mkdir(destPath)
+                        } else {
+                            let shouldContinue = try self.copyContentsOfFile(atPath: itemPath, toPath: destPath, progress: {
+                                (written, _) -> Bool in
+                                totalCopied += written
+                                return progress?(totalCopied, overallSize) ?? true
+                            })
+                            if !shouldContinue {
+                                break
+                            }
+                        }
+                    }
+                } else {
+                    _ = try self.copyContentsOfFile(atPath: path, toPath: toPath, progress: progress)
                 }
-                try fileWrite.fsync()
                 
                 completionHandler?(nil)
             } catch {

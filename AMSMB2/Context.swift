@@ -188,15 +188,3 @@ extension SMB2Context {
         return result
     }
 }
-
-
-extension POSIXError {
-    static func throwIfError(_ result: Int32, default: POSIXError.Code) throws {
-        guard result < 0 else {
-            return
-        }
-        
-        let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
-        throw error ?? POSIXError(`default`)
-    }
-}
