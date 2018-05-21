@@ -54,11 +54,8 @@ class SMB2FileHanle {
     
     func fstat() throws -> smb2_stat_64 {
         var st = smb2_stat_64()
-        let errorNo = smb2_fstat(context.context, handle, &st)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(POSIXError.EBADF)
-        }
+        let result = smb2_fstat(context.context, handle, &st)
+        try POSIXError.throwIfError(result, default: .EBADF)
         return st
     }
     
@@ -80,6 +77,7 @@ class SMB2FileHanle {
             let error: Error? = POSIXErrorCode(rawValue: Int32(abs(result))).map { POSIXError($0) }
             throw error ?? POSIXError(POSIXError.ESPIPE)
         }
+        try POSIXError.throwIfError(Int32(exactly: result) ?? 0, default: .ESPIPE)
         return result
     }
     
@@ -93,11 +91,7 @@ class SMB2FileHanle {
         }
         
         let result = smb2_read(context.context, handle, buffer, UInt32(bufSize))
-        if result < 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
-            throw error ?? POSIXError(POSIXError.EIO)
-        }
-        
+        try POSIXError.throwIfError(result, default: .EIO)
         return Data(bytes: buffer, count: Int(result))
     }
     
@@ -111,11 +105,7 @@ class SMB2FileHanle {
         }
         
         let result = smb2_pread(context.context, handle, buffer, UInt32(bufSize), offset)
-        if result < 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
-            throw error ?? POSIXError(POSIXError.EIO)
-        }
-        
+        try POSIXError.throwIfError(result, default: .EIO)
         return Data(bytes: buffer, count: Int(result))
     }
     
@@ -144,11 +134,7 @@ class SMB2FileHanle {
             }
         }
         
-        if errorNo < 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(POSIXError.EIO)
-        }
-        
+        try POSIXError.throwIfError(errorNo, default: .EIO)
         return result
     }
     
@@ -163,11 +149,7 @@ class SMB2FileHanle {
             }
         }
         
-        if result < 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
-            throw error ?? POSIXError(.EIO)
-        }
-        
+        try POSIXError.throwIfError(result, default: .EIO)
         return Int(result)
     }
     
@@ -188,15 +170,12 @@ class SMB2FileHanle {
             }
         }
         
-        if errorNo < 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.EIO)
-        }
-        
+        try POSIXError.throwIfError(errorNo, default: .EIO)
         return result
     }
     
-    func fsync() {
-        smb2_fsync(context.context, handle)
+    func fsync() throws {
+        let result = smb2_fsync(context.context, handle)
+        try POSIXError.throwIfError(result, default: .EIO)
     }
 }

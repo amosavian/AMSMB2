@@ -63,29 +63,20 @@ extension SMB2Context {
 // MARK: Connectivity
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
-        let errorNo = smb2_connect_share(context, server, share, user)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.ECONNREFUSED)
-        }
+        let result = smb2_connect_share(context, server, share, user)
+        try POSIXError.throwIfError(result, default: .ENOLINK)
         self.isConnected = true
     }
     
     func disconnect() throws {
-        let errorNo = smb2_disconnect_share(context)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.ECONNREFUSED)
-        }
+        let result = smb2_disconnect_share(context)
         self.isConnected = false
+        try POSIXError.throwIfError(result, default: .ECONNABORTED)
     }
     
     func echo() throws -> Bool {
-        let errorNo = smb2_echo(context)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.ECONNREFUSED)
-        }
+        let result = smb2_echo(context)
+        try POSIXError.throwIfError(result, default: .ECONNREFUSED)
         return true
     }
 }
@@ -94,43 +85,32 @@ extension SMB2Context {
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
         var st = smb2_stat_64()
-        let errorNo = smb2_stat(context, path, &st)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.EBADF)
-        }
+        let result = smb2_stat(context, path, &st)
+        try POSIXError.throwIfError(result, default: .ENOLINK)
         return st
     }
     
-    func truncate(_ path: String, toLength: UInt64) {
-        smb2_truncate(context, path, toLength)
+    func truncate(_ path: String, toLength: UInt64) throws {
+        let result = smb2_truncate(context, path, toLength)
+        try POSIXError.throwIfError(result, default: .ENOLINK)
     }
 }
 
 // MARK: File operation
 extension SMB2Context {
     func mkdir(_ path: String) throws {
-        let errorNo = smb2_mkdir(context, path)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.EEXIST)
-        }
+        let result = smb2_mkdir(context, path)
+        try POSIXError.throwIfError(result, default: .EEXIST)
     }
     
     func rmdir(_ path: String) throws {
-        let errorNo = smb2_rmdir(context, path)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.EEXIST)
-        }
+        let result = smb2_rmdir(context, path)
+        try POSIXError.throwIfError(result, default: .ENOLINK)
     }
     
     func unlink(_ path: String) throws {
-        let errorNo = smb2_rmdir(context, path)
-        if errorNo != 0 {
-            let error: Error? = POSIXErrorCode(rawValue: abs(errorNo)).map { POSIXError($0) }
-            throw error ?? POSIXError(.ENOLINK)
-        }
+        let result = smb2_rmdir(context, path)
+        try POSIXError.throwIfError(result, default: .ENOLINK)
     }
     
     func rename(_ path: String, to newPath: String) throws {
@@ -138,9 +118,7 @@ extension SMB2Context {
             smb2_rename_async(context, path, newPath, SMB2Context.async_handler, cbPtr)
         }
         
-        if result < 0, let error = POSIXErrorCode(rawValue: abs(result)).map({ POSIXError($0) }) {
-            throw error
-        }
+        try POSIXError.throwIfError(result, default: .ENOENT)
     }
 }
 
@@ -206,11 +184,19 @@ extension SMB2Context {
         }
         
         let errNo = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.errNo
-        if errNo != 0, let error = POSIXErrorCode(rawValue: abs(errNo)).map({ POSIXError($0) }) {
-            throw error
-        }
-        
+        try POSIXError.throwIfError(errNo, default: .ECONNRESET)
         return result
     }
 }
 
+
+extension POSIXError {
+    static func throwIfError(_ result: Int32, default: POSIXError.Code) throws {
+        guard result < 0 else {
+            return
+        }
+        
+        let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
+        throw error ?? POSIXError(`default`)
+    }
+}

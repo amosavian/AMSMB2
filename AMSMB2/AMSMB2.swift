@@ -367,7 +367,7 @@ public class AMSMB2: NSObject {
                         break
                     }
                 }
-                file.fsync()
+                try file.fsync()
                 
                 completionHandler?(nil)
             } catch {
@@ -409,7 +409,7 @@ public class AMSMB2: NSObject {
                     let shouldContinue = progress?(offset, size) ?? true
                     eof = !shouldContinue || data.isEmpty
                 }
-                fileWrite.fsync()
+                try fileWrite.fsync()
                 
                 completionHandler?(nil)
             } catch {
@@ -465,7 +465,7 @@ public class AMSMB2: NSObject {
                         break
                     }
                 }
-                file.fsync()
+                try file.fsync()
                 
                 completionHandler?(nil)
             } catch {
