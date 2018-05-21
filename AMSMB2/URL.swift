@@ -9,7 +9,7 @@
 import Foundation
 import SMB2
 
-class SMB2URL {
+final class SMB2URL {
     private var _url: UnsafeMutablePointer<smb2_url>
     
     init?(_ url: String, on context: SMB2Context) {

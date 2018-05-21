@@ -15,10 +15,10 @@ public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
 @objc
 public class AMSMB2: NSObject {
     fileprivate var context: SMB2Context
-    fileprivate let url: SMB2URL
-    fileprivate let _user: String
-    fileprivate let _server: String
-    fileprivate let q: DispatchQueue
+    private let url: SMB2URL
+    private let _user: String
+    private let _server: String
+    private let q: DispatchQueue
     
     /**
      Initializes a SMB2 class with given url and credential.
@@ -28,7 +28,7 @@ public class AMSMB2: NSObject {
      - Important: A connection to a share must be established by connectShare(name:completionHandler:) before any operation.
      */
     @objc
-    public init?(url: URL, credential: URLCredential?) {
+    public init?(url: URL, domain: String = "", credential: URLCredential?) {
         guard let context = SMB2Context(), let smburl = SMB2URL(url.absoluteString, on: context), let host = url.host else {
             return nil
         }
@@ -39,15 +39,14 @@ public class AMSMB2: NSObject {
         self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: [])
         context.set(securityMode: .enabled)
         
-        var domain: String = ""
-        let workstation: String = ""
+        var workstation: String = ""
         var user: String = "guest"
         if let userComps = credential?.user?.components(separatedBy: "\\") {
             switch userComps.count {
             case 1:
                 user = userComps[0]
             case 2:
-                domain = userComps[0]
+                workstation = userComps[0]
                 user = userComps[1]
             default:
                 if let u_user = smburl.user {
@@ -96,40 +95,6 @@ public class AMSMB2: NSObject {
                 completionHandler?(error)
             }
         }
-    }
-    
-    fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
-        dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
-        dic[.fileResourceTypeKey] = stat.smb2_type == SMB2_TYPE_DIRECTORY ? URLFileResourceType.directory : URLFileResourceType.regular
-        let modified = TimeInterval(stat.smb2_mtime) + TimeInterval(stat.smb2_mtime_nsec) / TimeInterval(NSEC_PER_SEC)
-        dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: modified)
-        let created = TimeInterval(stat.smb2_ctime) + TimeInterval(stat.smb2_ctime_nsec) / TimeInterval(NSEC_PER_SEC)
-        dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: created)
-    }
-    
-    fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
-        var contents = [[URLResourceKey: Any]]()
-        let dir = try SMB2Directory(path, on: self.context)
-        for ent in dir {
-            let name = NSString(utf8String: ent.name)
-            if [".", ".."].contains(name) { continue }
-            var result = [URLResourceKey: Any]()
-            result[.nameKey] = name
-            result[.pathKey] = name.map { (path as NSString).appendingPathComponent($0 as String) }
-            self.populateResourceValue(&result, stat: ent.st)
-            contents.append(result)
-        }
-        
-        if recursive {
-            let subDirectories = contents.filter { $0.filetype == .directory }
-            
-            for subDir in subDirectories {
-                guard let path = subDir.filepath else { continue }
-                contents.append(contentsOf: try listDirectory(path: path, recursive: true))
-            }
-        }
-        
-        return contents
     }
     
     /**
@@ -253,6 +218,17 @@ public class AMSMB2: NSObject {
         q.async {
             do {
                 try self.context.unlink(path)
+                completionHandler?(nil)
+            } catch {
+                completionHandler?(error)
+            }
+        }
+    }
+    
+    public func truncateFile(atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler) {
+        q.async {
+            do {
+                try self.context.truncate(path, toLength: atOffset)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -413,26 +389,6 @@ public class AMSMB2: NSObject {
                 completionHandler?(error)
             }
         }
-    }
-    
-    fileprivate func copyContentsOfFile(atPath path: String, toPath: String,
-                                        progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
-        let fileRead = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
-        let size = try Int64(fileRead.fstat().smb2_size)
-        let fileWrite = try SMB2FileHanle(forCreatingAndWritingAtPath: toPath, on: self.context)
-        var offset: Int64 = 0
-        var eof = false
-        var shouldContinue = true
-        while !eof {
-            let data = try fileRead.read()
-            let written = try fileWrite.write(data: data)
-            offset += Int64(written)
-            
-            shouldContinue = progress?(offset, size) ?? true
-            eof = !shouldContinue || data.isEmpty
-        }
-        try fileWrite.fsync()
-        return shouldContinue
     }
     
     /**
@@ -611,5 +567,61 @@ public class AMSMB2: NSObject {
                 completionHandler?(error)
             }
         }
+    }
+}
+
+extension AMSMB2 {
+    fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
+        dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
+        dic[.fileResourceTypeKey] = stat.smb2_type == SMB2_TYPE_DIRECTORY ? URLFileResourceType.directory : URLFileResourceType.regular
+        let modified = TimeInterval(stat.smb2_mtime) + TimeInterval(stat.smb2_mtime_nsec) / TimeInterval(NSEC_PER_SEC)
+        dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: modified)
+        let created = TimeInterval(stat.smb2_ctime) + TimeInterval(stat.smb2_ctime_nsec) / TimeInterval(NSEC_PER_SEC)
+        dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: created)
+    }
+    
+    fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
+        var contents = [[URLResourceKey: Any]]()
+        let dir = try SMB2Directory(path, on: self.context)
+        for ent in dir {
+            let name = NSString(utf8String: ent.name)
+            if [".", ".."].contains(name) { continue }
+            var result = [URLResourceKey: Any]()
+            result[.nameKey] = name
+            result[.pathKey] = name.map { (path as NSString).appendingPathComponent($0 as String) }
+            self.populateResourceValue(&result, stat: ent.st)
+            contents.append(result)
+        }
+        
+        if recursive {
+            let subDirectories = contents.filter { $0.filetype == .directory }
+            
+            for subDir in subDirectories {
+                guard let path = subDir.filepath else { continue }
+                contents.append(contentsOf: try listDirectory(path: path, recursive: true))
+            }
+        }
+        
+        return contents
+    }
+    
+    private func copyContentsOfFile(atPath path: String, toPath: String,
+                                    progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
+        let fileRead = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
+        let size = try Int64(fileRead.fstat().smb2_size)
+        let fileWrite = try SMB2FileHanle(forCreatingAndWritingAtPath: toPath, on: self.context)
+        var offset: Int64 = 0
+        var eof = false
+        var shouldContinue = true
+        while !eof {
+            let data = try fileRead.read()
+            let written = try fileWrite.write(data: data)
+            offset += Int64(written)
+            
+            shouldContinue = progress?(offset, size) ?? true
+            eof = !shouldContinue || data.isEmpty
+        }
+        try fileWrite.fsync()
+        return shouldContinue
     }
 }

@@ -12,12 +12,12 @@ import SMB2
 typealias smb2dir = OpaquePointer
 
 /// NO THREAD-SAFE
-class SMB2Directory: Collection {
+final class SMB2Directory: Collection {
     
     typealias Index = Int
     
-    fileprivate var context: SMB2Context
-    fileprivate var handle: smb2dir
+    private var context: SMB2Context
+    private var handle: smb2dir
     
     init(_ path: String, on context: SMB2Context) throws {
         guard let handle = smb2_opendir(context.context, path) else {

@@ -9,7 +9,7 @@
 import Foundation
 import SMB2
 
-internal class SMB2Context {
+final class SMB2Context {
     enum NegotiateSigning: UInt16 {
         case enabled = 1
         case required = 2

@@ -11,10 +11,10 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
-class SMB2FileHanle {
-    fileprivate var context: SMB2Context
-    fileprivate let handle: smb2fh
-    fileprivate var isOpen: Bool
+final class SMB2FileHanle {
+    private var context: SMB2Context
+    private let handle: smb2fh
+    private var isOpen: Bool
     
     convenience init(forReadingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDONLY, on: context)
@@ -59,8 +59,9 @@ class SMB2FileHanle {
         return st
     }
     
-    func ftruncate(toLength: UInt64) {
-        smb2_ftruncate(context.context, handle, toLength)
+    func ftruncate(toLength: UInt64) throws {
+        let result = smb2_ftruncate(context.context, handle, toLength)
+        try POSIXError.throwIfError(result, default: .EIO)
     }
     
     var maxReadSize: Int {
@@ -73,10 +74,6 @@ class SMB2FileHanle {
     
     func lseek(offset: Int64) throws -> Int64 {
         let result = smb2_lseek(context.context, handle, offset, SEEK_SET, nil)
-        if result < 0 {
-            let error: Error? = POSIXErrorCode(rawValue: Int32(abs(result))).map { POSIXError($0) }
-            throw error ?? POSIXError(POSIXError.ESPIPE)
-        }
         try POSIXError.throwIfError(Int32(exactly: result) ?? 0, default: .ESPIPE)
         return result
     }
