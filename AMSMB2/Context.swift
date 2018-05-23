@@ -90,6 +90,13 @@ extension SMB2Context {
         return st
     }
     
+    func statvfs(_ path: String) throws -> smb2_statvfs {
+        var st = smb2_statvfs()
+        let result = smb2_statvfs(context, path, &st)
+        try POSIXError.throwIfError(result, default: .ENOLINK)
+        return st
+    }
+    
     func truncate(_ path: String, toLength: UInt64) throws {
         let result = smb2_truncate(context, path, toLength)
         try POSIXError.throwIfError(result, default: .ENOLINK)

@@ -120,6 +120,28 @@ public class AMSMB2: NSObject {
         }
     }
     
+    @objc
+    public func attributesOfFileSystem(forPath path: String,
+                                       completionHandler: @escaping (_ attrubutes: [FileAttributeKey: Any]?, _ error: Error?) -> Void) {
+        q.async {
+            do {
+                let stat = try self.context.statvfs(path)
+                var result = [FileAttributeKey: Any]()
+                let blockSize = UInt64(stat.f_bsize)
+                result[.systemNumber] = NSNumber(value: UInt64(stat.f_fsid))
+                if stat.f_blocks < UInt64.max / blockSize {
+                    result[.systemSize] = NSNumber(value: blockSize * UInt64(stat.f_blocks))
+                    result[.systemFreeSize] = NSNumber(value: blockSize * UInt64(stat.f_bavail))
+                }
+                result[.systemNodes] = NSNumber(value: UInt64(stat.f_files))
+                result[.systemFreeNodes] = NSNumber(value: UInt64(stat.f_ffree))
+                completionHandler(result, nil)
+            } catch {
+                completionHandler(nil, error)
+            }
+        }
+    }
+    
     /**
      Returns the attributes of the item at given path.
      
@@ -225,6 +247,17 @@ public class AMSMB2: NSObject {
         }
     }
     
+    /**
+     Truncates or extends the file represented by the path to a specified offset within the file and
+     puts the file pointer at that position.
+     
+     If the file is extended (if offset is beyond the current end of file), the added characters are null bytes.
+     
+     - Parameters:
+       - atPath: path of file to be truncated.
+       - completionHandler: closure will be run after operation is completed.
+     */
+    @objc
     public func truncateFile(atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -320,6 +353,7 @@ public class AMSMB2: NSObject {
        - data: data portion which read from server.
        - completionHandler: closure will be run after reading data is completed.
      */
+    @objc
     public func contents(atPath path: String, offset: Int64 = 0,
                          fetchedData: @escaping ((_ offset: Int64, _ total: Int64, _ data: Data) -> Bool),
                          completionHandler: SimpleCompletionHandler) {
