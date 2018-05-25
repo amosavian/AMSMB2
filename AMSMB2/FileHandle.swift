@@ -28,13 +28,22 @@ final class SMB2FileHanle {
         try self.init(path, flags: O_WRONLY | O_CREAT | O_TRUNC, on: context)
     }
     
+    convenience init(forCreatingIfNotExistsAtPath path: String, on context: SMB2Context) throws {
+        try self.init(path, flags: O_WRONLY | O_CREAT | O_EXCL, on: context)
+    }
+    
     convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDWR, on: context)
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
-        guard let handle = smb2_open(context.context, path, flags) else {
-            throw POSIXError(.EBADF)
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        guard let handle = smb2_open(context.context, canonicalPath, flags) else {
+            if let error = context.error {
+                throw POSIXError(.ENOENT, userInfo: [NSLocalizedDescriptionKey: error])
+            } else {
+                throw POSIXError(.ENOENT)
+            }
         }
         self.context = context
         self.handle = handle
@@ -55,13 +64,13 @@ final class SMB2FileHanle {
     func fstat() throws -> smb2_stat_64 {
         var st = smb2_stat_64()
         let result = smb2_fstat(context.context, handle, &st)
-        try POSIXError.throwIfError(result, default: .EBADF)
+        try POSIXError.throwIfError(result, description: context.error, default: .EBADF)
         return st
     }
     
     func ftruncate(toLength: UInt64) throws {
         let result = smb2_ftruncate(context.context, handle, toLength)
-        try POSIXError.throwIfError(result, default: .EIO)
+        try POSIXError.throwIfError(result, description: context.error, default: .EIO)
     }
     
     var maxReadSize: Int {
@@ -74,7 +83,7 @@ final class SMB2FileHanle {
     
     func lseek(offset: Int64) throws -> Int64 {
         let result = smb2_lseek(context.context, handle, offset, SEEK_SET, nil)
-        try POSIXError.throwIfError(Int32(exactly: result) ?? 0, default: .ESPIPE)
+        try POSIXError.throwIfError(Int32(exactly: result) ?? 0, description: context.error, default: .ESPIPE)
         return result
     }
     
@@ -88,7 +97,7 @@ final class SMB2FileHanle {
         }
         
         let result = smb2_read(context.context, handle, buffer, UInt32(bufSize))
-        try POSIXError.throwIfError(result, default: .EIO)
+        try POSIXError.throwIfError(result, description: context.error, default: .EIO)
         return Data(bytes: buffer, count: Int(result))
     }
     
@@ -102,7 +111,7 @@ final class SMB2FileHanle {
         }
         
         let result = smb2_pread(context.context, handle, buffer, UInt32(bufSize), offset)
-        try POSIXError.throwIfError(result, default: .EIO)
+        try POSIXError.throwIfError(result, description: context.error, default: .EIO)
         return Data(bytes: buffer, count: Int(result))
     }
     
@@ -131,22 +140,22 @@ final class SMB2FileHanle {
             }
         }
         
-        try POSIXError.throwIfError(errorNo, default: .EIO)
+        try POSIXError.throwIfError(errorNo, description: context.error, default: .EIO)
         return result
     }
     
-    func write_async(data: Data) throws -> Int {
+    func pwrite_async(data: Data, offset: UInt64) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
         var array = [UInt8](data)
         let result = try array.withUnsafeMutableBufferPointer { (bytes) -> Int32 in
             guard let baseAddress = bytes.baseAddress else { return 0 }
             return try context.async_wait { (cbPtr) -> Int32 in
-                smb2_write_async(context.context, handle, baseAddress, UInt32(bytes.count), SMB2Context.async_handler, cbPtr)
+                smb2_pwrite_async(context.context, handle, baseAddress, UInt32(bytes.count), offset, SMB2Context.async_handler, cbPtr)
             }
         }
         
-        try POSIXError.throwIfError(result, default: .EIO)
+        try POSIXError.throwIfError(result, description: context.error, default: .EIO)
         return Int(result)
     }
     
@@ -167,12 +176,12 @@ final class SMB2FileHanle {
             }
         }
         
-        try POSIXError.throwIfError(errorNo, default: .EIO)
+        try POSIXError.throwIfError(errorNo, description: context.error, default: .EIO)
         return result
     }
     
     func fsync() throws {
         let result = smb2_fsync(context.context, handle)
-        try POSIXError.throwIfError(result, default: .EIO)
+        try POSIXError.throwIfError(result, description: context.error, default: .EIO)
     }
 }

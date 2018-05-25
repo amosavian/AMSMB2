@@ -9,13 +9,17 @@
 import Foundation
 
 extension POSIXError {
-    static func throwIfError(_ result: Int32, default: POSIXError.Code) throws {
+    static func throwIfError(_ result: Int32, description: String?, default: POSIXError.Code) throws {
         guard result < 0 else {
             return
         }
-        
-        let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
-        throw error ?? POSIXError(`default`)
+        if let description = description, !description.isEmpty {
+            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0, userInfo: [NSLocalizedDescriptionKey: description]) }
+            throw error ?? POSIXError(`default`, userInfo: [NSLocalizedDescriptionKey: description])
+        } else {
+            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
+            throw error ?? POSIXError(`default`)
+        }
     }
 }
 

@@ -10,9 +10,11 @@ import Foundation
 import SMB2
 
 final class SMB2Context {
-    enum NegotiateSigning: UInt16 {
-        case enabled = 1
-        case required = 2
+    struct NegotiateSigning: OptionSet {
+        var rawValue: UInt16
+        
+        static let enabled = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
+        static let required = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
     
     internal var context: UnsafeMutablePointer<smb2_context>
@@ -58,25 +60,57 @@ extension SMB2Context {
     func parseUrl(_ url: String) ->  UnsafeMutablePointer<smb2_url> {
         return smb2_parse_url(context, url)
     }
+    
+    var clientGuid: UUID? {
+        guard let guid = smb2_get_client_guid(context) else {
+            return nil
+        }
+        
+        let uuid = guid.withMemoryRebound(to: uuid_t.self, capacity: 1) { ptr in
+            return ptr.pointee
+        }
+        
+        return UUID.init(uuid: uuid)
+    }
+    
+    var fileDescriptor: Int32 {
+        return smb2_get_fd(context)
+    }
+    
+    var error: String? {
+        guard let errorStr = smb2_get_error(context) else {
+            return nil
+        }
+        return String.init(utf8String: errorStr)
+    }
+    
+    func whichEvents() -> Int32 {
+        return smb2_which_events(context)
+    }
+    
+    func service(revents: Int32) throws {
+        let result = smb2_service(context, revents)
+        try POSIXError.throwIfError(result, description: error, default: .EINVAL)
+    }
 }
 
 // MARK: Connectivity
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
         let result = smb2_connect_share(context, server, share, user)
-        try POSIXError.throwIfError(result, default: .ENOLINK)
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         self.isConnected = true
     }
     
     func disconnect() throws {
         let result = smb2_disconnect_share(context)
         self.isConnected = false
-        try POSIXError.throwIfError(result, default: .ECONNABORTED)
+        try POSIXError.throwIfError(result, description: error, default: .ECONNABORTED)
     }
     
     func echo() throws -> Bool {
         let result = smb2_echo(context)
-        try POSIXError.throwIfError(result, default: .ECONNREFUSED)
+        try POSIXError.throwIfError(result, description: error, default: .ECONNREFUSED)
         return true
     }
 }
@@ -84,48 +118,55 @@ extension SMB2Context {
 // MARK: File manipulation
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_stat_64()
-        let result = smb2_stat(context, path, &st)
-        try POSIXError.throwIfError(result, default: .ENOLINK)
+        let result = smb2_stat(context, canonicalPath, &st)
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func statvfs(_ path: String) throws -> smb2_statvfs {
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_statvfs()
-        let result = smb2_statvfs(context, path, &st)
-        try POSIXError.throwIfError(result, default: .ENOLINK)
+        let result = smb2_statvfs(context, canonicalPath, &st)
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func truncate(_ path: String, toLength: UInt64) throws {
-        let result = smb2_truncate(context, path, toLength)
-        try POSIXError.throwIfError(result, default: .ENOLINK)
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_truncate(context, canonicalPath, toLength)
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
 }
 
 // MARK: File operation
 extension SMB2Context {
     func mkdir(_ path: String) throws {
-        let result = smb2_mkdir(context, path)
-        try POSIXError.throwIfError(result, default: .EEXIST)
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_mkdir(context, canonicalPath)
+        try POSIXError.throwIfError(result, description: error, default: .EEXIST)
     }
     
     func rmdir(_ path: String) throws {
-        let result = smb2_rmdir(context, path)
-        try POSIXError.throwIfError(result, default: .ENOLINK)
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_rmdir(context, canonicalPath)
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
     func unlink(_ path: String) throws {
-        let result = smb2_rmdir(context, path)
-        try POSIXError.throwIfError(result, default: .ENOLINK)
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_rmdir(context, canonicalPath)
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
     func rename(_ path: String, to newPath: String) throws {
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         let result = try async_wait { (cbPtr) -> Int32 in
-            smb2_rename_async(context, path, newPath, SMB2Context.async_handler, cbPtr)
+            smb2_rename_async(context, canonicalPath, newPath, SMB2Context.async_handler, cbPtr)
         }
         
-        try POSIXError.throwIfError(result, default: .ENOENT)
+        try POSIXError.throwIfError(result, description: error, default: .ENOENT)
     }
 }
 
@@ -150,27 +191,22 @@ extension SMB2Context {
         }
     }
     
-    private func wait_for_reply(_ cbPtr: UnsafeMutableRawPointer) -> Int {
+    private func wait_for_reply(_ cbPtr: UnsafeMutableRawPointer) throws {
         while !cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.is_finished {
             var pfd = pollfd()
-            pfd.fd = smb2_get_fd(context)
-            pfd.events = Int16(smb2_which_events(context))
+            pfd.fd = fileDescriptor
+            pfd.events = Int16(whichEvents())
             
             if poll(&pfd, 1, 1000) < 0 {
-                return -1
+                try POSIXError.throwIfError(errno, description: error, default: .EINVAL)
             }
             
             if pfd.revents == 0 {
                 continue
             }
             
-            if smb2_service(context, Int32(pfd.revents)) < 0 {
-                print(String(utf8String: smb2_get_error(context)) ?? "")
-                return -1
-            }
+            try service(revents: Int32(pfd.revents))
         }
-        
-        return 0
     }
     
     static let async_handler: @convention(c) (_ smb2: UnsafeMutablePointer<smb2_context>?, _ status: Int32, _ command_data: UnsafeMutableRawPointer?, _ cbdata: UnsafeMutableRawPointer?) -> Void = { smb2, status, _, cbdata in
@@ -185,13 +221,9 @@ extension SMB2Context {
         }
         
         let result = handler(cbPtr)
-        
-        if wait_for_reply(cbPtr) < 1 {
-            throw POSIXError(.EIO)
-        }
-        
+        try wait_for_reply(cbPtr)
         let errNo = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.errNo
-        try POSIXError.throwIfError(errNo, default: .ECONNRESET)
+        try POSIXError.throwIfError(errNo, description: error, default: .ECONNRESET)
         return result
     }
 }

@@ -523,7 +523,7 @@ public class AMSMB2: NSObject {
                 localHandle.seek(toFileOffset: 0)
                 
                 
-                let file = try SMB2FileHanle(forCreatingAndWritingAtPath: toPath, on: self.context)
+                let file = try SMB2FileHanle(forCreatingIfNotExistsAtPath: toPath, on: self.context)
                 
                 var offset: Int64 = 0
                 while true {

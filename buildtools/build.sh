@@ -58,7 +58,7 @@ fi
 
 export MINSDKVERSION=9.0
 export USECLANG=1
-export CFLAGS="-fembed-bitcode"
+export CFLAGS="-fembed-bitcode -DHAVE_OPENSSL_LIBS=1 -DHAVE_SOCKADDR_LEN=1 -DHAVE_SOCKADDR_STORAGE=1"
 export CPPFLAGS="-I${PACKAGE_DIRECTORY}/buildtools/include"
 #export CPPFLAGS="-I/usr/local/opt/openssl/include"
 export LDFLAGS="-L${LIB_OUTPUT}"
