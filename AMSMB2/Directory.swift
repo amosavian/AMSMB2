@@ -20,7 +20,8 @@ final class SMB2Directory: Collection {
     private var handle: smb2dir
     
     init(_ path: String, on context: SMB2Context) throws {
-        guard let handle = smb2_opendir(context.context, path) else {
+        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        guard let handle = smb2_opendir(context.context, canonicalPath) else {
             throw POSIXError(.EBADF)
         }
         self.context = context
