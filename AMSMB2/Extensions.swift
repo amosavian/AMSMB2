@@ -41,3 +41,28 @@ extension Dictionary where Key == URLResourceKey {
         return self[.fileSizeKey] as? Int64
     }
 }
+
+extension Data {
+    mutating func append(uint16 value: UInt16) {
+        self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff)])
+    }
+    
+    mutating func append(uint32 value: UInt32) {
+        self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff), UInt8(value >> 16 & 0xff), UInt8(value >> 24 & 0xff)])
+    }
+    
+    mutating func append(uuid: UUID) {
+        self.append(contentsOf: [uuid.uuid.3,  uuid.uuid.2,  uuid.uuid.1,  uuid.uuid.0,
+                             uuid.uuid.5,  uuid.uuid.4,  uuid.uuid.7,  uuid.uuid.6,
+                             uuid.uuid.8,  uuid.uuid.9,  uuid.uuid.10, uuid.uuid.11,
+                             uuid.uuid.12, uuid.uuid.13, uuid.uuid.14, uuid.uuid.15])
+    }
+    
+    func scanValue<T: FixedWidthInteger>(start: Int) -> T? {
+        let length = MemoryLayout<T>.size
+        guard self.count >= start + length else { return nil }
+        var result: T = 0
+        (self as NSData).getBytes(&result, range: NSRange(location: start, length: length))
+        return result
+    }
+}
