@@ -2,8 +2,8 @@
 //  Extensions.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 2/31/1397 AP.
-//  Copyright © 1397 AP Mousavian. All rights reserved.
+//  Created by Amir Abbas Mousavian.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //
 
 import Foundation
@@ -51,7 +51,8 @@ extension Data {
         self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff), UInt8(value >> 16 & 0xff), UInt8(value >> 24 & 0xff)])
     }
     
-    mutating func append(uuid: UUID) {
+    mutating func append(guid uuid: UUID) {
+        // Microsoft GUID is mixed-endian
         self.append(contentsOf: [uuid.uuid.3,  uuid.uuid.2,  uuid.uuid.1,  uuid.uuid.0,
                              uuid.uuid.5,  uuid.uuid.4,  uuid.uuid.7,  uuid.uuid.6,
                              uuid.uuid.8,  uuid.uuid.9,  uuid.uuid.10, uuid.uuid.11,
@@ -63,6 +64,6 @@ extension Data {
         guard self.count >= start + length else { return nil }
         var result: T = 0
         (self as NSData).getBytes(&result, range: NSRange(location: start, length: length))
-        return result
+        return result.littleEndian
     }
 }
