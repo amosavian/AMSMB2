@@ -35,16 +35,9 @@ for pkg in cmake automake autoconf libtool; do
 done
 
 if [[ -z "${WITHOUT_SSL}" ]]; then
-: '    if brew ls --versions openssl > /dev/null; then
-        echo "Updating openssl."
-        brew upgrade openssl &> /dev/null
-    else
-        echo "Installing openssl."
-        brew install openssl > /dev/null
-    fi
-'
-    echo ""
     ./openssl-build.sh
+else
+    ./openssl-build.sh --without-ssl
 fi
 
 if [ ! -d libsmb2 ]; then

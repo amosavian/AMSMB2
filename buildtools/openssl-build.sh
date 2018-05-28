@@ -78,6 +78,14 @@ buildIOS()
 	
 	echo "Done Building ${OPENSSL_VERSION} for ${ARCH}"
 }
+
+for i in "$@" ; do
+    if [[ $i == "--without-ssl" ]] ; then
+        WITHOUT_SSL="YES"
+        break
+    fi
+done
+
 echo "Cleaning up"
 rm -rf include/openssl/* lib/*
 rm -rf /tmp/${OPENSSL_VERSION}-*
@@ -98,11 +106,11 @@ tar xfz "${OPENSSL_VERSION}.tar.gz"
 buildIOS "armv7"
 echo "Copying headers"
 cp /tmp/${OPENSSL_VERSION}-iOS-armv7/include/openssl/* include/openssl/
+if [[ -z "${WITHOUT_SSL}" ]]; then
 buildIOS "armv7s"
 buildIOS "arm64"
 buildIOS "x86_64"
 buildIOS "i386"
-
 
 echo "Building iOS libraries"
 lipo \
@@ -119,6 +127,8 @@ lipo \
 	"/tmp/${OPENSSL_VERSION}-iOS-i386/lib/libssl.a" \
 	"/tmp/${OPENSSL_VERSION}-iOS-x86_64/lib/libssl.a" \
 	-create -output "${LIB_OUTPUT}/libssl.a"
+fi
+
 echo "Cleaning up"
 rm -rf /tmp/${OPENSSL_VERSION}-*
 rm -rf ${OPENSSL_VERSION}
