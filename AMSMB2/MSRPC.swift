@@ -168,9 +168,9 @@ class MSRPC {
         
         // The server name
         reqData.append(serverNameData)
-        reqData.append(uint16: 0) // null termination padding
+        reqData.append(uint16: 0) // null termination
         if serverNameLen % 2 == 1 {
-            reqData.append(uint16: 0) // null termination padding
+            reqData.append(uint16: 0) // padding
         }
         
         // Level 1

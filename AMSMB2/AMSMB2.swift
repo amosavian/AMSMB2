@@ -124,7 +124,7 @@ public class AMSMB2: NSObject {
                     try? context.disconnect()
                 }
                 
-                let srvsvc = try SMB2FileHanle(forUpdatingAtPath: "srvsvc", on: context)
+                let srvsvc = try SMB2FileHandle(forUpdatingAtPath: "srvsvc", on: context)
                 
                 _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
                 let recvBindData = try srvsvc.read()
@@ -367,7 +367,7 @@ public class AMSMB2: NSObject {
                          completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
             do {
-                let file = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
                 let filesize = try Int64(file.fstat().smb2_size)
                 let size = min(Int64(length), filesize - offset)
                 
@@ -412,7 +412,7 @@ public class AMSMB2: NSObject {
                          completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let file = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
                 let size = try Int64(file.fstat().smb2_size)
                 
                 var offset = offset
@@ -455,7 +455,7 @@ public class AMSMB2: NSObject {
                       completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let file = try SMB2FileHanle(forCreatingAndWritingAtPath: path, on: self.context)
+                let file = try SMB2FileHandle(forCreatingAndWritingAtPath: path, on: self.context)
                 
                 var offset: Int64 = 0
                 while true {
@@ -576,7 +576,7 @@ public class AMSMB2: NSObject {
                 localHandle.seek(toFileOffset: 0)
                 
                 
-                let file = try SMB2FileHanle(forCreatingIfNotExistsAtPath: toPath, on: self.context)
+                let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: self.context)
                 
                 var offset: Int64 = 0
                 while true {
@@ -627,7 +627,7 @@ public class AMSMB2: NSObject {
         
         q.async {
             do {
-                let file = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
                 let size = try Int64(file.fstat().smb2_size)
                 
                 if (try? url.checkResourceIsReachable()) ?? false {
@@ -702,9 +702,9 @@ extension AMSMB2 {
     
     private func copyContentsOfFile(atPath path: String, toPath: String,
                                     progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
-        let fileRead = try SMB2FileHanle(forReadingAtPath: path, on: self.context)
+        let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
         let size = try Int64(fileRead.fstat().smb2_size)
-        let fileWrite = try SMB2FileHanle(forCreatingAndWritingAtPath: toPath, on: self.context)
+        let fileWrite = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: self.context)
         var offset: Int64 = 0
         var eof = false
         var shouldContinue = true

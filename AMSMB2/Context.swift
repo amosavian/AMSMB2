@@ -118,24 +118,21 @@ extension SMB2Context {
 // MARK: File manipulation
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_stat_64()
-        let result = smb2_stat(context, canonicalPath, &st)
+        let result = smb2_stat(context, path, &st)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func statvfs(_ path: String) throws -> smb2_statvfs {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_statvfs()
-        let result = smb2_statvfs(context, canonicalPath, &st)
+        let result = smb2_statvfs(context, path, &st)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func truncate(_ path: String, toLength: UInt64) throws {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let result = smb2_truncate(context, canonicalPath, toLength)
+        let result = smb2_truncate(context, path, toLength)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
 }
@@ -143,27 +140,23 @@ extension SMB2Context {
 // MARK: File operation
 extension SMB2Context {
     func mkdir(_ path: String) throws {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let result = smb2_mkdir(context, canonicalPath)
+        let result = smb2_mkdir(context, path)
         try POSIXError.throwIfError(result, description: error, default: .EEXIST)
     }
     
     func rmdir(_ path: String) throws {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let result = smb2_rmdir(context, canonicalPath)
+        let result = smb2_rmdir(context, path)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
     func unlink(_ path: String) throws {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let result = smb2_rmdir(context, canonicalPath)
+        let result = smb2_rmdir(context, path)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
     func rename(_ path: String, to newPath: String) throws {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let result = try async_wait { (cbPtr) -> Int32 in
-            smb2_rename_async(context, canonicalPath, newPath, SMB2Context.async_handler, cbPtr)
+        let (result, _) = try async_wait { (cbPtr) -> Int32 in
+            smb2_rename_async(context, path, newPath, SMB2Context.async_handler, cbPtr)
         }
         
         try POSIXError.throwIfError(result, description: error, default: .ENOENT)
@@ -173,8 +166,9 @@ extension SMB2Context {
 // MARK: Async operation handler
 extension SMB2Context {
     private struct CBData {
-        var errNo: Int32
-        var is_finished: Bool
+        var errNo: Int32  = 0
+        var is_finished: Bool = false
+        var commandData: UnsafeMutableRawPointer? = nil
         
         static var memSize: Int {
             return MemoryLayout<CBData>.size
@@ -186,7 +180,7 @@ extension SMB2Context {
         
         static func initPointer() -> UnsafeMutableRawPointer {
             let cbPtr = UnsafeMutableRawPointer.allocate(byteCount: CBData.memSize, alignment: CBData.memAlign)
-            cbPtr.initializeMemory(as: CBData.self, repeating: .init(errNo: 0, is_finished: false), count: 1)
+            cbPtr.initializeMemory(as: CBData.self, repeating: .init(), count: 1)
             return cbPtr
         }
     }
@@ -209,12 +203,13 @@ extension SMB2Context {
         }
     }
     
-    static let async_handler: @convention(c) (_ smb2: UnsafeMutablePointer<smb2_context>?, _ status: Int32, _ command_data: UnsafeMutableRawPointer?, _ cbdata: UnsafeMutableRawPointer?) -> Void = { smb2, status, _, cbdata in
+    static let async_handler: @convention(c) (_ smb2: UnsafeMutablePointer<smb2_context>?, _ status: Int32, _ command_data: UnsafeMutableRawPointer?, _ cbdata: UnsafeMutableRawPointer?) -> Void = { smb2, status, command_data, cbdata in
         cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.errNo = status
         cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.is_finished = true
+        cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.commandData = command_data
     }
     
-    func async_wait(execute handler: (_ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> Int32 {
+    func async_wait(execute handler: (_ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
         let cbPtr = CBData.initPointer()
         defer {
             cbPtr.deallocate()
@@ -224,6 +219,6 @@ extension SMB2Context {
         try wait_for_reply(cbPtr)
         let errNo = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.errNo
         try POSIXError.throwIfError(errNo, description: error, default: .ECONNRESET)
-        return result
+        return (result, cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.commandData)
     }
 }

@@ -11,7 +11,7 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
-final class SMB2FileHanle {
+final class SMB2FileHandle {
     private var context: SMB2Context
     private let handle: smb2fh
     private var isOpen: Bool
@@ -37,13 +37,15 @@ final class SMB2FileHanle {
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
-        let canonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        guard let handle = smb2_open(context.context, canonicalPath, flags) else {
-            if let error = context.error {
-                throw POSIXError(.ENOENT, userInfo: [NSLocalizedDescriptionKey: error])
-            } else {
-                throw POSIXError(.ENOENT)
+        let (result, cmddata) = try context.async_wait { (cbPtr) -> Int32 in
+            smb2_open_async(context.context, path, flags, SMB2Context.async_handler, cbPtr)
+        }
+        
+        guard let handle = OpaquePointer(cmddata) else {
+            if result < 0 {
+                try POSIXError.throwIfError(result, description: context.error, default: .ENOENT)
             }
+            throw POSIXError(.ENOENT)
         }
         self.context = context
         self.handle = handle
@@ -78,7 +80,7 @@ final class SMB2FileHanle {
     }
     
     var optimizedReadSize: Int {
-        return min(maxReadSize, 65535)
+        return min(maxReadSize, 65000)
     }
     
     func lseek(offset: Int64) throws -> Int64 {
@@ -120,7 +122,8 @@ final class SMB2FileHanle {
     }
     
     var optimizedWriteSize: Int {
-        return min(maxWriteSize, 65535)
+        // Some server may throw `POLLHUP` with size larger than this
+        return min(maxWriteSize, 21000)
     }
     
     func write(data: Data) throws -> Int {
@@ -150,9 +153,9 @@ final class SMB2FileHanle {
         var array = [UInt8](data)
         let result = try array.withUnsafeMutableBufferPointer { (bytes) -> Int32 in
             guard let baseAddress = bytes.baseAddress else { return 0 }
-            return try context.async_wait { (cbPtr) -> Int32 in
+            return try context.async_wait(execute: { (cbPtr) -> Int32 in
                 smb2_pwrite_async(context.context, handle, baseAddress, UInt32(bytes.count), offset, SMB2Context.async_handler, cbPtr)
-            }
+            }).result
         }
         
         try POSIXError.throwIfError(result, description: context.error, default: .EIO)

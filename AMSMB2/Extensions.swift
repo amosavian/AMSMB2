@@ -14,8 +14,9 @@ extension POSIXError {
             return
         }
         if let description = description, !description.isEmpty {
-            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0, userInfo: [NSLocalizedDescriptionKey: description]) }
-            throw error ?? POSIXError(`default`, userInfo: [NSLocalizedDescriptionKey: description])
+            let errorDesc = "Error code \(abs(result)): " + description
+            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0, userInfo: [NSLocalizedFailureReasonErrorKey: errorDesc]) }
+            throw error ?? POSIXError(`default`, userInfo: [NSLocalizedFailureReasonErrorKey: errorDesc])
         } else {
             let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
             throw error ?? POSIXError(`default`)
