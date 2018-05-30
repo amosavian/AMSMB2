@@ -53,6 +53,7 @@ class SMBClient {
             
             client?.moveItem(atPath: path, toPath: toPath) { error in
                 completionHandler?(error)
+                client?.disconnectShare() // If your job is finished
             }
         }
     }

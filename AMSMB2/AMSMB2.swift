@@ -14,8 +14,10 @@ public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
 /// Implements SMB2 File operations.
 @objc @objcMembers
 public class AMSMB2: NSObject {
-    fileprivate var context: SMB2Context
-    private let url: SMB2URL
+    fileprivate var context: SMB2Context?
+    private var smburl: SMB2URL?
+    
+    public let url: URL
     private let _domain: String
     private let _workstation: String
     private let _user: String
@@ -32,16 +34,16 @@ public class AMSMB2: NSObject {
      */
     @objc
     public init?(url: URL, domain: String = "", credential: URLCredential?) {
-        guard let context = SMB2Context(), let smburl = SMB2URL(url.absoluteString, on: context), let host = url.host else {
+        guard url.scheme == "smb", let host = url.host else {
             return nil
         }
-        self.context = context
-        self.url = smburl
         let hostLabel = url.host.map({ "_" + $0 }) ?? ""
         self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: [])
+        self.url = url
         
         var workstation: String = ""
         var user: String = "guest"
+        
         if let userComps = credential?.user?.components(separatedBy: "\\") {
             switch userComps.count {
             case 1:
@@ -50,13 +52,7 @@ public class AMSMB2: NSObject {
                 workstation = userComps[0]
                 user = userComps[1]
             default:
-                if let u_user = smburl.user {
-                    user = u_user
-                }
-            }
-        } else {
-            if let u_user = smburl.user {
-                user = u_user
+                break
             }
         }
         _server = host
@@ -65,7 +61,6 @@ public class AMSMB2: NSObject {
         _user = user
         _password = credential?.password ?? ""
         super.init()
-        initContext(self.context)
     }
     
     /**
@@ -75,8 +70,21 @@ public class AMSMB2: NSObject {
     public func connectShare(name: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let server = self.url.server ?? self._server
-                try self.context.connect(server: server, share: name, user: self._user)
+                if self.context == nil {
+                    guard let context = SMB2Context() else {
+                        throw POSIXError(.ENOMEM)
+                    }
+                    guard let url = SMB2URL(self.url.absoluteString, on: context) else {
+                        throw URLError(.badURL)
+                    }
+                    
+                    self.context = context
+                    self.smburl = url
+                    self.initContext(context)
+                }
+                
+                let server = self.smburl!.server ?? self._server
+                try self.context!.connect(server: server, share: name, user: self._user)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -88,10 +96,11 @@ public class AMSMB2: NSObject {
      Disconnects from a share.
      */
     @objc
-    public func disconnectShare(completionHandler: SimpleCompletionHandler) {
+    public func disconnectShare(completionHandler: SimpleCompletionHandler = nil) {
         q.async {
             do {
-                try self.context.disconnect()
+                try self.context?.disconnect()
+                self.context = nil
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -103,7 +112,8 @@ public class AMSMB2: NSObject {
      Enumerates shares' list on server.
      
      - Parameters:
-       - enumerateHidden: enumrating special/administrative shares usually ends with `$`, e.g. `C$` or `admin$`.
+       - enumerateHidden: enumrating special/administrative like user directory in macOS or
+           shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
        - names: An array of share names. Can be passed to `connectShare()` function.
        - comments: An array of share remark name, related to names array with same index. Suitable for displaying shares to user.
@@ -113,34 +123,45 @@ public class AMSMB2: NSObject {
     public func listShares(enumerateHidden: Bool = false, completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) -> Void) {
         q.async {
             do {
-                let server = self.url.server ?? self._server
+                // We use separate context because when a context connects to a tree, it won't connect to another tree.
+                let server = self.smburl?.server ?? self._server
                 guard let context = SMB2Context() else {
                     throw POSIXError(.EHOSTUNREACH)
                 }
                 self.initContext(context)
                 
+                // Connecting to Interprocess Communication share
                 try context.connect(server: server, share: "IPC$", user: self._user)
                 defer {
                     try? context.disconnect()
                 }
                 
+                // Connection to server service.
                 let srvsvc = try SMB2FileHandle(forNamedPipeAtPath: "srvsvc", on: context)
                 
+                // Sending bind command to DCE-RPC.
                 _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
+                // Reading bind command result to DCE-RPC.
                 let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
+                // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
                 if recvBindData.count < 68 {
                     try POSIXError.throwIfError(Int32.min, description: "Binding failure", default: .EBADMSG)
                 }
                 
-                if recvBindData[44] > 0 {
+                // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+                if recvBindData[44] > 0 || recvBindData[45] > 0 {
+                    // Ack result is not acceptance (0x0000)
+                    let errorCode = recvBindData[44] + (recvBindData[45] << 8)
                     try POSIXError.throwIfError(Int32.min, description:
-                        "Binding failure: \(String(format: "%02x", recvBindData[44])):\(String(format: "%02x", recvBindData[45]))",
-                        default: .EBADMSG)
+                        "Binding failure: \(String.init(errorCode, radix: 16, uppercase: false))", default: .EBADMSG)
                 }
                 
                 let serverName = String(utf8String: context.context.pointee.server)!
-                _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAllLevel1(server: serverName), offset: 0)
+                // Send NetShareEnum reqeust, Level 1 mean we need share name and remark.
+                _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: serverName), offset: 0)
+                // Reading NetShareEnum result.
                 let recvData = try srvsvc.pread(offset: 0)
+                // Parse result into Array.
                 let shares = try MSRPC.parseNetShareEnumAllLevel1(data: recvData, enumerateSpecial: enumerateHidden)
                 completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
             } catch {
@@ -178,7 +199,12 @@ public class AMSMB2: NSObject {
                                        completionHandler: @escaping (_ attrubutes: [FileAttributeKey: Any]?, _ error: Error?) -> Void) {
         q.async {
             do {
-                let stat = try self.context.statvfs(path)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                // This exactly matches implementation of Swift Foundation.
+                let stat = try context.statvfs(path)
                 var result = [FileAttributeKey: Any]()
                 let blockSize = UInt64(stat.f_bsize)
                 result[.systemNumber] = NSNumber(value: UInt64(stat.f_fsid))
@@ -209,7 +235,11 @@ public class AMSMB2: NSObject {
                                  completionHandler: @escaping (_ file: [URLResourceKey: Any]?, _ error: Error?) -> Void) {
         q.async {
             do {
-                let stat = try self.context.stat(path)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                let stat = try context.stat(path)
                 var result = [URLResourceKey: Any]()
                 let name = NSString(string: (path as NSString).lastPathComponent)
                 result[.nameKey] = name
@@ -233,7 +263,11 @@ public class AMSMB2: NSObject {
     public func createDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                try self.context.mkdir(path)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                try context.mkdir(path)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -253,7 +287,16 @@ public class AMSMB2: NSObject {
     public func removeDirectory(atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
                 if recursive {
+                    // To delete directory recursively, first we list directory contents recursively,
+                    // Then sort path descending which will put child files before containing directory,
+                    // Then we will unlink/rmdir every entry.
+                    //
+                    // This block will only delete children of directory, the path itself will removed after if block.
                     let list = try self.listDirectory(path: path, recursive: true)
                     let sortedContents = list.sorted(by: {
                         guard let firstPath = $0.filepath, let secPath = $1.filepath else {
@@ -265,14 +308,14 @@ public class AMSMB2: NSObject {
                     for item in sortedContents {
                         guard let itemPath = item.filepath else { continue }
                         if item.filetype == URLFileResourceType.directory {
-                            try self.context.rmdir(itemPath)
+                            try context.rmdir(itemPath)
                         } else {
-                            try self.context.unlink(itemPath)
+                            try context.unlink(itemPath)
                         }
                     }
                 }
                 
-                try self.context.rmdir(path)
+                try context.rmdir(path)
                 
                 completionHandler?(nil)
             } catch {
@@ -292,7 +335,11 @@ public class AMSMB2: NSObject {
     public func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                try self.context.unlink(path)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                try context.unlink(path)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -314,7 +361,11 @@ public class AMSMB2: NSObject {
     public func truncateFile(atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                try self.context.truncate(path, toLength: atOffset)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                try context.truncate(path, toLength: atOffset)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -334,7 +385,11 @@ public class AMSMB2: NSObject {
     public func moveItem(atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                try self.context.rename(path, to: toPath)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                try context.rename(path, to: toPath)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -367,7 +422,11 @@ public class AMSMB2: NSObject {
                          completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
             do {
-                let file = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let filesize = try Int64(file.fstat().smb2_size)
                 let size = min(Int64(length), filesize - offset)
                 
@@ -412,7 +471,11 @@ public class AMSMB2: NSObject {
                          completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let file = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let size = try Int64(file.fstat().smb2_size)
                 
                 var offset = offset
@@ -444,7 +507,7 @@ public class AMSMB2: NSObject {
      
      - Parameters:
        - data: data that must be written to file.
-       - atPath: path of file to be written.
+       - toPath: path of file to be written.
        - progress: reports progress of written bytes count so far.
            User must return `true` if they want to continuing or `false` to abort writing.
        - bytes: written bytes count.
@@ -455,7 +518,11 @@ public class AMSMB2: NSObject {
                       completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let file = try SMB2FileHandle(forCreatingAndWritingAtPath: path, on: self.context)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                let file = try SMB2FileHandle(forCreatingAndWritingAtPath: path, on: context)
                 
                 var offset: Int64 = 0
                 while true {
@@ -499,9 +566,13 @@ public class AMSMB2: NSObject {
                                    completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let stat = try self.context.stat(path)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                let stat = try context.stat(path)
                 if stat.smb2_type == SMB2_TYPE_DIRECTORY {
-                    try self.context.mkdir(toPath)
+                    try context.mkdir(toPath)
                     
                     let list = try self.listDirectory(path: path, recursive: true)
                     let sortedContents = list.sorted(by: {
@@ -524,7 +595,7 @@ public class AMSMB2: NSObject {
                         guard let itemPath = item.filepath else { continue }
                         let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
                         if item.filetype == URLFileResourceType.directory {
-                            try self.context.mkdir(destPath)
+                            try context.mkdir(destPath)
                         } else {
                             let shouldContinue = try self.copyContentsOfFile(atPath: itemPath, toPath: destPath, progress: {
                                 (written, _) -> Bool in
@@ -568,6 +639,10 @@ public class AMSMB2: NSObject {
         
         q.async {
             do {
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
                 if try !url.checkResourceIsReachable() {
                     throw POSIXError(.EIO)
                 }
@@ -576,7 +651,7 @@ public class AMSMB2: NSObject {
                 localHandle.seek(toFileOffset: 0)
                 
                 
-                let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: self.context)
+                let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
                 
                 var offset: Int64 = 0
                 while true {
@@ -627,7 +702,11 @@ public class AMSMB2: NSObject {
         
         q.async {
             do {
-                let file = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
+                guard let context = self.context else {
+                    throw POSIXError(POSIXError.ENOTCONN)
+                }
+                
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let size = try Int64(file.fstat().smb2_size)
                 
                 if (try? url.checkResourceIsReachable()) ?? false {
@@ -676,8 +755,12 @@ extension AMSMB2 {
     }
     
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
+        guard let context = self.context else {
+            throw POSIXError(POSIXError.ENOTCONN)
+        }
+        
         var contents = [[URLResourceKey: Any]]()
-        let dir = try SMB2Directory(path, on: self.context)
+        let dir = try SMB2Directory(path, on: context)
         for ent in dir {
             let name = NSString(utf8String: ent.name)
             if [".", ".."].contains(name) { continue }
@@ -702,9 +785,13 @@ extension AMSMB2 {
     
     private func copyContentsOfFile(atPath path: String, toPath: String,
                                     progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
-        let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: self.context)
+        guard let context = self.context else {
+            throw POSIXError(POSIXError.ENOTCONN)
+        }
+        
+        let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
-        let fileWrite = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: self.context)
+        let fileWrite = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: context)
         var offset: Int64 = 0
         var eof = false
         var shouldContinue = true

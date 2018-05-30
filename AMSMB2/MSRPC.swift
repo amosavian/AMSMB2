@@ -16,9 +16,9 @@ class MSRPC {
          Data Layout :
          
          struct _SHARE_INFO_1 {
-         uint32 netname;
+         uint32 netname;  // pointer to NameContainer
          uint32 type;
-         uint32 remark;
+         uint32 remark;   // pointer to NameContainer
          }
          
          struct NameContainer {
@@ -52,10 +52,13 @@ class MSRPC {
             guard let nameActualCount_32: UInt32 = data.scanValue(start: offset + 8) else {
                 throw POSIXError(.EBADRPC)
             }
+            let nameActualCount = Int(nameActualCount_32)
             
             offset += 12
+            if offset + nameActualCount * 2 > data.count {
+                throw POSIXError(.EBADRPC)
+            }
             
-            let nameActualCount = Int(nameActualCount_32)
             let nameStringData = data.dropFirst(offset).prefix((nameActualCount - 1) * 2)
             let nameString = nameActualCount > 1 ? (String(data: nameStringData, encoding: .utf16LittleEndian) ?? "") : ""
             
@@ -68,10 +71,13 @@ class MSRPC {
             guard let commentActualCount_32: UInt32 = data.scanValue(start: offset + 8) else {
                 throw POSIXError(.EBADRPC)
             }
+            let commentActualCount = Int(commentActualCount_32)
             
             offset += 12
+            if offset + nameActualCount * 2 > data.count {
+                throw POSIXError(.EBADRPC)
+            }
             
-            let commentActualCount = Int(commentActualCount_32)
             let commentStringData = data.dropFirst(offset).prefix((commentActualCount - 1) * 2)
             let commentString = commentActualCount > 1 ? (String(data: commentStringData, encoding: .utf16LittleEndian) ?? "") : ""
             
@@ -81,7 +87,7 @@ class MSRPC {
                 offset += 2
             }
             
-            if type == 0 || (enumerateSpecial && type & 0xffffff == 0) {
+            if type == 0 || (enumerateSpecial && type & 0x00ffffff == 0) {
                 // type is STYPE_DISKTREE
                 shares.append((name: nameString, comment: commentString))
             }
@@ -94,18 +100,34 @@ class MSRPC {
         return shares
     }
     
-    static func srvsvcBindData() -> Data {
-        var reqData = Data()
+    enum DCECommand: UInt8 {
+        case request = 0x00
+        case bind = 0x0b
+    }
+    
+    private static func dceHeader(command: DCECommand, callId: UInt32) -> Data {
+        var headerData = Data()
         // Version major, version minor, packet type = 'bind', packet flags
-        reqData.append(contentsOf: [0x05, 0, 0x0b, 0x03])
+        headerData.append(contentsOf: [0x05, 0, command.rawValue, 0x03])
         // Representation = little endian/ASCII.
-        reqData.append(uint32: 0x10)
+        headerData.append(uint32: 0x10)
         // data length
-        reqData.append(uint16: 72)
+        headerData.append(uint16: 0)
         // Auth len
-        reqData.append(uint16: 0)
+        headerData.append(uint16: 0)
         // Call ID
-        reqData.append(uint32: 1)
+        headerData.append(uint32: callId)
+        return headerData
+    }
+    
+    private static func setDCELength(_ data: inout Data) {
+        let count = data.count
+        data[8] = UInt8(count & 0xff)
+        data[9] = UInt8((count >> 8) & 0xff)
+    }
+    
+    static func srvsvcBindData() -> Data {
+        var reqData = dceHeader(command: .bind, callId: 1)
         // Max Xmit size
         reqData.append(uint16: UInt16.max)
         // Max Recv size
@@ -121,34 +143,25 @@ class MSRPC {
         // SRVSVC UUID
         let srvsvcUuid = UUID(uuidString: "4b324fc8-1670-01d3-1278-5a47bf6ee188")!
         reqData.append(guid: srvsvcUuid)
-        // Version major, version minor
+        // SRVSVC Version = 3.0
         reqData.append(uint16: 3)
         reqData.append(uint16: 0)
-        // NDRv2 UUID
+        // NDR UUID
         let ndruuid = UUID(uuidString: "8a885d04-1ceb-11c9-9fe8-08002b104860")!
         reqData.append(guid: ndruuid)
-        // Another version
+        // NDR version = 2.0
         reqData.append(uint16: 2)
         reqData.append(uint16: 0)
         
+        setDCELength(&reqData)
         return reqData
     }
     
-    static func requestNetShareEnumAllLevel1(server serverName: String) -> Data {
+    static func requestNetShareEnumAll(server serverName: String, level: UInt32 = 1) -> Data {
         let serverNameData = serverName.data(using: .utf16LittleEndian)!
         let serverNameLen = UInt32(serverName.count + 1)
         
-        var reqData = Data()
-        // Version major, version minor, packet type = 'request', packet flags
-        reqData.append(contentsOf: [0x05, 0, 0x00, 0x03])
-        // Representation = little endian/ASCII.
-        reqData.append(uint32: 0x10)
-        // data length, set later
-        reqData.append(uint16: 0)
-        // Auth len
-        reqData.append(uint16: 0)
-        // Call ID
-        reqData.append(uint32: 0)
+        var reqData = dceHeader(command: .request, callId: 0)
         // Alloc hint
         reqData.append(uint32: 72)
         // Context ID
@@ -174,7 +187,7 @@ class MSRPC {
         }
         
         // Level 1
-        reqData.append(uint32: 1)
+        reqData.append(uint32: level)
         // Ctr
         reqData.append(uint32: 1)
         // Referent ID
@@ -183,17 +196,14 @@ class MSRPC {
         reqData.append(uint32: 0)
         // Null Pointer to NetShareInfo1
         reqData.append(uint32: 0)
-        // Max Buffer (0xffffffff required by smbX)
+        // Max Buffer
         reqData.append(uint32: 0xffffffff)
         // Resume Referent ID
         reqData.append(uint32: 1)
         // Resume
         reqData.append(uint32: 0)
         
-        let reqDataCount = reqData.count
-        reqData[8] = UInt8(reqDataCount & 0xff)
-        reqData[9] = UInt8((reqDataCount >> 8) & 0xff)
-        
+        setDCELength(&reqData)
         return reqData
     }
 }
