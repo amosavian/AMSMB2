@@ -27,26 +27,24 @@ Then drop `AMSMB2.xcodeproj` to you Xcode workspace and add the framework to you
 
 ## Usage
 
-Just read inline help to find what each function does. It's straightforward. 
+Just read inline help to find what each function does. It's straightforward.
 
-All functions must **not** be called in main thread, to do file operations you must use this template:
+**For now, operations are not realy async. Any operation will be queued to be performed after the previous operation is completed. Please create mulitple instances of `AMSMB2` in case you need real asynchronous performing.**
+
+To do file operations you must use this template:
 
 ```swift
 import AMSMB2
 
 class SMBClient {
-    let dispatch_queue = DispatchQueue.global()
-
     func connect(handler: @escaping (_ client: AMSMB2?, _ error: Error?) -> Void) {
-        dispatch_queue.async {
-            let client = AMSMB2(url: self.serverURL, credential: self.credential)!
+        let client = AMSMB2(url: self.serverURL, credential: self.credential)!
             client.connectShare(name: self.share) { error in
                 handler(client, error)
             }
-        }
     }
     
-    func moveItem(path: String, to toPath: String, completionHandler: ((_ error: Error?) -> Void)?) -> Progress? {
+    func moveItem(path: String, to toPath: String, completionHandler: ((_ error: Error?) -> Void)?) {
         self.connect { (client, error) in
             if let error = error {
                 completionHandler?(error)
