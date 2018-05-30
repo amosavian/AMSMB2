@@ -185,7 +185,7 @@ class MSRPC {
         reqData.append(uint32: 0)
         // Max Buffer (0xffffffff required by smbX)
         reqData.append(uint32: 0xffffffff)
-        // Referent ID
+        // Resume Referent ID
         reqData.append(uint32: 1)
         // Resume
         reqData.append(uint32: 0)

@@ -124,10 +124,10 @@ public class AMSMB2: NSObject {
                     try? context.disconnect()
                 }
                 
-                let srvsvc = try SMB2FileHandle(forUpdatingAtPath: "srvsvc", on: context)
+                let srvsvc = try SMB2FileHandle(forNamedPipeAtPath: "srvsvc", on: context)
                 
                 _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
-                let recvBindData = try srvsvc.read()
+                let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
                 if recvBindData.count < 68 {
                     try POSIXError.throwIfError(Int32.min, description: "Binding failure", default: .EBADMSG)
                 }
@@ -139,8 +139,8 @@ public class AMSMB2: NSObject {
                 }
                 
                 let serverName = String(utf8String: context.context.pointee.server)!
-                _ = try srvsvc.write(data: MSRPC.requestNetShareEnumAllLevel1(server: serverName))
-                let recvData = try srvsvc.read()
+                _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAllLevel1(server: serverName), offset: 0)
+                let recvData = try srvsvc.pread(offset: 0)
                 let shares = try MSRPC.parseNetShareEnumAllLevel1(data: recvData, enumerateSpecial: enumerateHidden)
                 completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
             } catch {

@@ -11,6 +11,8 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
+let O_NOOVERWRITE: Int32 = 0x040000000
+
 final class SMB2FileHandle {
     private var context: SMB2Context
     private let handle: smb2fh
@@ -34,6 +36,10 @@ final class SMB2FileHandle {
     
     convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDWR, on: context)
+    }
+    
+    convenience init(forNamedPipeAtPath path: String, on context: SMB2Context) throws {
+        try self.init(path, flags: O_RDWR | O_APPEND | O_NOOVERWRITE, on: context)
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
@@ -89,8 +95,8 @@ final class SMB2FileHandle {
         return result
     }
     
-    func read() throws -> Data {
-        let bufSize = optimizedReadSize
+    func read(length: Int = 0) throws -> Data {
+        let bufSize = length > 0 ? length : optimizedReadSize
         var buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         buffer.initialize(repeating: 0, count: bufSize)
         defer {
@@ -103,8 +109,8 @@ final class SMB2FileHandle {
         return Data(bytes: buffer, count: Int(result))
     }
     
-    func pread(offset: UInt64) throws -> Data {
-        let bufSize = optimizedReadSize
+    func pread(offset: UInt64, length: Int = 0) throws -> Data {
+        let bufSize = length > 0 ? length : optimizedReadSize
         var buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         buffer.initialize(repeating: 0, count: bufSize)
         defer {
