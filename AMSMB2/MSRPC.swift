@@ -34,18 +34,21 @@ class MSRPC {
          }
          */
         
+        // First 48 bytes are header, _SHARE_INFO_1 is 12 bytes and "type" starts from 4th byte
         func typeOffset(_ i: Int) -> Int {
             return 48 + i * 12 + 4
         }
         
+        // Count of shares to be enumerated, [44-47]
         guard let count_32: UInt32 = data.scanValue(start: 44) else {
             throw POSIXError(.EBADMSG)
         }
         let count = Int(count_32)
         
-        // start of nameString structs
+        // start of nameString structs header size + (_SHARE_INFO_1 * count)
         var offset = 48 + count * 12
         for i in 0..<count {
+            // Type of current share, see https://msdn.microsoft.com/en-us/library/windows/desktop/cc462916(v=vs.85).aspx
             let type: UInt32 = data.scanValue(start: typeOffset(i)) ?? 0xffffffff
             
             // Parse name part
@@ -59,11 +62,13 @@ class MSRPC {
                 throw POSIXError(.EBADRPC)
             }
             
+            // Getting utf16le data, omitting nul char
             let nameStringData = data.dropFirst(offset).prefix((nameActualCount - 1) * 2)
             let nameString = nameActualCount > 1 ? (String(data: nameStringData, encoding: .utf16LittleEndian) ?? "") : ""
             
             offset += nameActualCount * 2
             if nameActualCount % 2 == 1 {
+                // if name length is odd, there is an extra nul char pad for alignment.
                 offset += 2
             }
             
@@ -78,12 +83,14 @@ class MSRPC {
                 throw POSIXError(.EBADRPC)
             }
             
+            // Getting utf16le data, omitting nul char
             let commentStringData = data.dropFirst(offset).prefix((commentActualCount - 1) * 2)
             let commentString = commentActualCount > 1 ? (String(data: commentStringData, encoding: .utf16LittleEndian) ?? "") : ""
             
             offset += commentActualCount * 2
             
             if commentActualCount % 2 == 1 {
+                // if name length is odd, there is an extra nul char pad for alignment.
                 offset += 2
             }
             

@@ -236,7 +236,7 @@ public class AMSMB2: NSObject {
         q.async {
             do {
                 guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
+                    throw POSIXError(.ENOTCONN)
                 }
                 
                 let stat = try context.stat(path)

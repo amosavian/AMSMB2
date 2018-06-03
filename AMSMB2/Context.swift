@@ -118,21 +118,24 @@ extension SMB2Context {
 // MARK: File manipulation
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
+        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_stat_64()
-        let result = smb2_stat(context, path, &st)
+        let result = smb2_stat(context, cannonicalPath, &st)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func statvfs(_ path: String) throws -> smb2_statvfs {
+        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_statvfs()
-        let result = smb2_statvfs(context, path, &st)
+        let result = smb2_statvfs(context, cannonicalPath, &st)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func truncate(_ path: String, toLength: UInt64) throws {
-        let result = smb2_truncate(context, path, toLength)
+        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_truncate(context, cannonicalPath, toLength)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
 }
@@ -140,12 +143,14 @@ extension SMB2Context {
 // MARK: File operation
 extension SMB2Context {
     func mkdir(_ path: String) throws {
-        let result = smb2_mkdir(context, path)
+        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_mkdir(context, cannonicalPath)
         try POSIXError.throwIfError(result, description: error, default: .EEXIST)
     }
     
     func rmdir(_ path: String) throws {
-        let result = smb2_rmdir(context, path)
+        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let result = smb2_rmdir(context, cannonicalPath)
         try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
@@ -155,8 +160,10 @@ extension SMB2Context {
     }
     
     func rename(_ path: String, to newPath: String) throws {
+        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
+        let cannonicalNewPath = path.replacingOccurrences(of: "/", with: "\\")
         let (result, _) = try async_wait { (cbPtr) -> Int32 in
-            smb2_rename_async(context, path, newPath, SMB2Context.async_handler, cbPtr)
+            smb2_rename_async(context, cannonicalPath, cannonicalNewPath, SMB2Context.async_handler, cbPtr)
         }
         
         try POSIXError.throwIfError(result, description: error, default: .ENOENT)
