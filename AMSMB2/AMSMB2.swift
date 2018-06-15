@@ -13,7 +13,7 @@ public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
 
 /// Implements SMB2 File operations.
 @objc @objcMembers
-public class AMSMB2: NSObject {
+public class AMSMB2: NSObject, NSSecureCoding {
     fileprivate var context: SMB2Context?
     private var smburl: SMB2URL?
     
@@ -34,11 +34,11 @@ public class AMSMB2: NSObject {
      */
     @objc
     public init?(url: URL, domain: String = "", credential: URLCredential?) {
-        guard url.scheme == "smb", let host = url.host else {
+        guard url.scheme?.lowercased() == "smb", let host = url.host else {
             return nil
         }
         let hostLabel = url.host.map({ "_" + $0 }) ?? ""
-        self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: [])
+        self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: .concurrent)
         self.url = url
         
         var workstation: String = ""
@@ -61,6 +61,48 @@ public class AMSMB2: NSObject {
         _user = user
         _password = credential?.password ?? ""
         super.init()
+    }
+    
+    public required init?(coder aDecoder: NSCoder) {
+        guard let url = aDecoder.decodeObject(of: NSURL.self, forKey: "url") as URL? else {
+            aDecoder.failWithError(CocoaError.error(.coderValueNotFound,
+                                                    userInfo: [NSLocalizedDescriptionKey: "URL is not set."]))
+            return nil
+        }
+        guard url.scheme?.lowercased() == "smb" else {
+            aDecoder.failWithError(CocoaError.error(.coderReadCorrupt,
+                                                    userInfo: [NSLocalizedDescriptionKey: "URL is not smb."]))
+            return nil
+        }
+        
+        guard let server = aDecoder.decodeObject(of: NSString.self, forKey: "server") as String? else {
+            aDecoder.failWithError(CocoaError.error(.coderValueNotFound,
+                                                    userInfo: [NSLocalizedDescriptionKey: "server is not set."]))
+            return nil
+        }
+        
+        let hostLabel = url.host.map({ "_" + $0 }) ?? ""
+        self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: .concurrent)
+        self.url = url
+        self._server = server
+        self._domain = aDecoder.decodeObject(of: NSString.self, forKey: "domain") as String? ?? ""
+        self._workstation = aDecoder.decodeObject(of: NSString.self, forKey: "_workstation") as String? ?? ""
+        self._user = aDecoder.decodeObject(of: NSString.self, forKey: "user") as String? ?? "guest"
+        self._password = aDecoder.decodeObject(of: NSString.self, forKey: "password") as String? ?? ""
+        super.init()
+    }
+    
+    open func encode(with aCoder: NSCoder) {
+        aCoder.encode(url, forKey: "url")
+        aCoder.encode(_server, forKey: "server")
+        aCoder.encode(_domain, forKey: "domain")
+        aCoder.encode(_workstation, forKey: "workstation")
+        aCoder.encode(_user, forKey: "user")
+        aCoder.encode(_password, forKey: "password")
+    }
+    
+    public static var supportsSecureCoding: Bool {
+        return true
     }
     
     /**
