@@ -789,22 +789,31 @@ extension AMSMB2 {
     
     fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
         
-        func convertDate(smbtime: UInt64, nsec: UInt64) -> NSDate {
-            let unixtime = TimeInterval(smbtime) + TimeInterval(nsec) / TimeInterval(NSEC_PER_SEC)
-            return NSDate(timeIntervalSince1970: unixtime)
+        func convertDate(unixTime: UInt64, nsec: UInt64) -> NSDate {
+            let time = TimeInterval(unixTime) + TimeInterval(nsec) / TimeInterval(NSEC_PER_SEC)
+            return NSDate(timeIntervalSince1970: time)
         }
         
         dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
-        dic[.fileResourceTypeKey] = stat.smb2_type == SMB2_TYPE_DIRECTORY ? URLFileResourceType.directory : URLFileResourceType.regular
-        dic[.isDirectoryKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_DIRECTORY)
-        dic[.isRegularFileKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_FILE)
         dic[.linkCountKey] = NSNumber(value: stat.smb2_nlink)
         dic[.documentIdentifierKey] = NSNumber(value: stat.smb2_ino)
-        dic[.contentModificationDateKey] = convertDate(smbtime: stat.smb2_mtime,
+        
+        switch Int32(stat.smb2_type) {
+        case SMB2_TYPE_DIRECTORY:
+            dic[.fileResourceTypeKey] = URLFileResourceType.directory
+        case SMB2_TYPE_FILE:
+            dic[.fileResourceTypeKey] = URLFileResourceType.regular
+        default:
+            dic[.fileResourceTypeKey] = URLFileResourceType.unknown
+        }
+        dic[.isDirectoryKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_DIRECTORY)
+        dic[.isRegularFileKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_FILE)
+        
+        dic[.contentModificationDateKey] = convertDate(unixTime: stat.smb2_mtime,
                                                        nsec: stat.smb2_mtime_nsec)
-        dic[.creationDateKey] = convertDate(smbtime: stat.smb2_ctime,
+        dic[.creationDateKey] = convertDate(unixTime: stat.smb2_ctime,
                                             nsec: stat.smb2_ctime_nsec)
-        dic[.contentAccessDateKey] = convertDate(smbtime: stat.smb2_atime,
+        dic[.contentAccessDateKey] = convertDate(unixTime: stat.smb2_atime,
                                                  nsec: stat.smb2_atime_nsec)
     }
     

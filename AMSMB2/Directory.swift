@@ -20,14 +20,11 @@ final class SMB2Directory: Collection {
     private var handle: smb2dir
     
     init(_ path: String, on context: SMB2Context) throws {
-        let (result, cmddata) = try context.async_wait { (context, cbPtr) -> Int32 in
+        let (_, cmddata) = try context.async_wait(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
             smb2_opendir_async(context, path, SMB2Context.async_handler, cbPtr)
         }
         
         guard let handle = OpaquePointer(cmddata) else {
-            if result < 0 {
-                try POSIXError.throwIfError(result, description: context.error, default: .ENOENT)
-            }
             throw POSIXError(.ENOENT)
         }
         

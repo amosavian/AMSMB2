@@ -118,26 +118,23 @@ extension SMB2Context {
 // MARK: Connectivity
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_connect_share_async(context, server, share, user, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         self.isConnected = true
     }
     
     func disconnect() throws {
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_disconnect_share_async(context, SMB2Context.async_handler, cbPtr)
         }
         self.isConnected = false
-        try POSIXError.throwIfError(result, description: error, default: .ECONNABORTED)
     }
     
     func echo() throws -> Bool {
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_echo_async(context, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ECONNREFUSED)
         return true
     }
 }
@@ -147,29 +144,26 @@ extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_stat_64()
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_stat_async(context, cannonicalPath, &st, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func statvfs(_ path: String) throws -> smb2_statvfs {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_statvfs()
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_statvfs_async(context, cannonicalPath, &st, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
         return st
     }
     
     func truncate(_ path: String, toLength: UInt64) throws {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_truncate_async(context, cannonicalPath, toLength, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
 }
 
@@ -177,35 +171,31 @@ extension SMB2Context {
 extension SMB2Context {
     func mkdir(_ path: String) throws {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .EEXIST) { (context, cbPtr) -> Int32 in
             smb2_mkdir_async(context, cannonicalPath, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .EEXIST)
     }
     
     func rmdir(_ path: String) throws {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_rmdir_async(context, cannonicalPath, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
     func unlink(_ path: String) throws {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_unlink_async(context, cannonicalPath, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
     }
     
     func rename(_ path: String, to newPath: String) throws {
         let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         let cannonicalNewPath = path.replacingOccurrences(of: "/", with: "\\")
-        let (result, _) = try async_wait { (context, cbPtr) -> Int32 in
+        try async_wait(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
             smb2_rename_async(context, cannonicalPath, cannonicalNewPath, SMB2Context.async_handler, cbPtr)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ENOENT)
     }
 }
 
@@ -255,7 +245,8 @@ extension SMB2Context {
         cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.commandData = command_data
     }
     
-    func async_wait(execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
+    @discardableResult
+    func async_wait(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
         let cbPtr = CBData.initPointer()
         defer {
             cbPtr.deallocate()
@@ -267,6 +258,7 @@ extension SMB2Context {
         try POSIXError.throwIfError(result, description: error, default: .ECONNRESET)
         try wait_for_reply(cbPtr)
         let cbresult = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.result
+        try POSIXError.throwIfError(cbresult, description: error, default: defaultError)
         let data = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.commandData
         return (cbresult, data)
     }
