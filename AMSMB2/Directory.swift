@@ -20,8 +20,8 @@ final class SMB2Directory: Collection {
     private var handle: smb2dir
     
     init(_ path: String, on context: SMB2Context) throws {
-        let (result, cmddata) = try context.async_wait { (cbPtr) -> Int32 in
-            smb2_opendir_async(context.context, path, SMB2Context.async_handler, cbPtr)
+        let (result, cmddata) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_opendir_async(context, path, SMB2Context.async_handler, cbPtr)
         }
         
         guard let handle = OpaquePointer(cmddata) else {
@@ -36,7 +36,9 @@ final class SMB2Directory: Collection {
     }
     
     deinit {
-        smb2_closedir(context.context, handle)
+        context.withThreadSafeContext { (context) in
+            smb2_closedir(context, handle)
+        }
     }
     
     struct Iterator: IteratorProtocol {

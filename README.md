@@ -17,7 +17,7 @@ You can update your library using this command in AMSMB2 folder:
 git pull
 ```
 
-if you have a git based project, use this command in your projects directory to add this project as a submodule to your project:
+if you have a git based project, use this command in your project's directory to add this project as a submodule to your project:
 
 ```bash
 git submodule add https://github.com/amosavian/AMSMB2
@@ -27,11 +27,9 @@ Then drop `AMSMB2.xcodeproj` to you Xcode workspace and add the framework to you
 
 ## Usage
 
-Just read inline help to find what each function does. It's straightforward.
+Just read inline help to find what each function does. It's straightforward. It's thread safe and any queue.
 
-**For now, operations are not realy async. Any operation will be queued to be performed after the previous operation is completed. Please create mulitple instances of `AMSMB2` in case you need real asynchronous performing.**
-
-To do file operations you must use this template:
+To do listing files in directory and file operations you must use this template:
 
 ```swift
 import AMSMB2
@@ -44,16 +42,54 @@ class SMBClient {
             }
     }
     
-    func moveItem(path: String, to toPath: String, completionHandler: ((_ error: Error?) -> Void)?) {
+    func listDirectory(path: String) {
+        connect { (client, error) in
+            if let error = error {
+                print(error)
+                return
+            }
+            
+            client?.contentOfDirectory(atPath: self.absolutePath(path),
+                                       completionHandler: { (files, error) in
+                if let error = error {
+                    print(error)
+                    return
+                }
+                
+                for entry in files {
+                    print("name: ", entry[.nameKey] as! String,
+                        ", path: ", entry[.pathKey],
+                        ", type: ", entry[.fileResourceTypeKey] as? URLFileResourceType,
+                        ", size: ", entry[.fileSizeKey] as? Int64,
+                        ", modified: ", entry[.contentModificationDateKey],
+                        ", created: ", entry[.creationDateKey]
+                }
+            })
+        }
+    }
+    
+    func moveItem(path: String, to toPath: String) {
         self.connect { (client, error) in
             if let error = error {
-                completionHandler?(error)
+                print(error)
                 return
             }
             
             client?.moveItem(atPath: path, toPath: toPath) { error in
-                completionHandler?(error)
-                client?.disconnectShare() // If your job is finished
+                if let error = error {
+                    print(error)
+                } else {
+                    print("\(path) moved siccessfully."
+                }
+                
+                // Disconnecting is optional, it will be called eventually
+                // when `AMSMB2` object is freed.
+                // You may call it explicitly to detect errors.
+                client?.disconnectShare {
+                    if let error = error {
+                        print(error)
+                    }
+                }
             }
         }
     }
@@ -62,6 +98,6 @@ class SMBClient {
 
 ## License
 
-While this library source code is MIT licensed, but it has static link to libsmb2 which is `LGPL v2.1`, consequently this library becomes `LGPL v2.1`.
+While source code shipped with project is MIT licensed, but it has static link to `libsmb2` which is `LGPL v2.1`, consequently the whole project becomes `LGPL v2.1`.
 
 You **must** link this library dynamically to your app if you intend to distribute your app on App Store.

@@ -43,8 +43,8 @@ final class SMB2FileHandle {
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
-        let (result, cmddata) = try context.async_wait { (cbPtr) -> Int32 in
-            smb2_open_async(context.context, path, flags, SMB2Context.async_handler, cbPtr)
+        let (result, cmddata) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_open_async(context, path, flags, SMB2Context.async_handler, cbPtr)
         }
         
         guard let handle = OpaquePointer(cmddata) else {
@@ -60,24 +60,32 @@ final class SMB2FileHandle {
     
     deinit {
         if isOpen {
-            smb2_close(context.context, handle)
+            _ = context.withThreadSafeContext { (context) in
+                smb2_close(context, handle)
+            }
         }
     }
     
     func close() {
-        smb2_close(context.context, handle)
+        _ = context.withThreadSafeContext { (context) in
+            smb2_close(context, handle)
+        }
         isOpen = false
     }
     
     func fstat() throws -> smb2_stat_64 {
         var st = smb2_stat_64()
-        let result = smb2_fstat(context.context, handle, &st)
+        let (result, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_fstat_async(context, handle, &st, SMB2Context.async_handler, cbPtr)
+        }
         try POSIXError.throwIfError(result, description: context.error, default: .EBADF)
         return st
     }
     
     func ftruncate(toLength: UInt64) throws {
-        let result = smb2_ftruncate(context.context, handle, toLength)
+        let (result, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_ftruncate_async(context, handle, toLength, SMB2Context.async_handler, cbPtr)
+        }
         try POSIXError.throwIfError(result, description: context.error, default: .EIO)
     }
     
@@ -104,7 +112,9 @@ final class SMB2FileHandle {
             buffer.deallocate()
         }
         
-        let result = smb2_read(context.context, handle, buffer, UInt32(bufSize))
+        let (result, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_read_async(context, handle, buffer, UInt32(bufSize), SMB2Context.async_handler, cbPtr)
+        }
         try POSIXError.throwIfError(result, description: context.error, default: .EIO)
         return Data(bytes: buffer, count: Int(result))
     }
@@ -118,7 +128,9 @@ final class SMB2FileHandle {
             buffer.deallocate()
         }
         
-        let result = smb2_pread(context.context, handle, buffer, UInt32(bufSize), offset)
+        let (result, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_pread_async(context, handle, buffer, UInt32(bufSize), offset, SMB2Context.async_handler, cbPtr)
+        }
         try POSIXError.throwIfError(result, description: context.error, default: .EIO)
         return Data(bytes: buffer, count: Int(result))
     }
@@ -139,7 +151,17 @@ final class SMB2FileHandle {
         var errorNo: Int32 = 0
         data.enumerateBytes { (bytes, dindex, stop) in
             guard let baseAddress = bytes.baseAddress else { return }
-            let rc = smb2_write(context.context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count))
+            let rc: Int32
+            do {
+                (rc, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+                    smb2_write_async(context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count), SMB2Context.async_handler, cbPtr)
+                }
+            } catch {
+                errorNo = -(error as! POSIXError).code.rawValue
+                stop = true
+                return
+            }
+            
             if rc > 0 {
                 result += Int(rc)
                 stop = false
@@ -153,21 +175,6 @@ final class SMB2FileHandle {
         return result
     }
     
-    func pwrite_async(data: Data, offset: UInt64) throws -> Int {
-        precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
-        
-        var array = [UInt8](data)
-        let result = try array.withUnsafeMutableBufferPointer { (bytes) -> Int32 in
-            guard let baseAddress = bytes.baseAddress else { return 0 }
-            return try context.async_wait(execute: { (cbPtr) -> Int32 in
-                smb2_pwrite_async(context.context, handle, baseAddress, UInt32(bytes.count), offset, SMB2Context.async_handler, cbPtr)
-            }).result
-        }
-        
-        try POSIXError.throwIfError(result, description: context.error, default: .EIO)
-        return Int(result)
-    }
-    
     func pwrite(data: Data, offset: UInt64) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
@@ -175,7 +182,17 @@ final class SMB2FileHandle {
         var errorNo: Int32 = 0
         data.enumerateBytes { (bytes, dindex, stop) in
             guard let baseAddress = bytes.baseAddress else { return }
-            let rc = smb2_pwrite(context.context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count), offset + UInt64(dindex))
+            let rc: Int32
+            do {
+                (rc, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+                    smb2_pwrite_async(context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count), offset + UInt64(dindex), SMB2Context.async_handler, cbPtr)
+                }
+            } catch {
+                errorNo = -(error as! POSIXError).code.rawValue
+                stop = true
+                return
+            }
+            
             if rc > 0 {
                 result += Int(rc)
                 stop = false
@@ -190,7 +207,9 @@ final class SMB2FileHandle {
     }
     
     func fsync() throws {
-        let result = smb2_fsync(context.context, handle)
+        let (result, _) = try context.async_wait { (context, cbPtr) -> Int32 in
+            smb2_fsync_async(context, handle, SMB2Context.async_handler, cbPtr)
+        }
         try POSIXError.throwIfError(result, description: context.error, default: .EIO)
     }
 }
