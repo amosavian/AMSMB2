@@ -788,12 +788,24 @@ extension AMSMB2 {
     }
     
     fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
+        
+        func convertDate(smbtime: UInt64, nsec: UInt64) -> NSDate {
+            let unixtime = TimeInterval(smbtime) + TimeInterval(nsec) / TimeInterval(NSEC_PER_SEC)
+            return NSDate(timeIntervalSince1970: unixtime)
+        }
+        
         dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
         dic[.fileResourceTypeKey] = stat.smb2_type == SMB2_TYPE_DIRECTORY ? URLFileResourceType.directory : URLFileResourceType.regular
-        let modified = TimeInterval(stat.smb2_mtime) + TimeInterval(stat.smb2_mtime_nsec) / TimeInterval(NSEC_PER_SEC)
-        dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: modified)
-        let created = TimeInterval(stat.smb2_ctime) + TimeInterval(stat.smb2_ctime_nsec) / TimeInterval(NSEC_PER_SEC)
-        dic[.contentModificationDateKey] = NSDate(timeIntervalSince1970: created)
+        dic[.isDirectoryKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_DIRECTORY)
+        dic[.isRegularFileKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_FILE)
+        dic[.linkCountKey] = NSNumber(value: stat.smb2_nlink)
+        dic[.documentIdentifierKey] = NSNumber(value: stat.smb2_ino)
+        dic[.contentModificationDateKey] = convertDate(smbtime: stat.smb2_mtime,
+                                                       nsec: stat.smb2_mtime_nsec)
+        dic[.creationDateKey] = convertDate(smbtime: stat.smb2_ctime,
+                                            nsec: stat.smb2_ctime_nsec)
+        dic[.contentAccessDateKey] = convertDate(smbtime: stat.smb2_atime,
+                                                 nsec: stat.smb2_atime_nsec)
     }
     
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
