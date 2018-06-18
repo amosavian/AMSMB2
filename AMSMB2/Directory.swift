@@ -57,7 +57,7 @@ final class SMB2Directory: Collection {
     }
     
     var endIndex: Int {
-        return Swift.max(self.count - 1, 0)
+        return self.count
     }
     
     var count: Int {

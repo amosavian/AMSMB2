@@ -14,6 +14,15 @@ typealias smb2fh = OpaquePointer
 let O_NOOVERWRITE: Int32 = 0x040000000
 
 final class SMB2FileHandle {
+    
+    struct SeekWhence: RawRepresentable {
+        var rawValue: Int32
+        
+        static let set     = SeekWhence(rawValue: SEEK_SET)
+        static let current = SeekWhence(rawValue: SEEK_CUR)
+        static let end     = SeekWhence(rawValue: SEEK_END)
+    }
+    
     private var context: SMB2Context
     private let handle: smb2fh
     private var isOpen: Bool
@@ -92,13 +101,16 @@ final class SMB2FileHandle {
         return min(maxReadSize, 65000)
     }
     
-    func lseek(offset: Int64) throws -> Int64 {
-        let result = smb2_lseek(context.context, handle, offset, SEEK_SET, nil)
+    @discardableResult
+    func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
+        let result = smb2_lseek(context.context, handle, offset, whence.rawValue, nil)
         try POSIXError.throwIfError(Int32(exactly: result) ?? 0, description: context.error, default: .ESPIPE)
         return result
     }
     
     func read(length: Int = 0) throws -> Data {
+        precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
+        
         let bufSize = length > 0 ? length : optimizedReadSize
         var buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         buffer.initialize(repeating: 0, count: bufSize)
@@ -114,6 +126,8 @@ final class SMB2FileHandle {
     }
     
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
+        precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
+        
         let bufSize = length > 0 ? length : optimizedReadSize
         var buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         buffer.initialize(repeating: 0, count: bufSize)

@@ -86,7 +86,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
         self.url = url
         self._server = server
         self._domain = aDecoder.decodeObject(of: NSString.self, forKey: "domain") as String? ?? ""
-        self._workstation = aDecoder.decodeObject(of: NSString.self, forKey: "_workstation") as String? ?? ""
+        self._workstation = aDecoder.decodeObject(of: NSString.self, forKey: "workstation") as String? ?? ""
         self._user = aDecoder.decodeObject(of: NSString.self, forKey: "user") as String? ?? "guest"
         self._password = aDecoder.decodeObject(of: NSString.self, forKey: "password") as String? ?? ""
         super.init()
@@ -194,8 +194,9 @@ public class AMSMB2: NSObject, NSSecureCoding {
                 if recvBindData[44] > 0 || recvBindData[45] > 0 {
                     // Ack result is not acceptance (0x0000)
                     let errorCode = recvBindData[44] + (recvBindData[45] << 8)
-                    try POSIXError.throwIfError(Int32.min, description:
-                        "Binding failure: \(String.init(errorCode, radix: 16, uppercase: false))", default: .EBADMSG)
+                    let errorCodeString = String(errorCode, radix: 16, uppercase: false)
+                    throw POSIXError(.EBADMSG, userInfo: [
+                        NSLocalizedFailureReasonErrorKey: "Binding failure: \(errorCodeString)"])
                 }
                 
                 let serverName = String(utf8String: context.context.pointee.server)!
@@ -475,9 +476,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                 var offset = offset
                 var result = Data()
                 var eof = false
-                guard try file.lseek(offset: offset) == offset else {
-                    throw POSIXError(.EOVERFLOW)
-                }
+                try file.lseek(offset: offset, whence: .set)
                 while !eof {
                     let data = try file.read()
                     result.append(data)
@@ -522,9 +521,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                 
                 var offset = offset
                 var eof = false
-                guard try file.lseek(offset: offset) == offset else {
-                    throw POSIXError(.EOVERFLOW)
-                }
+                try file.lseek(offset: offset, whence: .set)
                 while !eof {
                     let data = try file.read()
                     if data.isEmpty {
