@@ -1,12 +1,6 @@
 #!/bin/sh
 
 for i in "$@" ; do
-    if [[ $i == "--without-ssl" ]] ; then
-        WITHOUT_SSL="YES"
-        echo "Building without OpenSSL."
-        break
-    fi
-
     if [[ $i == "--with-libkrb5" ]] ; then
         WITH_KRB5="YES"
         echo "Building with Kerberos 5."
@@ -34,12 +28,6 @@ for pkg in cmake automake autoconf libtool; do
     fi
 done
 
-if [[ -z "${WITHOUT_SSL}" ]]; then
-    ./openssl-build.sh
-else
-    ./openssl-build.sh --without-ssl
-fi
-
 if [ ! -d libsmb2 ]; then
   git clone https://github.com/sahlberg/libsmb2
   cd libsmb2
@@ -51,7 +39,7 @@ fi
 
 export MINSDKVERSION=9.0
 export USECLANG=1
-export CFLAGS="-fembed-bitcode -DHAVE_OPENSSL_LIBS=1 -DHAVE_SOCKADDR_LEN=1 -DHAVE_SOCKADDR_STORAGE=1"
+export CFLAGS="-fembed-bitcode -DHAVE_SOCKADDR_LEN=1 -DHAVE_SOCKADDR_STORAGE=1"
 export CPPFLAGS="-I${PACKAGE_DIRECTORY}/buildtools/include"
 #export CPPFLAGS="-I/usr/local/opt/openssl/include"
 export LDFLAGS="-L${LIB_OUTPUT}"
