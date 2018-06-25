@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		790FA33920B2CC5600578C8A /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 790FA33820B2CC5600578C8A /* Extensions.swift */; };
-		79A3006B20B947B500E67248 /* MSRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A3006A20B947B500E67248 /* MSRPC.swift */; };
 		79FDFE5E20AD439F00749FB5 /* AMSMB2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFE5420AD439F00749FB5 /* AMSMB2.framework */; };
 		79FDFE6320AD439F00749FB5 /* AMSMB2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFE6220AD439F00749FB5 /* AMSMB2Tests.swift */; };
 		79FDFE6520AD439F00749FB5 /* AMSMB2.h in Headers */ = {isa = PBXBuildFile; fileRef = 79FDFE5720AD439F00749FB5 /* AMSMB2.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -34,7 +33,6 @@
 
 /* Begin PBXFileReference section */
 		790FA33820B2CC5600578C8A /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
-		79A3006A20B947B500E67248 /* MSRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MSRPC.swift; sourceTree = "<group>"; };
 		79FDFE5420AD439F00749FB5 /* AMSMB2.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AMSMB2.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		79FDFE5720AD439F00749FB5 /* AMSMB2.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AMSMB2.h; sourceTree = "<group>"; };
 		79FDFE5820AD439F00749FB5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -102,7 +100,6 @@
 				79FDFE5820AD439F00749FB5 /* Info.plist */,
 				79FDFE5720AD439F00749FB5 /* AMSMB2.h */,
 				79FDFE6E20AD45C100749FB5 /* AMSMB2.swift */,
-				79A3006A20B947B500E67248 /* MSRPC.swift */,
 				79FDFE7B20AD545D00749FB5 /* Context.swift */,
 				79FDFF0920ADA2B000749FB5 /* Directory.swift */,
 				790FA33820B2CC5600578C8A /* Extensions.swift */,
@@ -244,7 +241,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				79A3006B20B947B500E67248 /* MSRPC.swift in Sources */,
 				79FDFE7C20AD545D00749FB5 /* Context.swift in Sources */,
 				790FA33920B2CC5600578C8A /* Extensions.swift in Sources */,
 				79FDFE6F20AD45C100749FB5 /* AMSMB2.swift in Sources */,

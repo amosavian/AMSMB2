@@ -151,6 +151,21 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
+     Send echo to server. Use it to prevent timeout or check connectivity.
+     */
+    @objc
+    public func echo(completionHandler: SimpleCompletionHandler) {
+        q.async {
+            do {
+                try self.context?.echo()
+                completionHandler?(nil)
+            } catch {
+                completionHandler?(error)
+            }
+        }
+    }
+    
+    /**
      Enumerates shares' list on server.
      
      - Parameters:
@@ -178,34 +193,12 @@ public class AMSMB2: NSObject, NSSecureCoding {
                     try? context.disconnect()
                 }
                 
-                // Connection to server service.
-                let srvsvc = try SMB2FileHandle(forNamedPipeAtPath: "srvsvc", on: context)
-                
-                // Sending bind command to DCE-RPC.
-                _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
-                // Reading bind command result to DCE-RPC.
-                let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
-                // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
-                if recvBindData.count < 68 {
-                    try POSIXError.throwIfError(Int32.min, description: "Binding failure", default: .EBADMSG)
+                var shares = try context.shareEnum(server: server)
+                if enumerateHidden {
+                    shares = shares.filter { $0.type & 0x00ffffff == SHARE_TYPE_DISKTREE }
+                } else {
+                    shares = shares.filter { $0.type == SHARE_TYPE_DISKTREE }
                 }
-                
-                // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
-                if recvBindData[44] > 0 || recvBindData[45] > 0 {
-                    // Ack result is not acceptance (0x0000)
-                    let errorCode = recvBindData[44] + (recvBindData[45] << 8)
-                    let errorCodeString = String(errorCode, radix: 16, uppercase: false)
-                    throw POSIXError(.EBADMSG, userInfo: [
-                        NSLocalizedFailureReasonErrorKey: "Binding failure: \(errorCodeString)"])
-                }
-                
-                let serverName = String(utf8String: context.context.pointee.server)!
-                // Send NetShareEnum reqeust, Level 1 mean we need share name and remark.
-                _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: serverName), offset: 0)
-                // Reading NetShareEnum result.
-                let recvData = try srvsvc.pread(offset: 0)
-                // Parse result into Array.
-                let shares = try MSRPC.parseNetShareEnumAllLevel1(data: recvData, enumerateSpecial: enumerateHidden)
                 completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
             } catch {
                 completionHandler([], [], error)

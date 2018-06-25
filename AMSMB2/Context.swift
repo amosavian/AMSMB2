@@ -8,6 +8,7 @@
 
 import Foundation
 import SMB2
+import SMB2.Raw
 
 final class SMB2Context {
     struct NegotiateSigning: OptionSet {
@@ -131,11 +132,41 @@ extension SMB2Context {
         self.isConnected = false
     }
     
+    @discardableResult
     func echo() throws -> Bool {
         try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_echo_async(context, SMB2Context.async_handler, cbPtr)
         }
         return true
+    }
+}
+
+// MARK: DCE-RPC
+extension SMB2Context {
+    func shareEnum(server: String) throws -> [(name: String, type: UInt32, comment: String)] {
+        let (_, cmddata) = try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+            smb2_share_enum_async(context, server, SMB2Context.async_handler, cbPtr)
+        }
+        
+        guard let opaque = OpaquePointer(cmddata) else {
+            throw POSIXError(.ENOENT)
+        }
+        
+        let rep = UnsafeMutablePointer<srvsvc_netshareenumall_rep>(opaque)
+        defer {
+            smb2_free_data(context, rep)
+        }
+        
+        var result = [(name: String, type: UInt32, comment: String)]()
+        for i in 0..<Int(rep.pointee.ctr.pointee.ctr1.count) {
+            let node = rep.pointee.ctr.pointee.ctr1.array.advanced(by: i)
+            let name = String(cString: node.pointee.name)
+            let type = node.pointee.type
+            let comment = String(cString: node.pointee.comment)
+            result.append((name: name, type: type, comment: comment))
+        }
+        
+        return result
     }
 }
 
