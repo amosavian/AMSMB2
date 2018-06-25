@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   #
 
   s.name         = "AMSMB2"
-  s.version      = "1.0.0"
+  s.version      = "1.1.0"
   s.summary      = "Swift framework to connect SMB2/3 shares"
 
   # This description is used to generate tags and improve search results.
@@ -107,7 +107,7 @@ Pod::Spec.new do |s|
   # s.resource  = "icon.png"
   # s.resources = "Resources/*.png"
 
-  s.preserve_paths = "libsmb2/include/module.modulemap"
+  s.preserve_paths = "libsmb2/include/module.modulemap", "libsmb2/include/libsmb2-private.h", "libsmb2/include/smb2/libsmb2-raw.h", "libsmb2/include/smb2/libsmb2.h", "libsmb2/include/smb2/smb2-errors.h", "libsmb2/include/smb2/smb2.h"
 
 
   # ――― Project Linking ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
