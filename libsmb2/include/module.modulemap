@@ -5,7 +5,7 @@ module SMB2 [extern_c] {
         header "smb2/smb2-errors.h"
     }
     
-    module SMB2Interal {
+    module SMB2Internal {
         header "libsmb2-private.h"
     }
     

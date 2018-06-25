@@ -1,0 +1,48 @@
+language: objective-c
+osx_image: xcode9.4
+xcode_project: $PROJECTNAME.xcodeproj
+env:
+  global: 
+  - PROJECT="$PROJECTNAME.xcodeproj"
+  - $SCHEME="$PROJECTNAME"
+  - FRAMEWORK_NAME="$PROJECTNAME.framework"
+
+before_install:
+  - gem install xcpretty --no-rdoc --no-ri --no-document --quiet
+  - gem install cocoapods --no-rdoc --no-ri --no-document --quiet
+  # - gem install xcpretty-travis-formatter
+
+script:
+  - set -o pipefail
+  - xcodebuild -version
+  - swift package generate-xcodeproj
+  - xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -configuration Debug ONLY_ACTIVE_ARCH=NO build | xcpretty
+  - xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphoneos -configuration Release ONLY_ACTIVE_ARCH=NO build | xcpretty
+  - pod lib lint --quick
+
+after_success:
+  # Run `pod trunk push` if specified
+  - if [ -n "$TRAVIS_TAG" ]; then
+      pod trunk push --allow-warnings;
+    fi
+
+#   - bash <(curl -s https://codecov.io/bash)
+before_deploy:
+  - if [ -n "$TRAVIS_TAG" ]; then
+      brew update;
+      brew outdated carthage || brew upgrade carthage;
+      carthage version;
+      swift package generate-xcodeproj;
+      carthage build  --platform ios --no-skip-current --verbose;
+      carthage archive $PROJECTNAME;
+    fi
+
+deploy:
+  provider: releases
+  api_key: "$GITHUBTOKEN"
+  file: $FRAMEWORK_NAME.zip
+  skip_cleanup: true
+  on:
+    repo: amosavian/$PROJECTNAME
+    tags: true
+
