@@ -15,7 +15,6 @@ before_install:
 script:
   - set -o pipefail
   - xcodebuild -version
-  - swift package generate-xcodeproj
   - xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -configuration Debug ONLY_ACTIVE_ARCH=NO build | xcpretty
   - xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphoneos -configuration Release ONLY_ACTIVE_ARCH=NO build | xcpretty
   - pod lib lint --quick
@@ -32,8 +31,7 @@ before_deploy:
       brew update;
       brew outdated carthage || brew upgrade carthage;
       carthage version;
-      swift package generate-xcodeproj;
-      carthage build  --platform ios --no-skip-current --verbose;
+      carthage build --no-skip-current --verbose;
       carthage archive $PROJECTNAME;
     fi
 
