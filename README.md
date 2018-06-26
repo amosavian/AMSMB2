@@ -5,6 +5,22 @@ This is small Swift library for iOS which wraps [libsmb2](https://github.com/sah
 
 ## Install
 
+### Cocoapods / Carthage
+
+Add this line to your pods file:
+
+```ruby
+pod "AMSMB2"
+```
+
+Or add this to Cartfile:
+
+```
+github "amosavian/AMSMB2"
+```
+
+###Manually
+
 To have latest updates with ease, use this command on terminal to get a clone:
 
 ```bash
