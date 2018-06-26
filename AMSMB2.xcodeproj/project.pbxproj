@@ -17,8 +17,6 @@
 		79FDFF0120AD852200749FB5 /* FileHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFF0020AD852200749FB5 /* FileHandle.swift */; };
 		79FDFF0820AD925000749FB5 /* libsmb2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFF0720AD925000749FB5 /* libsmb2.a */; };
 		79FDFF0A20ADA2B000749FB5 /* Directory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFF0920ADA2B000749FB5 /* Directory.swift */; };
-		79FDFF8220AF991000749FB5 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFF7620AF715100749FB5 /* libcrypto.a */; };
-		79FDFF8320AF991000749FB5 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFF7720AF715200749FB5 /* libssl.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,8 +57,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				79FDFF0820AD925000749FB5 /* libsmb2.a in Frameworks */,
-				79FDFF8220AF991000749FB5 /* libcrypto.a in Frameworks */,
-				79FDFF8320AF991000749FB5 /* libssl.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

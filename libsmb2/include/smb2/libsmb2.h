@@ -19,14 +19,14 @@
 #ifndef _LIBSMB2_H_
 #define _LIBSMB2_H_
 
-#ifndef UINT64_MAX
-#include <stdint.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifndef UINT64_MAX
+#include <stdint.h>
+#endif
+    
 struct smb2_context;
 
 /*
@@ -871,7 +871,7 @@ struct srvsvc_netshareenumall_rep {
  *          This pointer must be freed using smb2_free_data().
  * -errno : An error occured.
  */
-int smb2_share_enum_async(struct smb2_context *smb2, const char *server,
+int smb2_share_enum_async(struct smb2_context *smb2,
                           smb2_command_cb cb, void *cb_data);
 
 #endif /* !_LIBSMB2_H_ */

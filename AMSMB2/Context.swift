@@ -143,9 +143,9 @@ extension SMB2Context {
 
 // MARK: DCE-RPC
 extension SMB2Context {
-    func shareEnum(server: String) throws -> [(name: String, type: UInt32, comment: String)] {
+    func shareEnum() throws -> [(name: String, type: UInt32, comment: String)] {
         let (_, cmddata) = try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
-            smb2_share_enum_async(context, server, SMB2Context.async_handler, cbPtr)
+            smb2_share_enum_async(context, SMB2Context.async_handler, cbPtr)
         }
         
         guard let opaque = OpaquePointer(cmddata) else {
