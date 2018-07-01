@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   #
 
   s.name         = "AMSMB2"
-  s.version      = "1.2.1"
+  s.version      = "1.3.0"
   s.summary      = "Swift framework to connect SMB2/3 shares"
 
   # This description is used to generate tags and improve search results.
@@ -90,7 +90,10 @@ Pod::Spec.new do |s|
   #  Not including the public_header_files will make all headers public.
   #
 
-  s.vendored_libraries = "libsmb2/lib/libcrypto.a", "libsmb2/lib/libssl.a", "libsmb2/lib/libsmb2.a"
+  s.ios.vendored_libraries = "libsmb2/lib/libsmb2-ios.a"
+  s.osx.vendored_libraries = "libsmb2/lib/libsmb2-macos.a"
+  s.tvos.vendored_libraries = "libsmb2/lib/libsmb2-tvos.a"
+  s.watchos.vendored_libraries = "libsmb2/lib/libsmb2-watchos.a"
   s.source_files  = "AMSMB2/**/*.swift"
   s.xcconfig = { 'LIBRARY_SEARCH_PATHS' => "$(PODS_ROOT)/AMSMB2/libsmb2/lib", 'SWIFT_INCLUDE_PATHS' => "${PODS_ROOT}/AMSMB2/libsmb2/**" }
   #s.exclude_files = "AMSMB2/Exclude"

@@ -6,7 +6,7 @@
 //  Copyright © 2018 Mousavian. Distributed under MIT license.
 //
 
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 
 //! Project version number for AMSMB2.
 FOUNDATION_EXPORT double AMSMB2VersionNumber;

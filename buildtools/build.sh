@@ -29,17 +29,16 @@ for pkg in cmake automake autoconf libtool; do
 done
 
 if [ ! -d libsmb2 ]; then
-  git clone https://github.com/sahlberg/libsmb2
-  cd libsmb2
-  ./bootstrap
+    git clone https://github.com/sahlberg/libsmb2
+    cd libsmb2
+    echo "Bootstrapping..."
+    ./bootstrap &> /dev/null
 else
-  cd libsmb2
+    cd libsmb2
 fi
 
-export OS=ios
-export MINSDKVERSION=9.0
 export USECLANG=1
-export CFLAGS="-fembed-bitcode -DHAVE_SOCKADDR_LEN=1 -DHAVE_SOCKADDR_STORAGE=1"
+export CFLAGS="-fembed-bitcode -Wno-everything -DHAVE_SOCKADDR_LEN=1 -DHAVE_SOCKADDR_STORAGE=1"
 export CPPFLAGS="-I${PACKAGE_DIRECTORY}/buildtools/include"
 #export CPPFLAGS="-I/usr/local/opt/openssl/include"
 export LDFLAGS="-L${LIB_OUTPUT}"
@@ -47,11 +46,27 @@ export LDFLAGS="-L${LIB_OUTPUT}"
 
 echo "Making libsmb2 static libararies"
 if [[ -z "${WITH_KRB5}" ]]; then
-    ../autoframework libsmb2.a --without-libkrb5 --disable-werror > /dev/null
+    FRPARAM="--without-libkrb5 --disable-werror"
 else
-    ../autoframework libsmb2.a --disable-werror  > /dev/null
+    FRPARAM="--disable-werror"
 fi
 
+echo "  Build iOS"
+export OS=ios
+export MINSDKVERSION=9.0
+../autoframework libsmb2 $FRPARAM > /dev/null
+echo "  Build macOS"
+export OS=macos
+export MINSDKVERSION=10.11
+../autoframework libsmb2 $FRPARAM > /dev/null
+echo "  Build tvOS"
+export OS=tvos
+export MINSDKVERSION=9.0
+../autoframework libsmb2 $FRPARAM > /dev/null
+echo "  Build watchOS"
+export OS=watchos
+export MINSDKVERSION=2.0
+../autoframework libsmb2 $FRPARAM > /dev/null
 cd ..
 
 echo  "Copying additional headers"

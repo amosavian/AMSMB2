@@ -36,27 +36,44 @@ fi
 STATICDIR="$PREFIX/Static"
 
 if [ -z "$ARCHS" ]; then
-  ARCHS="i386 x86_64 armv7 armv7s arm64"
+  case $OS in
+    macos | macosx )
+      ARCHS="x86_64"
+      ;;
+    tvos )
+      ARCHS="x86_64 arm64"
+      ;;
+    watchos )
+      ARCHS="i386 armv7 armv7k"
+      ;;
+    ios )
+      ARCHS="i386 x86_64 armv7 armv7s arm64"
+      ;;
+    * )
+      OS=ios
+      ARCHS="i386 x86_64 armv7 armv7s arm64"
+      ;;
+  esac
 fi
 
 # Build all architectures
 for ARCH in $ARCHS; do
   make distclean || true
-  PREFIX="$STATICDIR/$ARCH" $ICONFIGURE $ARCH $@
+  PREFIX="$STATICDIR/$ARCH-$OS" $ICONFIGURE $ARCH $@
   make
   make install
 done
 
 # Install header files
-PREFIX="$STATICDIR/$ARCH" $ICONFIGURE $ARCH --includedir="$LIB_OUTPUT/../include" $@
+PREFIX="$STATICDIR/$ARCH-$OS" $ICONFIGURE $ARCH --includedir="$LIB_OUTPUT/../include" $@
 make
 make install
 
 # Create multiarch archive
 for ARCH in $ARCHS; do
-  LIPOARCHS="$LIPOARCHS -arch $ARCH $STATICDIR/$ARCH/lib/$LIBARCHIVE"
+  LIPOARCHS="$LIPOARCHS -arch $ARCH $STATICDIR/$ARCH-$OS/lib/$LIBARCHIVE.a"
 done
-lipo -create -output "$LIB_OUTPUT/$LIBARCHIVE" $LIPOARCHS
+lipo -create -output "$LIB_OUTPUT/$LIBARCHIVE-$OS.a" $LIPOARCHS
 
 echo "Success!"
 echo "Built $FRAMEWORK for architectures: $ARCHS"
