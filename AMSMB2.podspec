@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   #
 
   s.name         = "AMSMB2"
-  s.version      = "1.3.0"
+  s.version      = "1.3.1"
   s.summary      = "Swift framework to connect SMB2/3 shares"
 
   # This description is used to generate tags and improve search results.
@@ -68,9 +68,9 @@ Pod::Spec.new do |s|
   #  When using multiple platforms
   s.swift_version = "4.1"
   s.ios.deployment_target = "9.0"
-  # s.osx.deployment_target = "10.11"
-  # s.watchos.deployment_target = "2.0"
-  # s.tvos.deployment_target = "9.0"
+  s.osx.deployment_target = "10.11"
+  s.watchos.deployment_target = "2.0"
+  s.tvos.deployment_target = "9.0"
 
 
   # ――― Source Location ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #

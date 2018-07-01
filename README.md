@@ -1,7 +1,16 @@
 # AMSMB2
 
 
-This is small Swift library for iOS which wraps [libsmb2](https://github.com/sahlberg/libsmb2) and allows to connect a SMB2/3 share and do file operation.
+This is small Swift library for iOS, macOS, tvOS and watchOS which wraps [libsmb2](https://github.com/sahlberg/libsmb2) and allows to connect a SMB2/3 share and do file operation.
+
+[![Swift Version][swift-image]][swift-url]
+[![Platform][platform-image]](#)
+[![License][license-image]][license-url]
+
+[![Build Status][travis-image]][travis-url]
+[![Release version][release-image]][release-url]
+[![CocoaPods version][pod-release-image]][cocoapods]
+[![Carthage compatible][carthage-image]](https://github.com/Carthage/Carthage)
 
 ## Install
 
@@ -117,3 +126,18 @@ class SMBClient {
 While source code shipped with project is MIT licensed, but it has static link to `libsmb2` which is `LGPL v2.1`, consequently the whole project becomes `LGPL v2.1`.
 
 You **must** link this library dynamically to your app if you intend to distribute your app on App Store.
+
+[cocoapods]: https://cocoapods.org/pods/AMSMB2
+[swift-image]: https://img.shields.io/badge/swift-4.1-orange.svg
+[swift-url]: https://swift.org/
+[platform-image]: https://img.shields.io/cocoapods/p/AMSMB2.svg
+[license-image]: https://img.shields.io/github/license/amosavian/AMSMB2.svg
+[license-url]: LICENSE
+[travis-image]: https://travis-ci.com/amosavian/AMSMB2.svg
+[travis-url]: https://travis-ci.com/amosavian/AMSMB2
+[release-url]: https://github.com/amosavian/AMSMB2/releases
+[release-image]: https://img.shields.io/github/release/amosavian/AMSMB2.svg
+[pod-release-image]: https://img.shields.io/cocoapods/v/AMSMB2.svg
+[carthage-image]: https://img.shields.io/badge/Carthage-compatible-4BC51D.svg
+[cocoapods-downloads]: https://img.shields.io/cocoapods/dt/AMSMB2.svg
+[cocoapods-apps]: https://img.shields.io/cocoapods/at/AMSMB2.svg
