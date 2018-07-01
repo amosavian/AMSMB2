@@ -2,8 +2,7 @@
 set -e
 
 usage () {
-  echo "Usage: [VARIABLE...] $(basename $0) framework libname"
-  echo "  framework   Name of the framework to create"
+  echo "Usage: [VARIABLE...] $(basename $0) libname"
   echo "  libname     Name of the .a library"
   echo ""
   echo "  VARIABLEs are:"
@@ -16,23 +15,25 @@ usage () {
 }
 
 # Sanity checks
-if [ "$#" -lt 2 ]; then
+if [ "$#" -lt 1 ]; then
   usage
 fi
 
 ICONFIGURE="$(dirname $0)/iconfigure"
 
-FRAMEWORK=$1
-LIBARCHIVE=$2
+LIBARCHIVE=$1
 
-shift 2
+shift 1
+
+if [ -z "$LIB_OUTPUT" ]; then
+  LIB_OUTPUT="$(pwd)"
+fi
 
 if [ -z "$PREFIX" ]; then
   PREFIX="$(pwd)"
 fi
 
 STATICDIR="$PREFIX/Static"
-FRAMEWORKDIR="$PREFIX/Frameworks/$FRAMEWORK.framework"
 
 if [ -z "$ARCHS" ]; then
   ARCHS="i386 x86_64 armv7 armv7s arm64"
@@ -47,7 +48,7 @@ for ARCH in $ARCHS; do
 done
 
 # Install header files
-PREFIX="$STATICDIR/$ARCH" $ICONFIGURE $ARCH --includedir="$FRAMEWORKDIR/Headers" $@
+PREFIX="$STATICDIR/$ARCH" $ICONFIGURE $ARCH --includedir="$LIB_OUTPUT/../include" $@
 make
 make install
 
@@ -55,7 +56,7 @@ make install
 for ARCH in $ARCHS; do
   LIPOARCHS="$LIPOARCHS -arch $ARCH $STATICDIR/$ARCH/lib/$LIBARCHIVE"
 done
-lipo -create -output "$FRAMEWORKDIR/$FRAMEWORK" $LIPOARCHS
+lipo -create -output "$LIB_OUTPUT/$LIBARCHIVE" $LIPOARCHS
 
 echo "Success!"
 echo "Built $FRAMEWORK for architectures: $ARCHS"

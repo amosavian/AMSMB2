@@ -37,7 +37,7 @@ if [ ! -z "$CHOST" ]; then
   export CHOST
 else
   case $ARCH in
-    armv7 | armv7s )
+    armv7 | armv7k | armv7s )
       export CHOST=arm-apple-darwin*
       ;;
     arm64 )
@@ -48,7 +48,7 @@ else
       ;;
     * )
       usage
-    ;;
+      ;;
   esac
 fi
 
@@ -56,16 +56,50 @@ fi
 if [ ! -z "$SDK" ]; then
   export SDK
 else
-  case $ARCH in
-    armv7 | armv7s | arm64 )
-      export SDK=iphoneos
+  case $OS in
+    macos | macosx )
+      export SDK=macosx
       ;;
-    i386 | x86_64 )
-      export SDK=iphonesimulator
+    tvos )
+      case $ARCH in
+        i386 | x86_64 )
+          export SDK=appletvsimulator
+          ;;
+        * )
+          export SDK=appletvos
+          ;;
+       esac
+       ;;
+    watchos )
+      case $ARCH in
+        i386 | x86_64 )
+          export SDK=watchsimulator
+          ;;
+        * )
+          export SDK=watchos
+          ;;
+       esac
+       ;;
+    ios )
+      case $ARCH in
+        i386 | x86_64 )
+          export SDK=iphonesimulator
+          ;;
+        * )
+          export SDK=iphoneos
+          ;;
+      esac
       ;;
     * )
-      usage
-    ;;
+      case $ARCH in
+        i386 | x86_64 )
+          export SDK=iphonesimulator
+          ;;
+        * )
+          export SDK=iphoneos
+          ;;
+      esac
+      ;;
   esac
 fi
 
@@ -104,8 +138,8 @@ else
 fi
 
 # Flags
-export CFLAGS="$CFLAGS -arch $ARCH -isysroot $SDKROOT -I$PREFIX/include -miphoneos-version-min=$MINSDKVERSION"
-export CPPFLAGS="$CPPFLAGS -arch $ARCH -isysroot $SDKROOT -I$PREFIX/include -miphoneos-version-min=$MINSDKVERSION"
+export CFLAGS="$CFLAGS -arch $ARCH -isysroot $SDKROOT -I$PREFIX/include -m$SDK-version-min=$MINSDKVERSION"
+export CPPFLAGS="$CPPFLAGS -arch $ARCH -isysroot $SDKROOT -I$PREFIX/include -m$SDK-version-min=$MINSDKVERSION"
 export CXXFLAGS="$CXXFLAGS -arch $ARCH -isysroot $SDKROOT -I$PREFIX/include"
 export LDFLAGS="$LDFLAGS -arch $ARCH -isysroot $SDKROOT -L$PREFIX/lib"
 export PKG_CONFIG_PATH="$PKG_CONFIG_PATH":"$SDKROOT/usr/lib/pkgconfig":"$PREFIX/lib/pkgconfig"
