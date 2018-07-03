@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   #
 
   s.name         = "AMSMB2"
-  s.version      = "1.3.1"
+  s.version      = "1.3.2"
   s.summary      = "Swift framework to connect SMB2/3 shares"
 
   # This description is used to generate tags and improve search results.
@@ -56,6 +56,7 @@ Pod::Spec.new do |s|
   s.social_media_url   = "https://twitter.com/amosavian"
   # Or just: s.author    = "Amir Abbas"
 
+
   # ――― Platform Specifics ――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
   #
   #  If this Pod runs only on iOS or OS X, then specify the platform and
@@ -69,8 +70,8 @@ Pod::Spec.new do |s|
   s.swift_version = "4.1"
   s.ios.deployment_target = "9.0"
   s.osx.deployment_target = "10.11"
-  s.watchos.deployment_target = "2.0"
   s.tvos.deployment_target = "9.0"
+  # s.watchos.deployment_target = "2.0"
 
 
   # ――― Source Location ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
@@ -98,6 +99,7 @@ Pod::Spec.new do |s|
   s.xcconfig = { 'LIBRARY_SEARCH_PATHS' => "$(PODS_ROOT)/AMSMB2/libsmb2/lib", 'SWIFT_INCLUDE_PATHS' => "${PODS_ROOT}/AMSMB2/libsmb2/**" }
   #s.exclude_files = "AMSMB2/Exclude"
   # s.public_header_files = "libsmb2/include/**/*.h"
+
 
   # ――― Resources ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
   #

@@ -63,10 +63,6 @@ echo "  Build tvOS"
 export OS=tvos
 export MINSDKVERSION=9.0
 ../autoframework libsmb2 $FRPARAM > /dev/null
-echo "  Build watchOS"
-export OS=watchos
-export MINSDKVERSION=2.0
-../autoframework libsmb2 $FRPARAM > /dev/null
 cd ..
 
 echo  "Copying additional headers"
