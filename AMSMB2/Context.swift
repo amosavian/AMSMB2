@@ -22,9 +22,9 @@ final class SMB2Context {
     private var _context_lock = NSLock()
     var isConnected = false
     
-    init?() {
+    init() throws {
         guard let _context = smb2_init_context() else {
-            return nil
+            throw POSIXError(.ENOMEM)
         }
         self.context = _context
     }
@@ -33,7 +33,9 @@ final class SMB2Context {
         if isConnected {
             try? self.disconnect()
         }
-        smb2_destroy_context(context)
+        withThreadSafeContext { (context) in
+            smb2_destroy_context(context)
+        }
     }
     
     internal func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) rethrows -> R {
@@ -77,9 +79,23 @@ extension SMB2Context {
         }
     }
     
-    func parseUrl(_ url: String) ->  UnsafeMutablePointer<smb2_url> {
-        return withThreadSafeContext { (context) in
-            return smb2_parse_url(context, url)
+    func parseUrl(_ url: String) throws -> UnsafeMutablePointer<smb2_url> {
+        return try withThreadSafeContext { (context) in
+            if let result = smb2_parse_url(context, url) {
+                return result
+            }
+            
+            let errorDescription = self.error
+            switch errorDescription {
+            case "URL does not start with 'smb://'":
+                throw POSIXError(.ENOPROTOOPT, description: errorDescription)
+            case "URL is too long":
+                throw POSIXError(.EOVERFLOW, description: errorDescription)
+            case "Failed to allocate smb2_url":
+                throw POSIXError(.ENOMEM, description: errorDescription)
+            default:
+                throw POSIXError(.EINVAL, description: errorDescription)
+            }
         }
     }
     
@@ -158,11 +174,11 @@ extension SMB2Context {
         }
         
         var result = [(name: String, type: UInt32, comment: String)]()
-        for i in 0..<Int(rep.pointee.ctr.pointee.ctr1.count) {
-            let node = rep.pointee.ctr.pointee.ctr1.array.advanced(by: i)
-            let name = String(cString: node.pointee.name)
-            let type = node.pointee.type
-            let comment = String(cString: node.pointee.comment)
+        let array = Array(UnsafeBufferPointer(start: rep.pointee.ctr.pointee.ctr1.array, count: Int(rep.pointee.ctr.pointee.ctr1.count)))
+        for item in array {
+            let name = String(cString: item.name)
+            let type = item.type
+            let comment = String(cString: item.comment)
             result.append((name: name, type: type, comment: comment))
         }
         

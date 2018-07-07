@@ -113,13 +113,8 @@ public class AMSMB2: NSObject, NSSecureCoding {
         q.async {
             do {
                 if self.context == nil {
-                    guard let context = SMB2Context() else {
-                        throw POSIXError(.ENOMEM)
-                    }
-                    guard let url = SMB2URL(self.url.absoluteString, on: context) else {
-                        throw URLError(.badURL)
-                    }
-                    
+                    let context = try SMB2Context()
+                    let url = try SMB2URL(self.url.absoluteString, on: context)
                     self.context = context
                     self.smburl = url
                     self.initContext(context)
@@ -169,7 +164,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
      Enumerates shares' list on server.
      
      - Parameters:
-       - enumerateHidden: enumrating special/administrative like user directory in macOS or
+       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
        - names: An array of share names. Can be passed to `connectShare()` function.
@@ -182,9 +177,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
             do {
                 // We use separate context because when a context connects to a tree, it won't connect to another tree.
                 let server = self.smburl?.server ?? self._server
-                guard let context = SMB2Context() else {
-                    throw POSIXError(.EHOSTUNREACH)
-                }
+                let context = try SMB2Context()
                 self.initContext(context)
                 
                 // Connecting to Interprocess Communication share
@@ -208,7 +201,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
-     Enumerates directory contents in the give path
+     Enumerates directory contents in the give path.
      
      - Parameters:
        - atPath: path of directory to be enumerated.
@@ -230,15 +223,22 @@ public class AMSMB2: NSObject, NSSecureCoding {
         }
     }
     
+    /**
+     Returns a dictionary that describes the attributes of the mounted file system on which a given path resides.
+     
+     - Parameters:
+       - forPath: Any pathname within the mounted file system.
+       - completionHandler: closure will be run after fetching attributes is completed.
+       - attrubutes: A dictionary object that describes the attributes of the mounted file system on which path resides.
+           See _File-System Attribute Keys_ for a description of the keys available in the dictionary.
+       - error: `Error` if any occured during enumeration.
+     */
     @objc
     public func attributesOfFileSystem(forPath path: String,
                                        completionHandler: @escaping (_ attrubutes: [FileAttributeKey: Any]?, _ error: Error?) -> Void) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 // This exactly matches implementation of Swift Foundation.
                 let stat = try context.statvfs(path)
                 var result = [FileAttributeKey: Any]()
@@ -271,10 +271,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                                  completionHandler: @escaping (_ file: [URLResourceKey: Any]?, _ error: Error?) -> Void) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 let stat = try context.stat(path)
                 var result = [URLResourceKey: Any]()
                 let name = NSString(string: (path as NSString).lastPathComponent)
@@ -299,10 +296,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     public func createDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 try context.mkdir(path)
                 completionHandler?(nil)
             } catch {
@@ -323,9 +317,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     public func removeDirectory(atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
+                let context = try self.tryContext()
                 
                 if recursive {
                     // To delete directory recursively, first we list directory contents recursively,
@@ -371,10 +363,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     public func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 try context.unlink(path)
                 completionHandler?(nil)
             } catch {
@@ -397,10 +386,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     public func truncateFile(atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 try context.truncate(path, toLength: atOffset)
                 completionHandler?(nil)
             } catch {
@@ -421,10 +407,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     public func moveItem(atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 try context.rename(path, to: toPath)
                 completionHandler?(nil)
             } catch {
@@ -458,10 +441,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                          completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let filesize = try Int64(file.fstat().smb2_size)
                 let size = min(Int64(length), filesize - offset)
@@ -505,10 +485,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                          completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let size = try Int64(file.fstat().smb2_size)
                 
@@ -550,10 +527,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                       completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 let file = try SMB2FileHandle(forCreatingAndWritingAtPath: path, on: context)
                 
                 var offset: Int64 = 0
@@ -598,10 +572,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                                    completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 let stat = try context.stat(path)
                 if stat.smb2_type == SMB2_TYPE_DIRECTORY {
                     try context.mkdir(toPath)
@@ -671,10 +642,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
         
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 if try !url.checkResourceIsReachable() {
                     throw POSIXError(.EIO)
                 }
@@ -734,10 +702,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
         
         q.async {
             do {
-                guard let context = self.context else {
-                    throw POSIXError(POSIXError.ENOTCONN)
-                }
-                
+                let context = try self.tryContext()
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let size = try Int64(file.fstat().smb2_size)
                 
@@ -777,6 +742,13 @@ extension AMSMB2 {
         context.set(password: _password)
     }
     
+    fileprivate func tryContext() throws -> SMB2Context {
+        guard let context = self.context else {
+            throw POSIXError(POSIXError.ENOTCONN)
+        }
+        return context
+    }
+    
     fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
         
         func convertDate(unixTime: UInt64, nsec: UInt64) -> NSDate {
@@ -808,10 +780,7 @@ extension AMSMB2 {
     }
     
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
-        guard let context = self.context else {
-            throw POSIXError(POSIXError.ENOTCONN)
-        }
-        
+        let context = try self.tryContext()
         var contents = [[URLResourceKey: Any]]()
         let dir = try SMB2Directory(path, on: context)
         for ent in dir {
@@ -838,10 +807,7 @@ extension AMSMB2 {
     
     private func copyContentsOfFile(atPath path: String, toPath: String,
                                     progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
-        guard let context = self.context else {
-            throw POSIXError(POSIXError.ENOTCONN)
-        }
-        
+        let context = try self.tryContext()
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
         let fileWrite = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: context)

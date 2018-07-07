@@ -12,8 +12,8 @@ import SMB2
 final class SMB2URL {
     private var _url: UnsafeMutablePointer<smb2_url>
     
-    init?(_ url: String, on context: SMB2Context) {
-        _url = context.parseUrl(url)
+    init(_ url: String, on context: SMB2Context) throws {
+        _url = try context.parseUrl(url)
     }
     
     deinit {

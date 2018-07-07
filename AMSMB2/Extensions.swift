@@ -13,14 +13,15 @@ extension POSIXError {
         guard result < 0 else {
             return
         }
-        if let description = description, !description.isEmpty {
-            let errorDesc = "Error code \(abs(result)): " + description
-            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0, userInfo: [NSLocalizedFailureReasonErrorKey: errorDesc]) }
-            throw error ?? POSIXError(`default`, userInfo: [NSLocalizedFailureReasonErrorKey: errorDesc])
-        } else {
-            let error: Error? = POSIXErrorCode(rawValue: abs(result)).map { POSIXError($0) }
-            throw error ?? POSIXError(`default`)
-        }
+        
+        let code = POSIXErrorCode(rawValue: abs(result)) ?? `default`
+        let errorDesc = description.map { "Error code \(abs(result)): \($0)" }
+        throw POSIXError(code, description: errorDesc)
+    }
+    
+    init(_ code: POSIXError.Code, description: String?) {
+        let userInfo: [String: Any] = description.map({ [NSLocalizedFailureReasonErrorKey: $0] }) ?? [:]
+        self = POSIXError(code, userInfo: userInfo)
     }
 }
 
