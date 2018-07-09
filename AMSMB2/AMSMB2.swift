@@ -188,7 +188,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                 
                 var shares = try context.shareEnum()
                 if enumerateHidden {
-                    shares = shares.filter { $0.type & 0x00ffffff == SHARE_TYPE_DISKTREE }
+                    shares = shares.filter { $0.type & 0x0fffffff == SHARE_TYPE_DISKTREE }
                 } else {
                     shares = shares.filter { $0.type == SHARE_TYPE_DISKTREE }
                 }
@@ -566,6 +566,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
        - bytes: written bytes count.
        - completionHandler: closure will be run after copying is completed.
      */
+    @available(*, deprecated, message: "New method does server-side copy and is much faster.", renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)")
     @objc
     public func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
                                    progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
@@ -577,7 +578,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
                 if stat.smb2_type == SMB2_TYPE_DIRECTORY {
                     try context.mkdir(toPath)
                     
-                    let list = try self.listDirectory(path: path, recursive: true)
+                    let list = try self.listDirectory(path: path, recursive: recursive)
                     let sortedContents = list.sorted(by: {
                         guard let firstPath = $0.filepath, let secPath = $1.filepath else {
                             return false
@@ -601,8 +602,8 @@ public class AMSMB2: NSObject, NSSecureCoding {
                             try context.mkdir(destPath)
                         } else {
                             let shouldContinue = try self.copyContentsOfFile(atPath: itemPath, toPath: destPath, progress: {
-                                (written, _) -> Bool in
-                                totalCopied += written
+                                (bytes, _, _) -> Bool in
+                                totalCopied += bytes
                                 return progress?(totalCopied, overallSize) ?? true
                             })
                             if !shouldContinue {
@@ -611,7 +612,81 @@ public class AMSMB2: NSObject, NSSecureCoding {
                         }
                     }
                 } else {
-                    _ = try self.copyContentsOfFile(atPath: path, toPath: toPath, progress: progress)
+                    _ = try self.copyContentsOfFile(atPath: path, toPath: toPath, progress: { (_, soFar, total) -> Bool in
+                        return progress?(soFar, total) ?? true
+                    })
+                }
+                
+                completionHandler?(nil)
+            } catch {
+                completionHandler?(error)
+            }
+        }
+    }
+    
+    /**
+     Copy files to a new location. With reporting progress on about every 64KB.
+     
+     - Note: This operation consists downloading and uploading file, which may take bandwidth.
+     Unfortunately there is not a way to copy file remotely right now.
+     
+     - Parameters:
+       - atPath: path of file to be copied from.
+       - toPath: path of new file to be copied to.
+       - recursive: copies directory structure and files if path is directory.
+       - progress: reports progress of written bytes count so far and expected length of contents.
+           User must return `true` if they want to continuing or `false` to abort copying.
+       - bytes: written bytes count.
+       - completionHandler: closure will be run after copying is completed.
+     */
+    @objc
+    public func copyItem(atPath path: String, toPath: String, recursive: Bool,
+                         progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
+                         completionHandler: SimpleCompletionHandler) {
+        q.async {
+            do {
+                let context = try self.tryContext()
+                let stat = try context.stat(path)
+                if stat.smb2_type == SMB2_TYPE_DIRECTORY {
+                    try context.mkdir(toPath)
+                    
+                    let list = try self.listDirectory(path: path, recursive: recursive)
+                    let sortedContents = list.sorted(by: {
+                        guard let firstPath = $0.filepath, let secPath = $1.filepath else {
+                            return false
+                        }
+                        return firstPath.localizedStandardCompare(secPath) == .orderedAscending
+                    })
+                    
+                    let overallSize = list.reduce(0, { (result, value) -> Int64 in
+                        if value.filetype  == URLFileResourceType.regular {
+                            return result + (value.filesize ?? 0)
+                        } else {
+                            return result
+                        }
+                    })
+                    
+                    var totalCopied: Int64 = 0
+                    for item in sortedContents {
+                        guard let itemPath = item.filepath else { continue }
+                        let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
+                        if item.filetype == URLFileResourceType.directory {
+                            try context.mkdir(destPath)
+                        } else {
+                            let shouldContinue = try self.copyFile(atPath: itemPath, toPath: destPath, progress: {
+                                (bytes, _, _) -> Bool in
+                                totalCopied += bytes
+                                return progress?(totalCopied, overallSize) ?? true
+                            })
+                            if !shouldContinue {
+                                break
+                            }
+                        }
+                    }
+                } else {
+                    _ = try self.copyFile(atPath: path, toPath: toPath, progress: { (_, soFar, total) -> Bool in
+                        return progress?(soFar, total) ?? true
+                    })
                 }
                 
                 completionHandler?(nil)
@@ -805,8 +880,34 @@ extension AMSMB2 {
         return contents
     }
     
+    private func copyFile(atPath path: String, toPath: String,
+                          progress: ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
+        let context = try tryContext()
+        let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let size = try Int64(fileSource.fstat().smb2_size)
+        let sourceKey: IOCtl.RequestResumeKey = try fileSource.fcntl(command: .srvRequestResumeKey)
+        // TODO: Get chunk size from server
+        let chunkSize = 1048576
+        let chunkArray = stride(from: 0, to: UInt64(size), by: chunkSize).map {
+            IOCtl.SrvCopyChunk(sourceOffset: $0, targetOffset: $0, length: min(UInt32(UInt64(size) - $0), UInt32(chunkSize)))
+        }
+        let fileCreate = try SMB2FileHandle(forCreatingIfNotExistsAtPath:  toPath, on: context)
+        fileCreate.close()
+        let fileDest = try SMB2FileHandle(forUpdatingAtPath: toPath, on: context)
+        var shouldContinue = true
+        for chunk in chunkArray {
+            let chunkCopy = IOCtl.SrvCopyChunkCopy(sourceKey: sourceKey.resumeKey, chunks: [chunk])
+            try fileDest.fcntl(command: .srvCopyChunk, args: chunkCopy)
+            shouldContinue = progress?(Int64(chunk.length), Int64(chunk.sourceOffset) + Int64(chunk.length), size) ?? true
+            if !shouldContinue {
+                break
+            }
+        }
+        return shouldContinue
+    }
+    
     private func copyContentsOfFile(atPath path: String, toPath: String,
-                                    progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
+                                    progress: ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
         let context = try self.tryContext()
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
@@ -819,7 +920,7 @@ extension AMSMB2 {
             let written = try fileWrite.write(data: data)
             offset += Int64(written)
             
-            shouldContinue = progress?(offset, size) ?? true
+            shouldContinue = progress?(Int64(written), offset, size) ?? true
             eof = !shouldContinue || data.isEmpty
         }
         try fileWrite.fsync()

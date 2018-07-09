@@ -45,12 +45,6 @@ extern "C" {
 
 #define SMB2_MAX_VECTORS 256
 
-struct smb2_iovec {
-        uint8_t *buf;
-        size_t len;
-        void (*free)(void *);
-};
-
 struct smb2_io_vectors {
         size_t num_done;
         size_t total_size;
@@ -321,6 +315,10 @@ int smb2_process_read_fixed(struct smb2_context *smb2,
                             struct smb2_pdu *pdu);
 int smb2_process_write_fixed(struct smb2_context *smb2,
                              struct smb2_pdu *pdu);
+int smb2_process_ioctl_fixed(struct smb2_context *smb2,
+                             struct smb2_pdu *pdu);
+int smb2_process_ioctl_variable(struct smb2_context *smb2,
+                                struct smb2_pdu *pdu);
 
 int smb2_decode_fileidfulldirectoryinformation(
         struct smb2_context *smb2,
@@ -329,6 +327,9 @@ int smb2_decode_fileidfulldirectoryinformation(
 
 int smb2_decode_file_basic_info(struct smb2_context *smb2,
                                 void *memctx,
+                                struct smb2_file_basic_info *fs,
+                                struct smb2_iovec *vec);
+int smb2_encode_file_basic_info(struct smb2_context *smb2,
                                 struct smb2_file_basic_info *fs,
                                 struct smb2_iovec *vec);
 

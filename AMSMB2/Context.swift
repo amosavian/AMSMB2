@@ -309,4 +309,27 @@ extension SMB2Context {
         let data = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.commandData
         return (cbresult, data)
     }
+    
+    func async_wait_pdu(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
+        let cbPtr = CBData.initPointer()
+        defer {
+            cbPtr.deallocate()
+        }
+        
+        try withThreadSafeContext { (context) -> Void in
+            let result = handler(context, cbPtr)
+            guard let pdu = result else {
+                throw POSIXError(.ENOMEM)
+            }
+            smb2_queue_pdu(context, pdu)
+        }
+        try wait_for_reply(cbPtr)
+        let cbresult = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.result
+        if cbresult < 0 {
+            let errorNo = nterror_to_errno(UInt32(bitPattern: cbresult))
+            try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
+        }
+        let data = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.commandData
+        return (cbresult, data)
+    }
 }

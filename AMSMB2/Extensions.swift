@@ -45,15 +45,20 @@ extension Dictionary where Key == URLResourceKey {
 }
 
 extension Data {
-    mutating func append(uint16 value: UInt16) {
+    mutating func append(value: UInt16) {
         self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff)])
     }
     
-    mutating func append(uint32 value: UInt32) {
+    mutating func append(value: UInt32) {
         self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff), UInt8(value >> 16 & 0xff), UInt8(value >> 24 & 0xff)])
     }
     
-    mutating func append(guid uuid: UUID) {
+    mutating func append(value: UInt64) {
+        self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff), UInt8(value >> 16 & 0xff), UInt8(value >> 24 & 0xff),
+                                 UInt8(value >> 32 & 0xff), UInt8(value >> 40 & 0xff), UInt8(value >> 48 & 0xff), UInt8(value >> 56 & 0xff)])
+    }
+    
+    mutating func append(value uuid: UUID) {
         // Microsoft GUID is mixed-endian
         self.append(contentsOf: [uuid.uuid.3,  uuid.uuid.2,  uuid.uuid.1,  uuid.uuid.0,
                              uuid.uuid.5,  uuid.uuid.4,  uuid.uuid.7,  uuid.uuid.6,

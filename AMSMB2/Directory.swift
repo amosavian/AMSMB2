@@ -25,7 +25,7 @@ final class SMB2Directory: Collection {
         }
         
         guard let handle = OpaquePointer(cmddata) else {
-            throw POSIXError(.ENOENT)
+            throw POSIXError(.ENOTDIR)
         }
         
         self.context = context

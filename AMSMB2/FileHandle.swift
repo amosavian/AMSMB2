@@ -11,8 +11,6 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
-let O_NOOVERWRITE: Int32 = 0x040000000
-
 final class SMB2FileHandle {
     
     struct SeekWhence: RawRepresentable {
@@ -44,11 +42,7 @@ final class SMB2FileHandle {
     }
     
     convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
-        try self.init(path, flags: O_RDWR, on: context)
-    }
-    
-    convenience init(forNamedPipeAtPath path: String, on context: SMB2Context) throws {
-        try self.init(path, flags: O_RDWR | O_APPEND | O_NOOVERWRITE, on: context)
+        try self.init(path, flags: O_RDWR | O_APPEND, on: context)
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
@@ -70,6 +64,10 @@ final class SMB2FileHandle {
                 smb2_close(context, handle)
             }
         }
+    }
+    
+    var fileId: smb2_file_id {
+        return smb2_get_file_id(handle).pointee
     }
     
     func close() {
@@ -98,7 +96,7 @@ final class SMB2FileHandle {
     }
     
     var optimizedReadSize: Int {
-        return min(maxReadSize, 65000)
+        return min(maxReadSize, 1048576)
     }
     
     @discardableResult
@@ -206,5 +204,49 @@ final class SMB2FileHandle {
         try context.async_wait(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             smb2_fsync_async(context, handle, SMB2Context.async_handler, cbPtr)
         }
+    }
+    
+    func fcntl(command: IOCtl.Command, data: Data) throws -> Data {
+        var data = data
+        let count = UInt32(data.count)
+        var req: smb2_ioctl_request
+        if count > 0 {
+            req = data.withUnsafeMutableBytes {
+                smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: count, input: $0, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
+            }
+        } else {
+            req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: 0, input: nil, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
+        }
+        
+        let (_, response) = try context.async_wait_pdu(defaultError: .EBADRPC) { (context, cbdata) -> UnsafeMutablePointer<smb2_pdu>? in
+            smb2_cmd_ioctl_async(context, &req, SMB2Context.async_handler, cbdata)
+        }
+        
+        guard let reply = response?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1) else {
+            throw POSIXError(.EBADMSG, description: "No reply from ioctl command.")
+        }
+        defer {
+            smb2_free_data(context.context, reply.pointee.output)
+        }
+        
+        return Data(bytes: reply.pointee.output, count: Int(reply.pointee.output_count))
+    }
+    
+    func fcntl(command: IOCtl.Command) throws -> Void {
+        _=try fcntl(command: command, data: Data())
+    }
+    
+    func fcntl<T: DataRepresentable>(command: IOCtl.Command, args: T) throws -> Void {
+        _=try fcntl(command: command, data: args.data())
+    }
+    
+    func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {
+        let result = try fcntl(command: command, data: Data())
+        return try R(data: result)
+    }
+    
+    func fcntl<T: DataRepresentable, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R {
+        let result = try fcntl(command: command, data: args.data())
+        return try R(data: result)
     }
 }
