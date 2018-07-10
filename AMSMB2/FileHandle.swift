@@ -95,6 +95,7 @@ final class SMB2FileHandle {
         return Int(smb2_get_max_read_size(context.context))
     }
     
+    /// This value allows softer streaming
     var optimizedReadSize: Int {
         return min(maxReadSize, 1048576)
     }
@@ -145,13 +146,22 @@ final class SMB2FileHandle {
     }
     
     var optimizedWriteSize: Int {
-        // Some server may throw `POLLHUP` with size larger than this
-        return min(maxWriteSize, 21000)
+        return min(maxWriteSize, 1048576)
     }
     
     func write(data: Data) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
+        var data = data
+        let count = data.count
+        let (result, _) = try data.withUnsafeMutableBytes { (p) -> (result: Int32, data: UnsafeMutableRawPointer?) in
+            try context.async_wait(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
+                smb2_write_async(context, handle, p, UInt32(count),
+                                 SMB2Context.async_handler, cbPtr)
+            }
+        }
+        
+        /*
         var result = 0
         var errorNo: Int32 = 0
         data.enumerateBytes { (bytes, dindex, stop) in
@@ -162,42 +172,32 @@ final class SMB2FileHandle {
                     smb2_write_async(context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count),
                                      SMB2Context.async_handler, cbPtr)
                 }
-                result += Int(rc)
+                result += rc
                 stop = false
             } catch {
                 errorNo = -(error as! POSIXError).code.rawValue
                 stop = true
             }
         }
-        
         try POSIXError.throwIfError(errorNo, description: context.error, default: .EIO)
-        return result
+        */
+        
+        return Int(result)
     }
     
     func pwrite(data: Data, offset: UInt64) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
-        var result = 0
-        var errorNo: Int32 = 0
-        data.enumerateBytes { (bytes, dindex, stop) in
-            
-            guard let baseAddress = bytes.baseAddress else { return }
-            let rc: Int32
-            do {
-                (rc, _) = try context.async_wait(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
-                    smb2_pwrite_async(context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count),
-                                      offset + UInt64(dindex), SMB2Context.async_handler, cbPtr)
-                }
-                result += Int(rc)
-                stop = false
-            } catch {
-                errorNo = -(error as! POSIXError).code.rawValue
-                stop = true
+        var data = data
+        let count = data.count
+        let (result, _) = try data.withUnsafeMutableBytes { (p) -> (result: Int32, data: UnsafeMutableRawPointer?) in
+            try context.async_wait(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
+                smb2_pwrite_async(context, handle, p, UInt32(count), offset,
+                                 SMB2Context.async_handler, cbPtr)
             }
         }
         
-        try POSIXError.throwIfError(errorNo, description: context.error, default: .EIO)
-        return result
+        return Int(result)
     }
     
     func fsync() throws {

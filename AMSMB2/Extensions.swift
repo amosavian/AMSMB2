@@ -26,7 +26,7 @@ extension POSIXError {
 }
 
 
-extension Dictionary where Key == URLResourceKey {
+extension Dictionary where Key == URLResourceKey, Value == Any {
     var filename: String? {
         return self[.nameKey] as? String
     }
@@ -72,5 +72,34 @@ extension Data {
         var result: T = 0
         (self as NSData).getBytes(&result, range: NSRange(location: start, length: length))
         return result.littleEndian
+    }
+}
+
+extension InputStream {
+    func readData(ofLength length: Int) throws -> Data {
+        var data = Data(count: length)
+        let result = data.withUnsafeMutableBytes { (p) -> Int in
+            self.read(p, maxLength: length)
+        }
+        if result < 0 {
+            throw self.streamError ?? POSIXError.init(.EIO, description: "Unknown stream error.")
+        } else {
+            data.count = result
+            return data
+        }
+    }
+}
+
+extension OutputStream {
+    func write(data: Data) throws -> Int {
+        let count = data.count
+        let result = data.withUnsafeBytes { (p) -> Int in
+            self.write(p, maxLength: count)
+        }
+        if result < 0 {
+            throw self.streamError ?? POSIXError.init(.EIO, description: "Unknown stream error.")
+        } else {
+            return result
+        }
     }
 }

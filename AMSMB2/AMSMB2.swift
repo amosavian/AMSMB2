@@ -441,24 +441,24 @@ public class AMSMB2: NSObject, NSSecureCoding {
                          completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
             do {
-                let context = try self.tryContext()
-                let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
-                let filesize = try Int64(file.fstat().smb2_size)
-                let size = min(Int64(length), filesize - offset)
-                
-                var offset = offset
-                var result = Data()
-                var eof = false
-                try file.lseek(offset: offset, whence: .set)
-                while !eof {
-                    let data = try file.read()
-                    result.append(data)
-                    offset += Int64(data.count)
-                    let shouldContinue = progress?(offset, size) ?? true
-                    eof = !shouldContinue || data.isEmpty || (length > 0 && result.count > length)
+                guard offset >= 0 else {
+                    throw POSIXError(.EINVAL, description: "Invalid content offset.")
                 }
                 
-                completionHandler(result.prefix(length), nil)
+                let stream = OutputStream.toMemory()
+                if length > 0 {
+                    try self.read(atPath: path, range: offset..<(offset + Int64(length)), to: stream, progress: progress)
+                } else if length < 0 {
+                    try self.read(atPath: path, range: offset..<Int64.max, to: stream, progress: progress)
+                } else {
+                    completionHandler(nil, nil)
+                    return
+                }
+                guard let data = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data else {
+                    throw POSIXError.init(POSIXError.Code.EIO, description: "Data missed from stream")
+                }
+                
+                completionHandler(data, nil)
             } catch {
                 completionHandler(nil, error)
             }
@@ -527,23 +527,8 @@ public class AMSMB2: NSObject, NSSecureCoding {
                       completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let context = try self.tryContext()
-                let file = try SMB2FileHandle(forCreatingAndWritingAtPath: path, on: context)
-                
-                var offset: Int64 = 0
-                while true {
-                    let segment = data[offset...].prefix(file.optimizedWriteSize)
-                    if segment.count == 0 {
-                        break
-                    }
-                    let written = try file.write(data: segment)
-                    offset += Int64(written)
-                    if let shouldContinue = progress?(offset), !shouldContinue {
-                        break
-                    }
-                }
-                try file.fsync()
-                
+                let stream = InputStream(data: data)
+                try self.write(from: stream, size: UInt64(data.count), toPath: path, progress: progress)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -711,41 +696,19 @@ public class AMSMB2: NSObject, NSSecureCoding {
     @objc
     public func uploadItem(at url: URL, toPath: String, progress: ((_ bytes: Int64) -> Bool)?,
                            completionHandler: SimpleCompletionHandler) {
-        guard url.isFileURL else {
-            fatalError("Uploading to remote url is not supported.")
-        }
-        
         q.async {
             do {
-                let context = try self.tryContext()
+                guard url.isFileURL, let stream = InputStream(url: url) else {
+                    throw POSIXError(.EIO, description: "Could not create NSStream from file URL.")
+                }
+                guard let size = (try url.resourceValues(forKeys: [.fileSizeKey]).allValues[.fileSizeKey] as? NSNumber)?.uint64Value else {
+                    throw POSIXError(POSIXError.EFTYPE, description: "Could not retrieve file size from URL.")
+                }
                 if try !url.checkResourceIsReachable() {
                     throw POSIXError(.EIO)
                 }
                 
-                let localHandle = try FileHandle(forReadingFrom: url)
-                localHandle.seek(toFileOffset: 0)
-                
-                
-                let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
-                
-                var offset: Int64 = 0
-                while true {
-                    if localHandle.offsetInFile != offset {
-                        localHandle.seek(toFileOffset: UInt64(offset))
-                    }
-                    
-                    let segment = localHandle.readData(ofLength: file.optimizedWriteSize)
-                    if segment.count == 0 {
-                        break
-                    }
-                    let written = try file.write(data: segment)
-                    offset += Int64(written)
-                    if let shouldContinue = progress?(offset), !shouldContinue {
-                        break
-                    }
-                }
-                try file.fsync()
-                
+                try self.write(from: stream, size: size, toPath: toPath, progress: progress)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -777,28 +740,10 @@ public class AMSMB2: NSObject, NSSecureCoding {
         
         q.async {
             do {
-                let context = try self.tryContext()
-                let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
-                let size = try Int64(file.fstat().smb2_size)
-                
-                if (try? url.checkResourceIsReachable()) ?? false {
-                    try? FileManager.default.removeItem(at: url)
-                    try Data().write(to: url)
-                } else {
-                    try Data().write(to: url)
+                guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
+                    throw POSIXError(.EIO, description: "Could not create NSStream from file URL.")
                 }
-                
-                let localHandle = try FileHandle(forWritingTo: url)
-                var offset: Int64 = 0
-                var eof = false
-                while !eof {
-                    let data = try file.read()
-                    localHandle.write(data)
-                    offset += Int64(data.count)
-                    let shouldContinue = progress?(offset, size) ?? true
-                    eof = !shouldContinue || data.isEmpty
-                }
-                localHandle.synchronizeFile()
+                try self.read(atPath: path, to: stream, progress: progress)
                 completionHandler?(nil)
             } catch {
                 try? FileManager.default.removeItem(at: url)
@@ -925,5 +870,84 @@ extension AMSMB2 {
         }
         try fileWrite.fsync()
         return shouldContinue
+    }
+    
+    private func read(atPath path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
+                      progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws {
+        let context = try self.tryContext()
+        let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let filesize = try Int64(file.fstat().smb2_size)
+        let length = range.upperBound - range.lowerBound
+        let size = min(length, filesize - range.lowerBound)
+        
+        var shouldCloseStream = false
+        if stream.streamStatus == .notOpen {
+            stream.open()
+            shouldCloseStream = true
+        }
+        defer {
+            stream.close()
+        }
+        
+        var eof = false
+        var sent: Int64 = 0
+        try file.lseek(offset: range.lowerBound, whence: .set)
+        while !eof {
+            var data = try file.read()
+            let count = min(Int64(data.count), length - sent)
+            if count < data.count {
+                data = data.prefix(max(Int(count), 0))
+            }
+            
+            if data.isEmpty {
+                break
+            }
+            
+            let written = try stream.write(data: data)
+            if written != data.count {
+                throw POSIXError(.EIO, description: "Inconsitency in reading from SMB file handle.")
+            }
+            sent += Int64(written)
+            let shouldContinue = progress?(sent, size) ?? true
+            eof = !shouldContinue
+        }
+    }
+    
+    private func write(from stream: InputStream, size: UInt64, toPath: String, progress: ((_ bytes: Int64) -> Bool)?) throws {
+        let context = try self.tryContext()
+        let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
+        
+        var shouldCloseStream = false
+        if stream.streamStatus == .notOpen {
+            stream.open()
+            shouldCloseStream = true
+        }
+        defer {
+            stream.close()
+        }
+        
+        var offset: Int64 = 0
+        while true {
+            var segment = try stream.readData(ofLength: file.optimizedWriteSize)
+            if segment.count == 0 {
+                break
+            }
+            if segment.count < file.optimizedWriteSize {
+                segment.count = file.optimizedWriteSize
+            }
+            let written = try file.write(data: segment)
+            if written != segment.count {
+                throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
+            }
+            offset += Int64(written)
+            if offset > size {
+                offset = Int64(size)
+            }
+            if let shouldContinue = progress?(offset), !shouldContinue {
+                break
+            }
+        }
+        try file.ftruncate(toLength: size)
+        try file.fsync()
     }
 }
