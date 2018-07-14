@@ -10,6 +10,9 @@ import Foundation
 import SMB2
 
 public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
+public typealias SMB2ReadProgressHandler = ((_ bytes: Int64, _ total: Int64) -> Bool)?
+public typealias SMB2WriteProgressHandler = ((_ bytes: Int64) -> Bool)?
+private typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?
 
 /// Implements SMB2 File operations.
 @objc @objcMembers
@@ -24,6 +27,22 @@ public class AMSMB2: NSObject, NSSecureCoding {
     private let _server: String
     private let _password: String
     private let q: DispatchQueue
+    private var _timeout: TimeInterval
+    
+    /**
+     The timeout interval to use when doing an operation until getting response. Default value is 60 seconds.
+     Set this to 0 or negative value in order to disable it.
+     */
+    @objc
+    public var timeout: TimeInterval {
+        get {
+            return context?.timeout ?? _timeout
+        }
+        set {
+            _timeout = newValue
+            context?.timeout = newValue
+        }
+    }
     
     /**
      Initializes a SMB2 class with given url and credential.
@@ -60,24 +79,25 @@ public class AMSMB2: NSObject, NSSecureCoding {
         _workstation = workstation
         _user = user
         _password = credential?.password ?? ""
+        _timeout = 60.0
         super.init()
     }
     
     public required init?(coder aDecoder: NSCoder) {
         guard let url = aDecoder.decodeObject(of: NSURL.self, forKey: "url") as URL? else {
-            aDecoder.failWithError(CocoaError.error(.coderValueNotFound,
-                                                    userInfo: [NSLocalizedDescriptionKey: "URL is not set."]))
+            aDecoder.failWithError(CocoaError(.coderValueNotFound,
+                                              userInfo: [NSLocalizedDescriptionKey: "URL is not set."]))
             return nil
         }
         guard url.scheme?.lowercased() == "smb" else {
-            aDecoder.failWithError(CocoaError.error(.coderReadCorrupt,
-                                                    userInfo: [NSLocalizedDescriptionKey: "URL is not smb."]))
+            aDecoder.failWithError(CocoaError(.coderReadCorrupt,
+                                              userInfo: [NSLocalizedDescriptionKey: "URL is not smb."]))
             return nil
         }
         
         guard let server = aDecoder.decodeObject(of: NSString.self, forKey: "server") as String? else {
-            aDecoder.failWithError(CocoaError.error(.coderValueNotFound,
-                                                    userInfo: [NSLocalizedDescriptionKey: "server is not set."]))
+            aDecoder.failWithError(CocoaError(.coderValueNotFound,
+                                              userInfo: [NSLocalizedDescriptionKey: "server is not set."]))
             return nil
         }
         
@@ -89,6 +109,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
         self._workstation = aDecoder.decodeObject(of: NSString.self, forKey: "workstation") as String? ?? ""
         self._user = aDecoder.decodeObject(of: NSString.self, forKey: "user") as String? ?? "guest"
         self._password = aDecoder.decodeObject(of: NSString.self, forKey: "password") as String? ?? ""
+        self._timeout = aDecoder.decodeDouble(forKey: "timeout")
         super.init()
     }
     
@@ -99,6 +120,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
         aCoder.encode(_workstation, forKey: "workstation")
         aCoder.encode(_user, forKey: "user")
         aCoder.encode(_password, forKey: "password")
+        aCoder.encode(timeout, forKey: "timeout")
     }
     
     public static var supportsSecureCoding: Bool {
@@ -113,7 +135,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
         q.async {
             do {
                 if self.context == nil {
-                    let context = try SMB2Context()
+                    let context = try SMB2Context(timeout: self._timeout)
                     let url = try SMB2URL(self.url.absoluteString, on: context)
                     self.context = context
                     self.smburl = url
@@ -177,7 +199,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
             do {
                 // We use separate context because when a context connects to a tree, it won't connect to another tree.
                 let server = self.smburl?.server ?? self._server
-                let context = try SMB2Context()
+                let context = try SMB2Context(timeout: self.timeout)
                 self.initContext(context)
                 
                 // Connecting to Interprocess Communication share
@@ -418,7 +440,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     
     /**
      Fetches data contents of a file from an offset with specified length. With reporting progress
-     on about every 64KB.
+     on about every 1MiB.
      
      - Note: If offset is bigger than file's size, an empty `Data will be returned. If length exceeds file, returned data
          will be truncated to entire file content from given offset.
@@ -436,8 +458,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
        - error: `Error` if any occured during reading.
      */
     @objc
-    public func contents(atPath path: String, offset: Int64 = 0, length: Int = -2,
-                         progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
+    public func contents(atPath path: String, offset: Int64 = 0, length: Int = -2, progress: SMB2ReadProgressHandler,
                          completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
             do {
@@ -447,15 +468,15 @@ public class AMSMB2: NSObject, NSSecureCoding {
                 
                 let stream = OutputStream.toMemory()
                 if length > 0 {
-                    try self.read(atPath: path, range: offset..<(offset + Int64(length)), to: stream, progress: progress)
+                    try self.read(path: path, range: offset..<(offset + Int64(length)), to: stream, progress: progress)
                 } else if length < 0 {
-                    try self.read(atPath: path, range: offset..<Int64.max, to: stream, progress: progress)
+                    try self.read(path: path, range: offset..<Int64.max, to: stream, progress: progress)
                 } else {
                     completionHandler(nil, nil)
                     return
                 }
                 guard let data = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data else {
-                    throw POSIXError.init(POSIXError.Code.EIO, description: "Data missed from stream")
+                    throw POSIXError(POSIXError.Code.EIO, description: "Data missed from stream")
                 }
                 
                 completionHandler(data, nil)
@@ -467,7 +488,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     
     /**
      Streams data contents of a file from an offset with specified length. With reporting data and progress
-     on about every 64KB.
+     on about every 1MiB.
      
      - Parameters:
        - atPath: path of file to be fetched.
@@ -510,7 +531,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
-     Creates and writes data to file. With reporting progress on about every 64KB.
+     Creates and writes data to file. With reporting progress on about every 1MiB.
      
      - Note: Data saved in server maybe truncated of completion handler returns error.
      
@@ -523,7 +544,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
        - completionHandler: closure will be run after writing is completed.
      */
     @objc
-    public func write(data: Data, toPath path: String, progress: ((_ bytes: Int64) -> Bool)?,
+    public func write(data: Data, toPath path: String, progress: SMB2WriteProgressHandler,
                       completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -537,7 +558,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
-     Copy file contents to a new location. With reporting progress on about every 64KB.
+     Copy file contents to a new location. With reporting progress on about every 1MiB.
      
      - Note: This operation consists downloading and uploading file, which may take bandwidth.
      Unfortunately there is not a way to copy file remotely right now.
@@ -554,8 +575,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     @available(*, deprecated, message: "New method does server-side copy and is much faster.", renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)")
     @objc
     public func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
-                                   progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
-                                   completionHandler: SimpleCompletionHandler) {
+                                   progress: SMB2ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
                 let context = try self.tryContext()
@@ -610,7 +630,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
-     Copy files to a new location. With reporting progress on about every 64KB.
+     Copy files to a new location. With reporting progress on about every 1MiB.
      
      - Note: This operation consists downloading and uploading file, which may take bandwidth.
      Unfortunately there is not a way to copy file remotely right now.
@@ -625,8 +645,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
        - completionHandler: closure will be run after copying is completed.
      */
     @objc
-    public func copyItem(atPath path: String, toPath: String, recursive: Bool,
-                         progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
+    public func copyItem(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
                          completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -682,7 +701,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
-     Uploads local file contents to a new location. With reporting progress on about every 64KB.
+     Uploads local file contents to a new location. With reporting progress on about every 1MiB.
      
      - Note: given url must be local file url otherwise process will crash.
      
@@ -694,12 +713,12 @@ public class AMSMB2: NSObject, NSSecureCoding {
      - completionHandler: closure will be run after uploading is completed.
      */
     @objc
-    public func uploadItem(at url: URL, toPath: String, progress: ((_ bytes: Int64) -> Bool)?,
+    public func uploadItem(at url: URL, toPath: String, progress: SMB2WriteProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
                 guard url.isFileURL, let stream = InputStream(url: url) else {
-                    throw POSIXError(.EIO, description: "Could not create NSStream from file URL.")
+                    throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
                 }
                 guard let size = (try url.resourceValues(forKeys: [.fileSizeKey]).allValues[.fileSizeKey] as? NSNumber)?.uint64Value else {
                     throw POSIXError(POSIXError.EFTYPE, description: "Could not retrieve file size from URL.")
@@ -717,7 +736,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     }
     
     /**
-     Downloads file contents to a local url. With reporting progress on about every 64KB.
+     Downloads file contents to a local url. With reporting progress on about every 1MiB.
      
      - Note: if a file already exists on given url, This function will overwrite to that url.
      
@@ -731,8 +750,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
      - completionHandler: closure will be run after uploading is completed.
      */
     @objc
-    public func downloadItem(atPath path: String, to url: URL,
-                             progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?,
+    public func downloadItem(atPath path: String, to url: URL, progress: SMB2ReadProgressHandler,
                              completionHandler: SimpleCompletionHandler) {
         guard url.isFileURL else {
             fatalError("Downloading to remote url is not supported.")
@@ -741,9 +759,9 @@ public class AMSMB2: NSObject, NSSecureCoding {
         q.async {
             do {
                 guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
-                    throw POSIXError(.EIO, description: "Could not create NSStream from file URL.")
+                    throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
                 }
-                try self.read(atPath: path, to: stream, progress: progress)
+                try self.read(path: path, to: stream, progress: progress)
                 completionHandler?(nil)
             } catch {
                 try? FileManager.default.removeItem(at: url)
@@ -760,6 +778,7 @@ extension AMSMB2 {
         context.set(workstation: _workstation)
         context.set(user: _user)
         context.set(password: _password)
+        context.timeout = _timeout
     }
     
     fileprivate func tryContext() throws -> SMB2Context {
@@ -825,14 +844,13 @@ extension AMSMB2 {
         return contents
     }
     
-    private func copyFile(atPath path: String, toPath: String,
-                          progress: ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
+    private func copyFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
         let context = try tryContext()
         let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileSource.fstat().smb2_size)
         let sourceKey: IOCtl.RequestResumeKey = try fileSource.fcntl(command: .srvRequestResumeKey)
         // TODO: Get chunk size from server
-        let chunkSize = 1048576
+        let chunkSize = fileSource.optimizedWriteSize
         let chunkArray = stride(from: 0, to: UInt64(size), by: chunkSize).map {
             IOCtl.SrvCopyChunk(sourceOffset: $0, targetOffset: $0, length: min(UInt32(UInt64(size) - $0), UInt32(chunkSize)))
         }
@@ -851,8 +869,7 @@ extension AMSMB2 {
         return shouldContinue
     }
     
-    private func copyContentsOfFile(atPath path: String, toPath: String,
-                                    progress: ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?) throws -> Bool {
+    private func copyContentsOfFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
         let context = try self.tryContext()
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
@@ -872,8 +889,8 @@ extension AMSMB2 {
         return shouldContinue
     }
     
-    private func read(atPath path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
-                      progress: ((_ bytes: Int64, _ total: Int64) -> Bool)?) throws {
+    private func read(path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
+                      progress: SMB2ReadProgressHandler) throws {
         let context = try self.tryContext()
         let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let filesize = try Int64(file.fstat().smb2_size)
@@ -913,7 +930,7 @@ extension AMSMB2 {
         }
     }
     
-    private func write(from stream: InputStream, size: UInt64, toPath: String, progress: ((_ bytes: Int64) -> Bool)?) throws {
+    private func write(from stream: InputStream, size: UInt64, toPath: String, progress: SMB2WriteProgressHandler) throws {
         let context = try self.tryContext()
         let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         

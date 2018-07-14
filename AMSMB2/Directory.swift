@@ -20,7 +20,7 @@ final class SMB2Directory: Collection {
     private var handle: smb2dir
     
     init(_ path: String, on context: SMB2Context) throws {
-        let (_, cmddata) = try context.async_wait(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
+        let (_, cmddata) = try context.async_await(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
             smb2_opendir_async(context, path, SMB2Context.async_handler, cbPtr)
         }
         

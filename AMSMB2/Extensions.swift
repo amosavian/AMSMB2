@@ -82,7 +82,7 @@ extension InputStream {
             self.read(p, maxLength: length)
         }
         if result < 0 {
-            throw self.streamError ?? POSIXError.init(.EIO, description: "Unknown stream error.")
+            throw self.streamError ?? POSIXError(.EIO, description: "Unknown stream error.")
         } else {
             data.count = result
             return data
@@ -97,7 +97,7 @@ extension OutputStream {
             self.write(p, maxLength: count)
         }
         if result < 0 {
-            throw self.streamError ?? POSIXError.init(.EIO, description: "Unknown stream error.")
+            throw self.streamError ?? POSIXError(.EIO, description: "Unknown stream error.")
         } else {
             return result
         }

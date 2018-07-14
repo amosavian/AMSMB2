@@ -21,12 +21,14 @@ final class SMB2Context {
     internal var context: UnsafeMutablePointer<smb2_context>
     private var _context_lock = NSLock()
     var isConnected = false
+    var timeout: TimeInterval
     
-    init() throws {
+    init(timeout: TimeInterval) throws {
         guard let _context = smb2_init_context() else {
             throw POSIXError(.ENOMEM)
         }
         self.context = _context
+        self.timeout = timeout
     }
     
     deinit {
@@ -135,14 +137,14 @@ extension SMB2Context {
 // MARK: Connectivity
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
-        try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
+        try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_connect_share_async(context, server, share, user, SMB2Context.async_handler, cbPtr)
         }
         self.isConnected = true
     }
     
     func disconnect() throws {
-        try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
+        try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_disconnect_share_async(context, SMB2Context.async_handler, cbPtr)
         }
         self.isConnected = false
@@ -150,7 +152,7 @@ extension SMB2Context {
     
     @discardableResult
     func echo() throws -> Bool {
-        try async_wait(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
+        try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_echo_async(context, SMB2Context.async_handler, cbPtr)
         }
         return true
@@ -160,7 +162,7 @@ extension SMB2Context {
 // MARK: DCE-RPC
 extension SMB2Context {
     func shareEnum() throws -> [(name: String, type: UInt32, comment: String)] {
-        let (_, cmddata) = try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+        let (_, cmddata) = try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_share_enum_async(context, SMB2Context.async_handler, cbPtr)
         }
         
@@ -189,27 +191,24 @@ extension SMB2Context {
 // MARK: File manipulation
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_stat_64()
-        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
-            smb2_stat_async(context, cannonicalPath, &st, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+            smb2_stat_async(context, path, &st, SMB2Context.async_handler, cbPtr)
         }
         return st
     }
     
     func statvfs(_ path: String) throws -> smb2_statvfs {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
         var st = smb2_statvfs()
-        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
-            smb2_statvfs_async(context, cannonicalPath, &st, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+            smb2_statvfs_async(context, path, &st, SMB2Context.async_handler, cbPtr)
         }
         return st
     }
     
     func truncate(_ path: String, toLength: UInt64) throws {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
-            smb2_truncate_async(context, cannonicalPath, toLength, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+            smb2_truncate_async(context, path, toLength, SMB2Context.async_handler, cbPtr)
         }
     }
 }
@@ -217,31 +216,26 @@ extension SMB2Context {
 // MARK: File operation
 extension SMB2Context {
     func mkdir(_ path: String) throws {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        try async_wait(defaultError: .EEXIST) { (context, cbPtr) -> Int32 in
-            smb2_mkdir_async(context, cannonicalPath, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .EEXIST) { (context, cbPtr) -> Int32 in
+            smb2_mkdir_async(context, path, SMB2Context.async_handler, cbPtr)
         }
     }
     
     func rmdir(_ path: String) throws {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
-            smb2_rmdir_async(context, cannonicalPath, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+            smb2_rmdir_async(context, path, SMB2Context.async_handler, cbPtr)
         }
     }
     
     func unlink(_ path: String) throws {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        try async_wait(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
-            smb2_unlink_async(context, cannonicalPath, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+            smb2_unlink_async(context, path, SMB2Context.async_handler, cbPtr)
         }
     }
     
     func rename(_ path: String, to newPath: String) throws {
-        let cannonicalPath = path.replacingOccurrences(of: "/", with: "\\")
-        let cannonicalNewPath = path.replacingOccurrences(of: "/", with: "\\")
-        try async_wait(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
-            smb2_rename_async(context, cannonicalPath, cannonicalNewPath, SMB2Context.async_handler, cbPtr)
+        try async_await(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
+            smb2_rename_async(context, path, newPath, SMB2Context.async_handler, cbPtr)
         }
     }
 }
@@ -269,12 +263,13 @@ extension SMB2Context {
     }
     
     private func wait_for_reply(_ cbPtr: UnsafeMutableRawPointer) throws {
+        let startDate = Date()
         while !cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.isFinished {
             var pfd = pollfd()
             pfd.fd = fileDescriptor
             pfd.events = Int16(whichEvents())
             
-            if poll(&pfd, 1, 1000) < 0 {
+            if poll(&pfd, 1, 1000) < 0, errno != EAGAIN {
                 try POSIXError.throwIfError(errno, description: error, default: .EINVAL)
             }
             
@@ -283,6 +278,10 @@ extension SMB2Context {
             }
             
             try service(revents: Int32(pfd.revents))
+            
+            if timeout > 0, Date().timeIntervalSince(startDate) > timeout {
+                throw POSIXError(.ETIMEDOUT)
+            }
         }
     }
     
@@ -293,7 +292,7 @@ extension SMB2Context {
     }
     
     @discardableResult
-    func async_wait(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
+    func async_await(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
         let cbPtr = CBData.initPointer()
         defer {
             cbPtr.deallocate()
@@ -310,7 +309,7 @@ extension SMB2Context {
         return (cbresult, data)
     }
     
-    func async_wait_pdu(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
+    func async_await_pdu(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
         let cbPtr = CBData.initPointer()
         defer {
             cbPtr.deallocate()
