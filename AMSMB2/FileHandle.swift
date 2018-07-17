@@ -110,26 +110,29 @@ final class SMB2FileHandle {
     func read(length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
-        let bufSize = length > 0 ? length : optimizedReadSize
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        buffer.initialize(repeating: 0, count: bufSize)
+        let count = length > 0 ? length : optimizedReadSize
+        var data = Data(count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
-            smb2_read_async(context, handle, buffer, UInt32(bufSize), SMB2Context.async_handler, cbPtr)
+            data.withUnsafeMutableBytes { buffer in
+                smb2_read_async(context, handle, buffer, UInt32(count), SMB2Context.async_handler, cbPtr)
+            }
         }
-        return Data(bytesNoCopy: buffer, count: Int(result), deallocator: .free)
+        data.count = Int(result)
+        return data
     }
     
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
-        let bufSize = length > 0 ? length : optimizedReadSize
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
-        buffer.initialize(repeating: 0, count: bufSize)
-        
+        let count = length > 0 ? length : optimizedReadSize
+        var data = Data(count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
-            smb2_pread_async(context, handle, buffer, UInt32(bufSize), offset, SMB2Context.async_handler, cbPtr)
+            data.withUnsafeMutableBytes { buffer in
+                smb2_pread_async(context, handle, buffer, UInt32(count), offset, SMB2Context.async_handler, cbPtr)
+            }
         }
-        return Data(bytesNoCopy: buffer, count: Int(result), deallocator: .free)
+        data.count = Int(result)
+        return data
     }
     
     var maxWriteSize: Int {

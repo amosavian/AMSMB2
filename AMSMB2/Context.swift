@@ -270,7 +270,8 @@ extension SMB2Context {
             pfd.events = Int16(whichEvents())
             
             if poll(&pfd, 1, 1000) < 0, errno != EAGAIN {
-                try POSIXError.throwIfError(errno, description: error, default: .EINVAL)
+                let code = POSIXErrorCode(rawValue: errno) ?? .EINVAL
+                throw POSIXError(code, description: error)
             }
             
             if pfd.revents == 0 {
@@ -287,8 +288,8 @@ extension SMB2Context {
     
     static let async_handler: @convention(c) (_ smb2: UnsafeMutablePointer<smb2_context>?, _ status: Int32, _ command_data: UnsafeMutableRawPointer?, _ cbdata: UnsafeMutableRawPointer?) -> Void = { smb2, status, command_data, cbdata in
         cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.result = status
-        cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.isFinished = true
         cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.commandData = command_data
+        cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee.isFinished = true
     }
     
     @discardableResult
