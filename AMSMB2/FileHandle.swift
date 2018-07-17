@@ -111,34 +111,25 @@ final class SMB2FileHandle {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
         let bufSize = length > 0 ? length : optimizedReadSize
-        var buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         buffer.initialize(repeating: 0, count: bufSize)
-        defer {
-            buffer.deinitialize(count: bufSize)
-            buffer.deallocate()
-        }
-        
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             smb2_read_async(context, handle, buffer, UInt32(bufSize), SMB2Context.async_handler, cbPtr)
         }
-        return Data(bytes: buffer, count: Int(result))
+        return Data(bytesNoCopy: buffer, count: Int(result), deallocator: .free)
     }
     
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
         let bufSize = length > 0 ? length : optimizedReadSize
-        var buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufSize)
         buffer.initialize(repeating: 0, count: bufSize)
-        defer {
-            buffer.deinitialize(count: bufSize)
-            buffer.deallocate()
-        }
         
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             smb2_pread_async(context, handle, buffer, UInt32(bufSize), offset, SMB2Context.async_handler, cbPtr)
         }
-        return Data(bytes: buffer, count: Int(result))
+        return Data(bytesNoCopy: buffer, count: Int(result), deallocator: .free)
     }
     
     var maxWriteSize: Int {

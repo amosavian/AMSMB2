@@ -28,7 +28,7 @@ Or add this to Cartfile:
 github "amosavian/AMSMB2"
 ```
 
-###Manually
+### Manually
 
 To have latest updates with ease, use this command on terminal to get a clone:
 
