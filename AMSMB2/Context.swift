@@ -243,7 +243,7 @@ extension SMB2Context {
 // MARK: Async operation handler
 extension SMB2Context {
     private struct CBData {
-        var result: Int32 = 0
+        var result: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
         var commandData: UnsafeMutableRawPointer? = nil
         
@@ -275,14 +275,13 @@ extension SMB2Context {
             }
             
             if pfd.revents == 0 {
+                if timeout > 0, Date().timeIntervalSince(startDate) > timeout {
+                    throw POSIXError(.ETIMEDOUT)
+                }
                 continue
             }
             
             try service(revents: Int32(pfd.revents))
-            
-            if timeout > 0, Date().timeIntervalSince(startDate) > timeout {
-                throw POSIXError(.ETIMEDOUT)
-            }
         }
     }
     
@@ -304,13 +303,13 @@ extension SMB2Context {
         }
         try POSIXError.throwIfError(result, description: error, default: .ECONNRESET)
         try wait_for_reply(cbPtr)
-        let cbresult = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.result
-        try POSIXError.throwIfError(cbresult, description: error, default: defaultError)
+        let cbResult = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.result
+        try POSIXError.throwIfError(cbResult, description: error, default: defaultError)
         let data = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.commandData
-        return (cbresult, data)
+        return (cbResult, data)
     }
     
-    func async_await_pdu(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
+    func async_await_pdu(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?) throws -> (result: UInt32, data: UnsafeMutableRawPointer?) {
         let cbPtr = CBData.initPointer()
         defer {
             cbPtr.deallocate()
@@ -324,12 +323,13 @@ extension SMB2Context {
             smb2_queue_pdu(context, pdu)
         }
         try wait_for_reply(cbPtr)
-        let cbresult = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.result
-        if cbresult < 0 {
-            let errorNo = nterror_to_errno(UInt32(bitPattern: cbresult))
+        let cbResult = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.result
+        let result = UInt32(bitPattern: cbResult)
+        if result & SMB2_STATUS_SEVERITY_ERROR == 0xc0000000 {
+            let errorNo = nterror_to_errno(result)
             try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
         }
         let data = cbPtr.bindMemory(to: CBData.self, capacity: 1).pointee.commandData
-        return (cbresult, data)
+        return (result, data)
     }
 }
