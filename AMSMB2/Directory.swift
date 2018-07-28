@@ -21,7 +21,7 @@ final class SMB2Directory: Collection {
     
     init(_ path: String, on context: SMB2Context) throws {
         let (_, cmddata) = try context.async_await(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
-            smb2_opendir_async(context, path, SMB2Context.async_handler, cbPtr)
+            smb2_opendir_async(context, path, SMB2Context.generic_handler, cbPtr)
         }
         
         guard let handle = OpaquePointer(cmddata) else {
@@ -38,18 +38,11 @@ final class SMB2Directory: Collection {
         }
     }
     
-    struct Iterator: IteratorProtocol {
-        var object: SMB2Directory
-        typealias Element = smb2dirent
-        
-        mutating func next() -> SMB2Directory.Iterator.Element? {
-            return smb2_readdir(object.context.context, object.handle)?.move()
-        }
-    }
-    
-    func makeIterator() -> SMB2Directory.Iterator {
+    func makeIterator() -> AnyIterator<smb2dirent> {
         smb2_rewinddir(context.context, handle)
-        return Iterator(object: self)
+        return AnyIterator {
+            return smb2_readdir(self.context.context, self.handle)?.move()
+        }
     }
     
     var startIndex: Int {

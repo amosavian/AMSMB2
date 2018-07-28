@@ -47,7 +47,7 @@ final class SMB2FileHandle {
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
         let (_, cmddata) = try context.async_await(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
-            smb2_open_async(context, path, flags, SMB2Context.async_handler, cbPtr)
+            smb2_open_async(context, path, flags, SMB2Context.generic_handler, cbPtr)
         }
         
         guard let handle = OpaquePointer(cmddata) else {
@@ -80,14 +80,14 @@ final class SMB2FileHandle {
     func fstat() throws -> smb2_stat_64 {
         var st = smb2_stat_64()
         try context.async_await(defaultError: .EBADF) { (context, cbPtr) -> Int32 in
-            smb2_fstat_async(context, handle, &st, SMB2Context.async_handler, cbPtr)
+            smb2_fstat_async(context, handle, &st, SMB2Context.generic_handler, cbPtr)
         }
         return st
     }
     
     func ftruncate(toLength: UInt64) throws {
         try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
-            smb2_ftruncate_async(context, handle, toLength, SMB2Context.async_handler, cbPtr)
+            smb2_ftruncate_async(context, handle, toLength, SMB2Context.generic_handler, cbPtr)
         }
     }
     
@@ -114,7 +114,7 @@ final class SMB2FileHandle {
         var data = Data(count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             data.withUnsafeMutableBytes { buffer in
-                smb2_read_async(context, handle, buffer, UInt32(count), SMB2Context.async_handler, cbPtr)
+                smb2_read_async(context, handle, buffer, UInt32(count), SMB2Context.generic_handler, cbPtr)
             }
         }
         data.count = Int(result)
@@ -128,7 +128,7 @@ final class SMB2FileHandle {
         var data = Data(count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             data.withUnsafeMutableBytes { buffer in
-                smb2_pread_async(context, handle, buffer, UInt32(count), offset, SMB2Context.async_handler, cbPtr)
+                smb2_pread_async(context, handle, buffer, UInt32(count), offset, SMB2Context.generic_handler, cbPtr)
             }
         }
         data.count = Int(result)
@@ -148,10 +148,10 @@ final class SMB2FileHandle {
         
         var data = data
         let count = data.count
-        let (result, _) = try data.withUnsafeMutableBytes { (p) -> (result: Int32, data: UnsafeMutableRawPointer?) in
+        let (result, _) = try data.withUnsafeMutableBytes { (p: UnsafeMutablePointer<UInt8>) -> (result: Int32, data: UnsafeMutableRawPointer?) in
             try context.async_await(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
                 smb2_write_async(context, handle, p, UInt32(count),
-                                 SMB2Context.async_handler, cbPtr)
+                                 SMB2Context.generic_handler, cbPtr)
             }
         }
         
@@ -184,10 +184,10 @@ final class SMB2FileHandle {
         
         var data = data
         let count = data.count
-        let (result, _) = try data.withUnsafeMutableBytes { (p) -> (result: Int32, data: UnsafeMutableRawPointer?) in
+        let (result, _) = try data.withUnsafeMutableBytes { (p: UnsafeMutablePointer<UInt8>) -> (result: Int32, data: UnsafeMutableRawPointer?) in
             try context.async_await(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
                 smb2_pwrite_async(context, handle, p, UInt32(count), offset,
-                                 SMB2Context.async_handler, cbPtr)
+                                 SMB2Context.generic_handler, cbPtr)
             }
         }
         
@@ -196,7 +196,7 @@ final class SMB2FileHandle {
     
     func fsync() throws {
         try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
-            smb2_fsync_async(context, handle, SMB2Context.async_handler, cbPtr)
+            smb2_fsync_async(context, handle, SMB2Context.generic_handler, cbPtr)
         }
     }
     
@@ -213,7 +213,7 @@ final class SMB2FileHandle {
         }
         
         let (_, response) = try context.async_await_pdu(defaultError: .EBADRPC) { (context, cbdata) -> UnsafeMutablePointer<smb2_pdu>? in
-            smb2_cmd_ioctl_async(context, &req, SMB2Context.async_handler, cbdata)
+            smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbdata)
         }
         
         guard let reply = response?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1) else {

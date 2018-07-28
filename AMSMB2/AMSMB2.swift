@@ -21,13 +21,13 @@ public class AMSMB2: NSObject, NSSecureCoding {
     private var smburl: SMB2URL?
     
     public let url: URL
-    private let _domain: String
-    private let _workstation: String
-    private let _user: String
-    private let _server: String
-    private let _password: String
-    private let q: DispatchQueue
-    private var _timeout: TimeInterval
+    fileprivate let _domain: String
+    fileprivate let _workstation: String
+    fileprivate let _user: String
+    fileprivate let _server: String
+    fileprivate let _password: String
+    fileprivate let q: DispatchQueue
+    fileprivate var _timeout: TimeInterval
     
     /**
      The timeout interval to use when doing an operation until getting response. Default value is 60 seconds.
@@ -632,9 +632,6 @@ public class AMSMB2: NSObject, NSSecureCoding {
     /**
      Copy files to a new location. With reporting progress on about every 1MiB.
      
-     - Note: This operation consists downloading and uploading file, which may take bandwidth.
-     Unfortunately there is not a way to copy file remotely right now.
-     
      - Parameters:
        - atPath: path of file to be copied from.
        - toPath: path of new file to be copied to.
@@ -703,7 +700,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
     /**
      Uploads local file contents to a new location. With reporting progress on about every 1MiB.
      
-     - Note: given url must be local file url otherwise process will crash.
+     - Note: given url must be local file url otherwise it will throw error.
      
      - Parameters:
      - at: url of a local file to be uploaded from.
@@ -740,7 +737,7 @@ public class AMSMB2: NSObject, NSSecureCoding {
      
      - Note: if a file already exists on given url, This function will overwrite to that url.
      
-      Note: given url must be local file url otherwise process will crash.
+      Note: given url must be local file url otherwise it will throw error.
      
      - Parameters:
      - atPath: path of file to be downloaded from.
@@ -823,11 +820,11 @@ extension AMSMB2 {
         var contents = [[URLResourceKey: Any]]()
         let dir = try SMB2Directory(path, on: context)
         for ent in dir {
-            let name = NSString(utf8String: ent.name)
+            guard let name = String(utf8String: ent.name) else { continue }
             if [".", ".."].contains(name) { continue }
             var result = [URLResourceKey: Any]()
             result[.nameKey] = name
-            result[.pathKey] = name.map { (path as NSString).appendingPathComponent($0 as String) }
+            result[.pathKey] = (path as NSString).appendingPathComponent(name)
             self.populateResourceValue(&result, stat: ent.st)
             contents.append(result)
         }
@@ -844,7 +841,7 @@ extension AMSMB2 {
         return contents
     }
     
-    private func copyFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
+    fileprivate func copyFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
         let context = try tryContext()
         let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileSource.fstat().smb2_size)
@@ -869,7 +866,7 @@ extension AMSMB2 {
         return shouldContinue
     }
     
-    private func copyContentsOfFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
+    fileprivate func copyContentsOfFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
         let context = try self.tryContext()
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
@@ -889,7 +886,7 @@ extension AMSMB2 {
         return shouldContinue
     }
     
-    private func read(path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
+    fileprivate func read(path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
                       progress: SMB2ReadProgressHandler) throws {
         let context = try self.tryContext()
         let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
@@ -930,7 +927,7 @@ extension AMSMB2 {
         }
     }
     
-    private func write(from stream: InputStream, size: UInt64, toPath: String, progress: SMB2WriteProgressHandler) throws {
+    fileprivate func write(from stream: InputStream, size: UInt64, toPath: String, progress: SMB2WriteProgressHandler) throws {
         let context = try self.tryContext()
         let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         
