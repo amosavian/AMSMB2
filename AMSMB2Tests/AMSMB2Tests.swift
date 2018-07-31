@@ -65,21 +65,18 @@ class AMSMB2Tests: XCTestCase {
     // Change server address and testing share
     let server = URL(string: "smb://192.168.1.5/")!
     let share = "Files"
+    let credential: URLCredential? = nil
     
     func testShareEnum() {
         let expectation = XCTestExpectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: nil)!
-        smb.connectShare(name: share) { (error) in
+        let smb = AMSMB2(url: server, credential: credential)!
+        smb.listShares { (name, comments, error) in
             XCTAssertNil(error)
-            
-            smb.listShares { (name, comments, error) in
-                XCTAssertNil(error)
-                XCTAssertFalse(name.isEmpty)
-                XCTAssertFalse(comments.isEmpty)
-                XCTAssert(name.contains(self.share))
-                expectation.fulfill()
-            }
+            XCTAssertFalse(name.isEmpty)
+            XCTAssertFalse(comments.isEmpty)
+            XCTAssert(name.contains(self.share))
+            expectation.fulfill()
         }
         
         wait(for: [expectation], timeout: 20)
@@ -88,7 +85,7 @@ class AMSMB2Tests: XCTestCase {
     func testListing() {
         let expectation = XCTestExpectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: nil)!
+        let smb = AMSMB2(url: server, credential: credential)!
         smb.connectShare(name: share) { (error) in
             XCTAssertNil(error)
             
@@ -107,7 +104,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = XCTestExpectation(description: #function)
         expectation.expectedFulfillmentCount = 5
         
-        let smb = AMSMB2(url: server, credential: nil)!
+        let smb = AMSMB2(url: server, credential: credential)!
         smb.connectShare(name: share) { (error) in
             XCTAssertNil(error)
             
@@ -144,7 +141,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = XCTestExpectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
-        let smb = AMSMB2(url: server, credential: nil)!
+        let smb = AMSMB2(url: server, credential: credential)!
         let size = Int(arc4random_uniform(0xF00000))
         print(#function, "test size:", size)
         let data = randomData(size: size)
@@ -184,7 +181,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = XCTestExpectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
-        let smb = AMSMB2(url: server, credential: nil)!
+        let smb = AMSMB2(url: server, credential: credential)!
         let size = Int(arc4random_uniform(0xF00000))
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
@@ -227,7 +224,7 @@ class AMSMB2Tests: XCTestCase {
         expectation.expectedFulfillmentCount = 2
         
         
-        let smb = AMSMB2(url: server, credential: nil)!
+        let smb = AMSMB2(url: server, credential: credential)!
         let size = Int(arc4random_uniform(0x400000))
         print(#function, "test size:", size)
         let data = randomData(size: size)
@@ -266,7 +263,7 @@ class AMSMB2Tests: XCTestCase {
     func testMove() {
         let expectation = XCTestExpectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: nil)!
+        let smb = AMSMB2(url: server, credential: credential)!
         addTeardownBlock {
             smb.removeFile(atPath: "moveTest", completionHandler: nil)
             smb.removeFile(atPath: "moveTestDest", completionHandler: nil)
