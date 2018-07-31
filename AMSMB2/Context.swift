@@ -186,6 +186,37 @@ extension SMB2Context {
         
         return result
     }
+    
+    func shareEnumSwift(serverName: String) throws -> [(name: String, type: UInt32, comment: String)]
+    {
+        // Connection to server service.
+        let srvsvc = try SMB2FileHandle(forPipe: "srvsvc", on: self)
+        
+        // Sending bind command to DCE-RPC.
+        _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
+        // Reading bind command result to DCE-RPC.
+        let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
+        // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+        if recvBindData.count < 68 {
+            try POSIXError.throwIfError(Int32.min, description: "Binding failure", default: .EBADMSG)
+        }
+        
+        // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+        if recvBindData[44] > 0 || recvBindData[45] > 0 {
+            // Ack result is not acceptance (0x0000)
+            let errorCode = recvBindData[44] + (recvBindData[45] << 8)
+            let errorCodeString = String(errorCode, radix: 16, uppercase: false)
+            throw POSIXError(.EBADMSG, userInfo: [
+                NSLocalizedFailureReasonErrorKey: "Binding failure: \(errorCodeString)"])
+        }
+        
+        // Send NetShareEnum reqeust, Level 1 mean we need share name and remark.
+        _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: serverName), offset: 0)
+        // Reading NetShareEnum result.
+        let recvData = try srvsvc.pread(offset: 0)
+        // Parse result into Array.
+        return try MSRPC.parseNetShareEnumAllLevel1(data: recvData)
+    }
 }
 
 // MARK: File manipulation

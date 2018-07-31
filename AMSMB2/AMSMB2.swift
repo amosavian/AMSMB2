@@ -248,7 +248,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                     try? context.disconnect()
                 }
                 
-                var shares = try context.shareEnum()
+                var shares = try context.shareEnumSwift(serverName: self._server)
                 if enumerateHidden {
                     shares = shares.filter { $0.type & 0x0fffffff == SHARE_TYPE_DISKTREE }
                 } else {

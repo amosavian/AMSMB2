@@ -8,6 +8,7 @@
 
 import Foundation
 import SMB2
+import SMB2.Raw
 
 typealias smb2fh = OpaquePointer
 
@@ -43,6 +44,38 @@ final class SMB2FileHandle {
     
     convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDWR | O_APPEND, on: context)
+    }
+    
+    init(forPipe path: String, on context: SMB2Context) throws {
+        let (_, cmddata) = try path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
+            return try context.async_await_pdu(defaultError: .ENOENT, execute: { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+                var req = smb2_create_request()
+                req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
+                req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
+                req.desired_access = UInt32(SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES |
+                    SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES)
+                req.share_access = UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE)
+                req.create_disposition = UInt32(SMB2_FILE_OPEN)
+                req.create_options = UInt32(SMB2_FILE_NON_DIRECTORY_FILE)
+                req.name = path
+                let pReq = UnsafeMutablePointer<smb2_create_request>.allocate(capacity: 1)
+                pReq.initialize(to: req)
+                return smb2_cmd_create_async(context, pReq, SMB2Context.generic_handler, cbPtr)
+            })
+        }
+        
+        guard let reply = cmddata?.bindMemory(to: smb2_create_reply.self, capacity: 1) else {
+            throw POSIXError(.EIO)
+        }
+        // smb2fh is not exported, we assume memory layout and advance to file_id field according to layout
+        let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
+        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int>.size)
+        handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
+        handle.advanced(by: MemoryLayout<Int>.size * 2).bindMemory(to: smb2_file_id.self, capacity: 1).pointee = reply.pointee.file_id
+        
+        self.context = context
+        self.handle = OpaquePointer(handle)
+        self.isOpen = true
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
