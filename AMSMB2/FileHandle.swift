@@ -47,8 +47,10 @@ final class SMB2FileHandle {
     }
     
     init(forPipe path: String, on context: SMB2Context) throws {
+        // smb2_open() sets overwrite flag, which is incampatible with pipe in mac's smbx
+        
         let (_, cmddata) = try path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
-            return try context.async_await_pdu(defaultError: .ENOENT, execute: { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+            return try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
                 var req = smb2_create_request()
                 req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
                 req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
@@ -60,8 +62,12 @@ final class SMB2FileHandle {
                 req.name = path
                 let pReq = UnsafeMutablePointer<smb2_create_request>.allocate(capacity: 1)
                 pReq.initialize(to: req)
+                defer {
+                    pReq.deinitialize(count: 1)
+                    pReq.deallocate()
+                }
                 return smb2_cmd_create_async(context, pReq, SMB2Context.generic_handler, cbPtr)
-            })
+            }
         }
         
         guard let reply = cmddata?.bindMemory(to: smb2_create_reply.self, capacity: 1) else {
@@ -69,7 +75,7 @@ final class SMB2FileHandle {
         }
         // smb2fh is not exported, we assume memory layout and advance to file_id field according to layout
         let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
-        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int>.size)
+        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int64>.size)
         handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
         handle.advanced(by: MemoryLayout<Int>.size * 2).bindMemory(to: smb2_file_id.self, capacity: 1).pointee = reply.pointee.file_id
         

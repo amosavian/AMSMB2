@@ -356,6 +356,7 @@ extension SMB2Context {
     {
         let cbPtr = CBData.new()
         defer {
+            cbPtr.deinitialize(count: 1)
             cbPtr.deallocate()
         }
         
@@ -376,6 +377,7 @@ extension SMB2Context {
     {
         let cbPtr = CBData.new()
         defer {
+            cbPtr.deinitialize(count: 1)
             cbPtr.deallocate()
         }
         
