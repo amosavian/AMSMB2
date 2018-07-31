@@ -498,7 +498,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
        - error: `Error` if any occured during reading.
      */
     @objc
-    open func contents(atPath path: String, offset: Int64 = 0, length: Int = -2, progress: SMB2ReadProgressHandler,
+    open func contents(atPath path: String, offset: Int64 = 0, length: Int = -1, progress: SMB2ReadProgressHandler,
                        completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
             do {
@@ -550,16 +550,15 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 let size = try Int64(file.fstat().smb2_size)
                 
-                var eof = false
+                var shouldContinue = true
                 try file.lseek(offset: offset, whence: .set)
-                while !eof {
+                while shouldContinue {
                     let data = try file.read()
                     if data.isEmpty {
                         break
                     }
                     let offset = try file.lseek(offset: 0, whence: .current)
-                    let shouldContinue = fetchedData(offset, size, data)
-                    eof = !shouldContinue || data.isEmpty
+                    shouldContinue = fetchedData(offset, size, data)
                 }
                 
                 completionHandler?(nil)
@@ -941,24 +940,24 @@ extension AMSMB2 {
         }
         
         var shouldContinue = true
+        var sent: Int64 = 0
         try file.lseek(offset: range.lowerBound, whence: .set)
         while shouldContinue {
-            let offset = try file.lseek(offset: 0, whence: .current)
-            var data = try file.read()
-            let count = min(Int64(data.count), length - offset)
-            if count < data.count {
-                data = data.prefix(max(Int(count), 0))
+            let prefCount = Int(min(Int64(file.optimizedReadSize), Int64(size - sent)))
+            guard prefCount > 0 else {
+                break
             }
-            
+            let data = try file.read(length: prefCount)
             if data.isEmpty {
                 break
             }
             
             let written = try stream.write(data: data)
-            if written != data.count {
+            guard written == data.count else {
                 throw POSIXError(.EIO, description: "Inconsitency in reading from SMB file handle.")
             }
-            shouldContinue = progress?(offset + Int64(written) , size) ?? true
+            sent += Int64(written)
+            shouldContinue = progress?(sent, size) ?? true
         }
     }
     
