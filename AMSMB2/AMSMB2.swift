@@ -172,18 +172,37 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
      */
     @objc
     open func connectShare(name: String, completionHandler: SimpleCompletionHandler) {
+        func initialize() throws {
+            let context = try SMB2Context(timeout: self._timeout)
+            let url = try SMB2URL(self.url.absoluteString, on: context)
+            self.context = context
+            self.smburl = url
+            self.initContext(context)
+        }
+        
         q.async {
             do {
                 if self.context == nil {
-                    let context = try SMB2Context(timeout: self._timeout)
-                    let url = try SMB2URL(self.url.absoluteString, on: context)
-                    self.context = context
-                    self.smburl = url
-                    self.initContext(context)
+                    try initialize()
                 }
                 
                 let server = self.smburl!.server ?? self._server
-                try self.context!.connect(server: server, share: name, user: self._user)
+                guard let context = self.context else {
+                    fatalError("Failed to initilize context, should never happen.")
+                }
+                
+                if context.fileDescriptor == -1 {
+                    try context.connect(server: server, share: name, user: self._user)
+                } else {
+                    // Workaround server connection timeout issue
+                    do {
+                        try context.echo()
+                    } catch {
+                        try initialize()
+                        try context.connect(server: server, share: name, user: self._user)
+                    }
+                }
+               
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)

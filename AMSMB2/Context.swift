@@ -150,12 +150,15 @@ extension SMB2Context {
         self.isConnected = false
     }
     
-    @discardableResult
-    func echo() throws -> Bool {
-        try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
-            smb2_echo_async(context, SMB2Context.generic_handler, cbPtr)
+    func echo() throws -> Void {
+        let result = withThreadSafeContext { (context) -> Int32 in
+            smb2_echo(context)
         }
-        return true
+        try POSIXError.throwIfError(result, description: error, default: .ECONNREFUSED)
+        /*try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
+            smb2_echo_async(context, SMB2Context.generic_handler, cbPtr)
+        }*/
+        return
     }
 }
 
