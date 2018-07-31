@@ -277,15 +277,52 @@ extension SMB2Context {
         }
     }
     
-    static let generic_handler: @convention(c) (_ smb2: UnsafeMutablePointer<smb2_context>?, _ status: Int32, _ command_data: UnsafeMutableRawPointer?, _ cbdata: UnsafeMutableRawPointer?) -> Void = { smb2, status, command_data, cbdata in
-        guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
-        cbdata.result = status
-        cbdata.commandData = command_data
-        cbdata.isFinished = true
+    static let generic_handler = async_handler(data: true, finishing: true)
+    
+    static func async_handler(data: Bool, finishing: Bool) ->
+        @convention(c) (UnsafeMutablePointer<smb2_context>?, Int32, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
+    {
+        switch (data, finishing) {
+        case (true, true):
+            return { smb2, status, command_data, cbdata in
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                if status != SMB2_STATUS_SUCCESS {
+                    cbdata.result = status
+                }
+                cbdata.commandData = command_data
+                cbdata.isFinished = true
+            }
+        case (true, false):
+            return { smb2, status, command_data, cbdata in
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                if status != SMB2_STATUS_SUCCESS {
+                    cbdata.result = status
+                }
+                cbdata.commandData = command_data
+            }
+        case (false, true):
+            return { smb2, status, command_data, cbdata in
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                if status != SMB2_STATUS_SUCCESS {
+                    cbdata.result = status
+                }
+                cbdata.isFinished = true
+            }
+        case (false, false):
+            return { smb2, status, command_data, cbdata in
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                if status != SMB2_STATUS_SUCCESS {
+                    cbdata.result = status
+                }
+            }
+        }
     }
     
     @discardableResult
-    func async_await(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32) throws -> (result: Int32, data: UnsafeMutableRawPointer?) {
+    func async_await(defaultError: POSIXError.Code,
+                     execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32)
+        throws -> (result: Int32, data: UnsafeMutableRawPointer?)
+    {
         let cbPtr = CBData.new()
         defer {
             cbPtr.deallocate()
@@ -302,7 +339,10 @@ extension SMB2Context {
         return (cbResult, data)
     }
     
-    func async_await_pdu(defaultError: POSIXError.Code, execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?) throws -> (result: UInt32, data: UnsafeMutableRawPointer?) {
+    func async_await_pdu(defaultError: POSIXError.Code,
+                         execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?)
+        throws -> (result: UInt32, data: UnsafeMutableRawPointer?)
+    {
         let cbPtr = CBData.new()
         defer {
             cbPtr.deallocate()
@@ -316,9 +356,8 @@ extension SMB2Context {
             smb2_queue_pdu(context, pdu)
         }
         try wait_for_reply(cbPtr)
-        let cbResult = cbPtr.pointee.result
-        let result = UInt32(bitPattern: cbResult)
-        if result & SMB2_STATUS_SEVERITY_ERROR == 0xc0000000 {
+        let result = UInt32(bitPattern: cbPtr.pointee.result)
+        if result & SMB2_STATUS_SEVERITY_ERROR == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(result)
             try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
         }

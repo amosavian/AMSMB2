@@ -155,27 +155,6 @@ final class SMB2FileHandle {
             }
         }
         
-        /*
-        var result = 0
-        var errorNo: Int32 = 0
-        data.enumerateBytes { (bytes, dindex, stop) in
-            guard let baseAddress = bytes.baseAddress else { return }
-            let rc: Int32
-            do {
-                (rc, _) = try context.async_wait(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
-                    smb2_write_async(context, handle, UnsafeMutablePointer(mutating: baseAddress), UInt32(bytes.count),
-                                     SMB2Context.async_handler, cbPtr)
-                }
-                result += rc
-                stop = false
-            } catch {
-                errorNo = -(error as! POSIXError).code.rawValue
-                stop = true
-            }
-        }
-        try POSIXError.throwIfError(errorNo, description: context.error, default: .EIO)
-        */
-        
         return Int(result)
     }
     
@@ -200,6 +179,7 @@ final class SMB2FileHandle {
         }
     }
     
+    @discardableResult
     func fcntl(command: IOCtl.Command, data: Data) throws -> Data {
         var data = data
         let count = UInt32(data.count)
@@ -227,11 +207,11 @@ final class SMB2FileHandle {
     }
     
     func fcntl(command: IOCtl.Command) throws -> Void {
-        _=try fcntl(command: command, data: Data())
+        try fcntl(command: command, data: Data())
     }
     
     func fcntl<T: DataRepresentable>(command: IOCtl.Command, args: T) throws -> Void {
-        _=try fcntl(command: command, data: args.data())
+        try fcntl(command: command, data: args.data())
     }
     
     func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {
