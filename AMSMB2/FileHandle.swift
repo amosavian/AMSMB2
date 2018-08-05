@@ -23,8 +23,7 @@ final class SMB2FileHandle {
     }
     
     private var context: SMB2Context
-    private let handle: smb2fh
-    private var isOpen: Bool
+    private var _handle: smb2fh?
     
     convenience init(forReadingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDONLY, on: context)
@@ -48,40 +47,23 @@ final class SMB2FileHandle {
     
     init(forPipe path: String, on context: SMB2Context) throws {
         // smb2_open() sets overwrite flag, which is incompatible with pipe in mac's smbx
-        
-        let (_, cmddata) = try path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
-            return try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
-                var req = smb2_create_request()
-                req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
-                req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
-                req.desired_access = UInt32(SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES |
-                    SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES)
-                req.share_access = UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE)
-                req.create_disposition = UInt32(SMB2_FILE_OPEN)
-                req.create_options = UInt32(SMB2_FILE_NON_DIRECTORY_FILE)
-                req.name = path
-                let pReq = UnsafeMutablePointer<smb2_create_request>.allocate(capacity: 1)
-                pReq.initialize(to: req)
-                defer {
-                    pReq.deinitialize(count: 1)
-                    pReq.deallocate()
-                }
-                return smb2_cmd_create_async(context, pReq, SMB2Context.generic_handler, cbPtr)
+        let (_, cmddata) = try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+            let pReq = UnsafeMutablePointer<smb2_create_request>.allocate(capacity: 1)
+            pReq.initialize(to: SMB2FileHandle.standardOpenRequest(path: path))
+            defer {
+                pReq.deinitialize(count: 1)
+                pReq.deallocate()
             }
+            return smb2_cmd_create_async(context, pReq, SMB2Context.generic_handler, cbPtr)
         }
         
         guard let reply = cmddata?.bindMemory(to: smb2_create_reply.self, capacity: 1) else {
             throw POSIXError(.EIO)
         }
-        // smb2fh is not exported, we assume memory layout and advance to file_id field according to layout
-        let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
-        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int64>.size)
-        handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
-        handle.storeBytes(of: reply.pointee.file_id, toByteOffset: MemoryLayout<Int>.size * 2, as: smb2_file_id.self)
+        
         
         self.context = context
-        self.handle = OpaquePointer(handle)
-        self.isOpen = true
+        self._handle = SMB2FileHandle.fileHandle(withFileId: reply.pointee.file_id)
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
@@ -89,34 +71,34 @@ final class SMB2FileHandle {
             smb2_open_async(context, path, flags, SMB2Context.generic_handler, cbPtr)
         }
         
-        guard let handle = OpaquePointer(cmddata) else {
+        guard let handle = smb2fh(cmddata) else {
             throw POSIXError(.ENOENT)
         }
         self.context = context
-        self.handle = handle
-        self.isOpen = true
+        self._handle = handle
     }
     
     deinit {
-        if isOpen {
-            _ = context.withThreadSafeContext { (context) in
-                smb2_close(context, handle)
-            }
+        guard let handle = _handle else { return }
+        _ = context.withThreadSafeContext { (context) in
+            smb2_close(context, handle)
         }
     }
     
     var fileId: smb2_file_id {
-        return smb2_get_file_id(handle).pointee
+        return _handle.map(smb2_get_file_id)?.pointee ?? compound_file_id
     }
     
     func close() {
+        guard let handle = _handle else { return }
+        _handle = nil
         _ = context.withThreadSafeContext { (context) in
             smb2_close(context, handle)
         }
-        isOpen = false
     }
     
     func fstat() throws -> smb2_stat_64 {
+        let handle = try self.handle()
         var st = smb2_stat_64()
         try context.async_await(defaultError: .EBADF) { (context, cbPtr) -> Int32 in
             smb2_fstat_async(context, handle, &st, SMB2Context.generic_handler, cbPtr)
@@ -125,6 +107,7 @@ final class SMB2FileHandle {
     }
     
     func ftruncate(toLength: UInt64) throws {
+        let handle = try self.handle()
         try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             smb2_ftruncate_async(context, handle, toLength, SMB2Context.generic_handler, cbPtr)
         }
@@ -141,6 +124,7 @@ final class SMB2FileHandle {
     
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
+        let handle = try self.handle()
         let result = smb2_lseek(context.context, handle, offset, whence.rawValue, nil)
         try POSIXError.throwIfError(Int32(exactly: result) ?? 0, description: context.error, default: .ESPIPE)
         return result
@@ -149,6 +133,7 @@ final class SMB2FileHandle {
     func read(length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
+        let handle = try self.handle()
         let count = length > 0 ? length : optimizedReadSize
         var data = Data(count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
@@ -163,6 +148,7 @@ final class SMB2FileHandle {
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
+        let handle = try self.handle()
         let count = length > 0 ? length : optimizedReadSize
         var data = Data(count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
@@ -185,6 +171,7 @@ final class SMB2FileHandle {
     func write(data: Data) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
+        let handle = try self.handle()
         var data = data
         let count = data.count
         let (result, _) = try data.withUnsafeMutableBytes { (p: UnsafeMutablePointer<UInt8>) -> (result: Int32, data: UnsafeMutableRawPointer?) in
@@ -200,6 +187,7 @@ final class SMB2FileHandle {
     func pwrite(data: Data, offset: UInt64) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
+        let handle = try self.handle()
         var data = data
         let count = data.count
         let (result, _) = try data.withUnsafeMutableBytes { (p: UnsafeMutablePointer<UInt8>) -> (result: Int32, data: UnsafeMutableRawPointer?) in
@@ -213,6 +201,7 @@ final class SMB2FileHandle {
     }
     
     func fsync() throws {
+        let handle = try self.handle()
         try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
             smb2_fsync_async(context, handle, SMB2Context.generic_handler, cbPtr)
         }
@@ -220,6 +209,7 @@ final class SMB2FileHandle {
     
     @discardableResult
     func fcntl(command: IOCtl.Command, data: Data) throws -> Data {
+        let handle = try self.handle()
         var data = data
         let count = UInt32(data.count)
         var req: smb2_ioctl_request
@@ -261,5 +251,38 @@ final class SMB2FileHandle {
     func fcntl<T: DataRepresentable, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R {
         let result = try fcntl(command: command, data: args.data())
         return try R(data: result)
+    }
+}
+
+fileprivate extension SMB2FileHandle {
+    fileprivate func handle() throws -> smb2fh {
+        guard let handle = _handle else {
+            throw POSIXError(.EBADF, description: "SMB2 file is already closed.")
+        }
+        return handle
+    }
+    
+    fileprivate static func standardOpenRequest(path: String) -> smb2_create_request {
+        return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
+            var req = smb2_create_request()
+            req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
+            req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
+            req.desired_access = UInt32(SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES |
+                SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES)
+            req.share_access = UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE)
+            req.create_disposition = UInt32(SMB2_FILE_OPEN)
+            req.create_options = UInt32(SMB2_FILE_NON_DIRECTORY_FILE)
+            req.name = path
+            return req
+        }
+    }
+    
+    fileprivate static func fileHandle(withFileId file_id: smb2_file_id) -> smb2fh {
+        // smb2fh is not exported, we assume memory layout and advance to file_id field according to layout
+        let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
+        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int64>.size)
+        handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
+        handle.storeBytes(of: file_id, toByteOffset: MemoryLayout<Int>.size * 2, as: smb2_file_id.self)
+        return smb2fh(handle)
     }
 }
