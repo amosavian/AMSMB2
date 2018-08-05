@@ -18,7 +18,6 @@ private typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ tota
 @objc @objcMembers
 public class AMSMB2: NSObject, NSSecureCoding, Codable {
     fileprivate var context: SMB2Context?
-    private var smburl: SMB2URL?
     
     public let url: URL
     fileprivate let _domain: String
@@ -28,6 +27,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
     fileprivate let _password: String
     fileprivate let q: DispatchQueue
     fileprivate var _timeout: TimeInterval
+    
+    fileprivate var connectedShare: String?
     
     /**
      The timeout interval to use when doing an operation until getting response. Default value is 60 seconds.
@@ -60,10 +61,19 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
         self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: .concurrent)
         self.url = url
         
+        var domain = domain
         var workstation: String = ""
         var user: String = "guest"
         
-        if let userComps = credential?.user?.components(separatedBy: "\\") {
+        if var undigestedUser = credential?.user ?? url.user {
+            // Extract domain
+            if domain.isEmpty && undigestedUser.components(separatedBy: ";").count == 2 {
+                let comps = undigestedUser.components(separatedBy: ";")
+                domain = comps[0]
+                undigestedUser = comps[1]
+            }
+            
+            let userComps = undigestedUser.components(separatedBy: "\\")
             switch userComps.count {
             case 1:
                 user = userComps[0]
@@ -74,6 +84,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                 break
             }
         }
+        
         _server = host
         _domain = domain
         _workstation = workstation
@@ -174,19 +185,17 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
     open func connectShare(name: String, completionHandler: SimpleCompletionHandler) {
         func initialize() throws {
             let context = try SMB2Context(timeout: self._timeout)
-            let url = try SMB2URL(self.url.absoluteString, on: context)
             self.context = context
-            self.smburl = url
             self.initContext(context)
         }
         
         q.async {
             do {
-                if self.context == nil {
+                if self.context == nil || self.connectedShare != name {
                     try initialize()
                 }
                 
-                let server = self.smburl!.server ?? self._server
+                let server = self._server
                 guard let context = self.context else {
                     fatalError("Failed to initilize context, should never happen.")
                 }
@@ -194,7 +203,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                 if context.fileDescriptor == -1 {
                     try context.connect(server: server, share: name, user: self._user)
                 } else {
-                    // Workaround server connection timeout issue
+                    // Workaround disgraceful disconnect issue (e.g. server timeout)
                     do {
                         try context.echo()
                     } catch {
@@ -257,7 +266,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
         q.async {
             do {
                 // We use separate context because when a context connects to a tree, it won't connect to another tree.
-                let server = self.smburl?.server ?? self._server
+                let server = self._server
                 let context = try SMB2Context(timeout: self.timeout)
                 self.initContext(context)
                 
@@ -629,7 +638,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
        - bytes: written bytes count.
        - completionHandler: closure will be run after copying is completed.
      */
-    @available(*, deprecated, message: "New method does server-side copy and is much faster.", renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)")
+    @available(*, deprecated, message: "New method does server-side copy and is much faster.",
+               renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)")
     @objc
     open func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
                                  progress: SMB2ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
@@ -966,16 +976,23 @@ extension AMSMB2 {
             guard prefCount > 0 else {
                 break
             }
-            let data = try file.read(length: prefCount)
-            if data.isEmpty {
+            
+            let shouldBreak: Bool = try autoreleasepool {
+                let data = try file.read(length: prefCount)
+                if data.isEmpty {
+                    return true
+                }
+                let written = try stream.write(data: data)
+                guard written == data.count else {
+                    throw POSIXError(.EIO, description: "Inconsitency in reading from SMB file handle.")
+                }
+                sent += Int64(written)
+                return false
+            }
+            if shouldBreak {
                 break
             }
             
-            let written = try stream.write(data: data)
-            guard written == data.count else {
-                throw POSIXError(.EIO, description: "Inconsitency in reading from SMB file handle.")
-            }
-            sent += Int64(written)
             shouldContinue = progress?(sent, size) ?? true
         }
     }

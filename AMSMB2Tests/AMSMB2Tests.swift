@@ -309,8 +309,9 @@ extension AMSMB2Tests {
         return url
     }
     
-    fileprivate func dummyFile(size: Int) -> URL {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("dummyfile.dat")
+    fileprivate func dummyFile(size: Int, name: String = #function) -> URL {
+        let name = name.trimmingCharacters(in: CharacterSet(charactersIn: "()"))
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
         
         if FileManager.default.fileExists(atPath: url.path) {
             try! FileManager.default.removeItem(at: url)

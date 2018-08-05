@@ -47,7 +47,7 @@ final class SMB2FileHandle {
     }
     
     init(forPipe path: String, on context: SMB2Context) throws {
-        // smb2_open() sets overwrite flag, which is incampatible with pipe in mac's smbx
+        // smb2_open() sets overwrite flag, which is incompatible with pipe in mac's smbx
         
         let (_, cmddata) = try path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
             return try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
@@ -77,7 +77,7 @@ final class SMB2FileHandle {
         let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
         let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int64>.size)
         handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
-        handle.advanced(by: MemoryLayout<Int>.size * 2).bindMemory(to: smb2_file_id.self, capacity: 1).pointee = reply.pointee.file_id
+        handle.storeBytes(of: reply.pointee.file_id, toByteOffset: MemoryLayout<Int>.size * 2, as: smb2_file_id.self)
         
         self.context = context
         self.handle = OpaquePointer(handle)

@@ -25,7 +25,6 @@ extension POSIXError {
     }
 }
 
-
 extension Dictionary where Key == URLResourceKey, Value == Any {
     var filename: String? {
         return self[.nameKey] as? String

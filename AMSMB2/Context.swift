@@ -18,9 +18,8 @@ final class SMB2Context {
         static let required = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
     
-    internal var context: UnsafeMutablePointer<smb2_context>
+    var context: UnsafeMutablePointer<smb2_context>
     private var _context_lock = NSLock()
-    var isConnected = false
     var timeout: TimeInterval
     
     init(timeout: TimeInterval) throws {
@@ -32,7 +31,7 @@ final class SMB2Context {
     }
     
     deinit {
-        if isConnected {
+        if fileDescriptor > -1 {
             try? self.disconnect()
         }
         withThreadSafeContext { (context) in
@@ -40,7 +39,7 @@ final class SMB2Context {
         }
     }
     
-    internal func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) rethrows -> R {
+    func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) rethrows -> R {
         _context_lock.lock()
         defer {
             _context_lock.unlock()
@@ -140,14 +139,12 @@ extension SMB2Context {
         try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_connect_share_async(context, server, share, user, SMB2Context.generic_handler, cbPtr)
         }
-        self.isConnected = true
     }
     
     func disconnect() throws {
         try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_disconnect_share_async(context, SMB2Context.generic_handler, cbPtr)
         }
-        self.isConnected = false
     }
     
     func echo() throws -> Void {
