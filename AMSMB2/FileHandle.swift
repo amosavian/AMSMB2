@@ -80,7 +80,7 @@ final class SMB2FileHandle {
     
     deinit {
         guard let handle = _handle else { return }
-        _ = context.withThreadSafeContext { (context) in
+        _ = try? context.withThreadSafeContext { (context) in
             smb2_close(context, handle)
         }
     }
@@ -92,7 +92,7 @@ final class SMB2FileHandle {
     func close() {
         guard let handle = _handle else { return }
         _handle = nil
-        _ = context.withThreadSafeContext { (context) in
+        _ = try? context.withThreadSafeContext { (context) in
             smb2_close(context, handle)
         }
     }

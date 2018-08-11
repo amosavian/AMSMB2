@@ -18,7 +18,7 @@ final class SMB2Context {
         static let required = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
     
-    var context: UnsafeMutablePointer<smb2_context>
+    var context: UnsafeMutablePointer<smb2_context>?
     private var _context_lock = NSLock()
     var timeout: TimeInterval
     
@@ -34,69 +34,52 @@ final class SMB2Context {
         if fileDescriptor > -1 {
             try? self.disconnect()
         }
-        withThreadSafeContext { (context) in
+        try? withThreadSafeContext { (context) in
             smb2_destroy_context(context)
         }
     }
     
-    func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) rethrows -> R {
+    func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) throws -> R {
+        guard let context = self.context else {
+            throw POSIXError(.ECONNABORTED, description: "No valid smb2 context is available.")
+        }
         _context_lock.lock()
         defer {
             _context_lock.unlock()
         }
-        return try handler(self.context)
+        return try handler(context)
     }
 }
 
 // MARK: Setting manipulation
 extension SMB2Context {
     func set(workstation value: String) {
-        withThreadSafeContext { (context) in
+        try? withThreadSafeContext { (context) in
             smb2_set_workstation(context, value)
         }
     }
     
     func set(domain value: String) {
-        withThreadSafeContext { (context) in
+        try? withThreadSafeContext { (context) in
             smb2_set_domain(context, value)
         }
     }
     
     func set(user value: String) {
-        withThreadSafeContext { (context) in
+        try? withThreadSafeContext { (context) in
             smb2_set_user(context, value)
         }
     }
     
     func set(password value: String) {
-        withThreadSafeContext { (context) in
+        try? withThreadSafeContext { (context) in
             smb2_set_password(context, value)
         }
     }
     
     func set(securityMode: NegotiateSigning) {
-        withThreadSafeContext { (context) in
+        try? withThreadSafeContext { (context) in
             smb2_set_security_mode(context, securityMode.rawValue)
-        }
-    }
-    
-    func parseUrl(_ url: String) throws -> UnsafeMutablePointer<smb2_url> {
-        return try withThreadSafeContext { (context) in
-            if let result = smb2_parse_url(context, url) {
-                return result
-            }
-            
-            let errorDescription = self.error
-            switch errorDescription {
-            case "URL does not start with 'smb://'":
-                throw POSIXError(.ENOPROTOOPT, description: errorDescription)
-            case "URL is too long":
-                throw POSIXError(.EOVERFLOW, description: errorDescription)
-            case "Failed to allocate smb2_url":
-                throw POSIXError(.ENOMEM, description: errorDescription)
-            default:
-                throw POSIXError(.EINVAL, description: errorDescription)
-            }
         }
     }
     
@@ -104,11 +87,7 @@ extension SMB2Context {
         guard let guid = smb2_get_client_guid(context) else {
             return nil
         }
-        
-        let uuid = guid.withMemoryRebound(to: uuid_t.self, capacity: 1) { ptr in
-            return ptr.pointee
-        }
-        
+        let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
         return UUID.init(uuid: uuid)
     }
     
@@ -126,8 +105,14 @@ extension SMB2Context {
     }
     
     func service(revents: Int32) throws {
-        let result = withThreadSafeContext { (context)  in
+        let result = try withThreadSafeContext { (context) in
             return smb2_service(context, revents)
+        }
+        if result < 0 {
+            self._context_lock.lock()
+            smb2_destroy_context(context)
+            context = nil
+            self._context_lock.unlock()
         }
         try POSIXError.throwIfError(result, description: error, default: .EINVAL)
     }
@@ -148,7 +133,7 @@ extension SMB2Context {
     }
     
     func echo() throws -> Void {
-        let result = withThreadSafeContext { (context) -> Int32 in
+        let result = try withThreadSafeContext { (context) -> Int32 in
             smb2_echo(context)
         }
         try POSIXError.throwIfError(result, description: error, default: .ECONNREFUSED)
@@ -174,17 +159,7 @@ extension SMB2Context {
         defer {
             smb2_free_data(context, rep)
         }
-        
-        var result = [(name: String, type: UInt32, comment: String)]()
-        let array = Array(UnsafeBufferPointer(start: rep.pointee.ctr.pointee.ctr1.array, count: Int(rep.pointee.ctr.pointee.ctr1.count)))
-        for item in array {
-            let name = String(cString: item.name)
-            let type = item.type
-            let comment = String(cString: item.comment)
-            result.append((name: name, type: type, comment: comment))
-        }
-        
-        return result
+        return parseShareEnum(ctr1: rep.pointee.ctr.pointee.ctr1)
     }
     
     func shareEnumSwift(serverName: String) throws -> [(name: String, type: UInt32, comment: String)]
@@ -192,29 +167,14 @@ extension SMB2Context {
         // Connection to server service.
         let srvsvc = try SMB2FileHandle(forPipe: "srvsvc", on: self)
         
-        // Sending bind command to DCE-RPC.
+        // Bind command
         _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
-        // Reading bind command result to DCE-RPC.
         let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
-        // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
-        if recvBindData.count < 68 {
-            try POSIXError.throwIfError(Int32.min, description: "Binding failure", default: .EBADMSG)
-        }
+        try validateBindData(recvBindData)
         
-        // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
-        if recvBindData[44] > 0 || recvBindData[45] > 0 {
-            // Ack result is not acceptance (0x0000)
-            let errorCode = recvBindData[44] + (recvBindData[45] << 8)
-            let errorCodeString = String(errorCode, radix: 16, uppercase: false)
-            throw POSIXError(.EBADMSG, userInfo: [
-                NSLocalizedFailureReasonErrorKey: "Binding failure: \(errorCodeString)"])
-        }
-        
-        // Send NetShareEnum reqeust, Level 1 mean we need share name and remark.
+        // NetShareEnum reqeust, Level 1 mean we need share name and remark.
         _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: serverName), offset: 0)
-        // Reading NetShareEnum result.
         let recvData = try srvsvc.pread(offset: 0)
-        // Parse result into Array.
         return try MSRPC.parseNetShareEnumAllLevel1(data: recvData)
     }
 }
@@ -276,7 +236,10 @@ extension SMB2Context {
     private class CBData {
         var result: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
-        var commandData: UnsafeMutableRawPointer? = nil
+        var data: UnsafeMutableRawPointer? = nil
+        var status: UInt32 {
+            return UInt32(bitPattern: result)
+        }
         
         static func new() -> UnsafeMutablePointer<CBData> {
             let cbPtr = UnsafeMutablePointer<CBData>.allocate(capacity: 1)
@@ -308,11 +271,9 @@ extension SMB2Context {
         }
     }
     
-    static let generic_handler = async_handler(data: true, finishing: true)
+    static let generic_handler: smb2_command_cb = async_handler(data: true, finishing: true)
     
-    static func async_handler(data: Bool, finishing: Bool) ->
-        @convention(c) (UnsafeMutablePointer<smb2_context>?, Int32, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
-    {
+    static func async_handler(data: Bool, finishing: Bool) -> smb2_command_cb {
         switch (data, finishing) {
         case (true, true):
             return { smb2, status, command_data, cbdata in
@@ -320,7 +281,7 @@ extension SMB2Context {
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
-                cbdata.commandData = command_data
+                cbdata.data = command_data
                 cbdata.isFinished = true
             }
         case (true, false):
@@ -329,7 +290,7 @@ extension SMB2Context {
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
-                cbdata.commandData = command_data
+                cbdata.data = command_data
             }
         case (false, true):
             return { smb2, status, command_data, cbdata in
@@ -349,9 +310,10 @@ extension SMB2Context {
         }
     }
     
+    typealias AsyncAwaitHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> R
+    
     @discardableResult
-    func async_await(defaultError: POSIXError.Code,
-                     execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> Int32)
+    func async_await(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<Int32>)
         throws -> (result: Int32, data: UnsafeMutableRawPointer?)
     {
         let cbPtr = CBData.new()
@@ -360,20 +322,19 @@ extension SMB2Context {
             cbPtr.deallocate()
         }
         
-        let result = withThreadSafeContext { (context) -> Int32 in
+        let result = try withThreadSafeContext { (context) -> Int32 in
             return handler(context, cbPtr)
         }
         try POSIXError.throwIfError(result, description: error, default: .ECONNRESET)
         try wait_for_reply(cbPtr)
         let cbResult = cbPtr.pointee.result
         try POSIXError.throwIfError(cbResult, description: error, default: defaultError)
-        let data = cbPtr.pointee.commandData
+        let data = cbPtr.pointee.data
         return (cbResult, data)
     }
     
-    func async_await_pdu(defaultError: POSIXError.Code,
-                         execute handler: (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> UnsafeMutablePointer<smb2_pdu>?)
-        throws -> (result: UInt32, data: UnsafeMutableRawPointer?)
+    func async_await_pdu(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<UnsafeMutablePointer<smb2_pdu>?>)
+        throws -> (status: UInt32, data: UnsafeMutableRawPointer?)
     {
         let cbPtr = CBData.new()
         defer {
@@ -382,19 +343,47 @@ extension SMB2Context {
         }
         
         try withThreadSafeContext { (context) -> Void in
-            let result = handler(context, cbPtr)
-            guard let pdu = result else {
+            guard let pdu = handler(context, cbPtr) else {
                 throw POSIXError(.ENOMEM)
             }
             smb2_queue_pdu(context, pdu)
         }
         try wait_for_reply(cbPtr)
-        let result = UInt32(bitPattern: cbPtr.pointee.result)
-        if result & SMB2_STATUS_SEVERITY_ERROR == SMB2_STATUS_SEVERITY_ERROR {
-            let errorNo = nterror_to_errno(result)
+        let status = cbPtr.pointee.status
+        if status & SMB2_STATUS_SEVERITY_ERROR == SMB2_STATUS_SEVERITY_ERROR {
+            let errorNo = nterror_to_errno(status)
             try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
         }
-        let data = cbPtr.pointee.commandData
-        return (result, data)
+        let data = cbPtr.pointee.data
+        return (status, data)
+    }
+}
+
+fileprivate extension SMB2Context {
+    fileprivate func parseShareEnum(ctr1: srvsvc_netsharectr1) -> [(name: String, type: UInt32, comment: String)] {
+        var result = [(name: String, type: UInt32, comment: String)]()
+        let array = Array(UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count)))
+        for item in array {
+            let name = String(cString: item.name)
+            let type = item.type
+            let comment = String(cString: item.comment)
+            result.append((name: name, type: type, comment: comment))
+        }
+        return result
+    }
+    
+    fileprivate func validateBindData(_ recvBindData: Data) throws {
+        // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+        if recvBindData.count < 68 {
+            throw POSIXError(.EBADMSG, description:  "Binding failure: Invalid size")
+        }
+        
+        // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+        if recvBindData[44] > 0 || recvBindData[45] > 0 {
+            // Ack result is not acceptance (0x0000)
+            let errorCode = recvBindData[44] + (recvBindData[45] << 8)
+            let errorCodeString = String(errorCode, radix: 16, uppercase: false)
+            throw POSIXError(.EBADMSG, description:  "Binding failure: \(errorCodeString)")
+        }
     }
 }

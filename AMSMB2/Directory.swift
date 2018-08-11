@@ -33,7 +33,7 @@ final class SMB2Directory: Collection {
     }
     
     deinit {
-        context.withThreadSafeContext { (context) in
+        try? context.withThreadSafeContext { (context) in
             smb2_closedir(context, handle)
         }
     }

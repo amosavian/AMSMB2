@@ -13,7 +13,12 @@ final class SMB2URL {
     private var _url: UnsafeMutablePointer<smb2_url>
     
     init(_ url: String, on context: SMB2Context) throws {
-        _url = try context.parseUrl(url)
+        _url = try context.withThreadSafeContext { (pcontext) in
+            guard let result = smb2_parse_url(pcontext, url) else {
+                throw SMB2URL.error(forDescription: context.error)
+            }
+            return result
+        }
     }
     
     deinit {
@@ -43,5 +48,20 @@ final class SMB2URL {
     var user: String? {
         guard let value = _url.pointee.user else { return nil }
         return String.init(cString: value)
+    }
+}
+
+extension SMB2URL {
+    fileprivate static func error(forDescription errorDescription: String?) -> POSIXError {
+        switch errorDescription {
+        case "URL does not start with 'smb://'":
+            return POSIXError(.ENOPROTOOPT, description: errorDescription)
+        case "URL is too long":
+            return POSIXError(.EOVERFLOW, description: errorDescription)
+        case "Failed to allocate smb2_url":
+            return POSIXError(.ENOMEM, description: errorDescription)
+        default:
+            return POSIXError(.EINVAL, description: errorDescription)
+        }
     }
 }

@@ -785,7 +785,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                     throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
                 }
                 guard let size = (try url.resourceValues(forKeys: [.fileSizeKey]).allValues[.fileSizeKey] as? NSNumber)?.uint64Value else {
-                    throw POSIXError(POSIXError.EFTYPE, description: "Could not retrieve file size from URL.")
+                    throw POSIXError(.EFTYPE, description: "Could not retrieve file size from URL.")
                 }
                 if try !url.checkResourceIsReachable() {
                     throw POSIXError(.EIO)
@@ -816,10 +816,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
     @objc
     open func downloadItem(atPath path: String, to url: URL, progress: SMB2ReadProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
-        guard url.isFileURL else {
-            fatalError("Downloading to remote url is not supported.")
-        }
-        
         q.async {
             do {
                 guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
