@@ -23,12 +23,12 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
     fileprivate let _domain: String
     fileprivate let _workstation: String
     fileprivate let _user: String
-    fileprivate let _server: String
     fileprivate let _password: String
     fileprivate let q: DispatchQueue
     fileprivate var _timeout: TimeInterval
     
     fileprivate var connectedShare: String?
+    fileprivate let connectLock = NSLock()
     
     /**
      The timeout interval to use when doing an operation until getting response. Default value is 60 seconds.
@@ -54,7 +54,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
      */
     @objc
     public init?(url: URL, domain: String = "", credential: URLCredential?) {
-        guard url.scheme?.lowercased() == "smb", let host = url.host else {
+        guard url.scheme?.lowercased() == "smb", url.host != nil else {
             return nil
         }
         let hostLabel = url.host.map({ "_" + $0 }) ?? ""
@@ -85,7 +85,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
             }
         }
         
-        _server = host
         _domain = domain
         _workstation = workstation
         _user = user
@@ -100,22 +99,15 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                                               userInfo: [NSLocalizedDescriptionKey: "URL is not set."]))
             return nil
         }
-        guard url.scheme?.lowercased() == "smb" else {
+        guard url.scheme?.lowercased() == "smb", url.host != nil else {
             aDecoder.failWithError(CocoaError(.coderReadCorrupt,
-                                              userInfo: [NSLocalizedDescriptionKey: "URL is not smb."]))
-            return nil
-        }
-        
-        guard let server = aDecoder.decodeObject(of: NSString.self, forKey: "server") as String? else {
-            aDecoder.failWithError(CocoaError(.coderValueNotFound,
-                                              userInfo: [NSLocalizedDescriptionKey: "server is not set."]))
+                                              userInfo: [NSLocalizedDescriptionKey: "URL is not valid."]))
             return nil
         }
         
         let hostLabel = url.host.map({ "_" + $0 }) ?? ""
         self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: .concurrent)
         self.url = url
-        self._server = server
         self._domain = aDecoder.decodeObject(of: NSString.self, forKey: "domain") as String? ?? ""
         self._workstation = aDecoder.decodeObject(of: NSString.self, forKey: "workstation") as String? ?? ""
         self._user = aDecoder.decodeObject(of: NSString.self, forKey: "user") as String? ?? "guest"
@@ -126,7 +118,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
     
     open func encode(with aCoder: NSCoder) {
         aCoder.encode(url, forKey: "url")
-        aCoder.encode(_server, forKey: "server")
         aCoder.encode(_domain, forKey: "domain")
         aCoder.encode(_workstation, forKey: "workstation")
         aCoder.encode(_user, forKey: "user")
@@ -158,7 +149,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
         let hostLabel = url.host.map({ "_" + $0 }) ?? ""
         self.q = DispatchQueue(label: "smb2_queue\(hostLabel)", qos: .default, attributes: .concurrent)
         self.url = url
-        self._server = try container.decode(String.self, forKey: .server)
         self._domain = try container.decodeIfPresent(String.self, forKey: .domain) ?? ""
         self._workstation = try container.decodeIfPresent(String.self, forKey: .workstation) ?? ""
         self._user = try container.decodeIfPresent(String.self, forKey: .user) ?? ""
@@ -170,7 +160,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
     open func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(url, forKey: .url)
-        try container.encode(_server, forKey: .server)
         try container.encode(_domain, forKey: .domain)
         try container.encode(_workstation, forKey: .workstation)
         try container.encode(_user, forKey: .user)
@@ -183,33 +172,26 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
      */
     @objc
     open func connectShare(name: String, completionHandler: SimpleCompletionHandler) {
-        func initialize() throws {
+        func establishContext() throws {
             let context = try SMB2Context(timeout: self._timeout)
             self.context = context
             self.initContext(context)
+            try context.connect(server: url.host!, share: name, user: self._user)
         }
         
         q.async {
             do {
-                if self.context == nil || self.connectedShare != name {
-                    try initialize()
+                self.connectLock.lock()
+                defer { self.connectLock.unlock() }
+                if self.context == nil || self.context?.fileDescriptor == -1 || self.connectedShare != name {
+                    try establishContext()
                 }
                 
-                let server = self._server
-                guard let context = self.context else {
-                    fatalError("Failed to initilize context, should never happen.")
-                }
-                
-                if context.fileDescriptor == -1 {
-                    try context.connect(server: server, share: name, user: self._user)
-                } else {
-                    // Workaround disgraceful disconnect issue (e.g. server timeout)
-                    do {
-                        try context.echo()
-                    } catch {
-                        try initialize()
-                        try context.connect(server: server, share: name, user: self._user)
-                    }
+                // Workaround disgraceful disconnect issue (e.g. server timeout)
+                do {
+                    try self.context!.echo()
+                } catch {
+                    try establishContext()
                 }
                
                 completionHandler?(nil)
@@ -266,17 +248,16 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
         q.async {
             do {
                 // We use separate context because when a context connects to a tree, it won't connect to another tree.
-                let server = self._server
                 let context = try SMB2Context(timeout: self.timeout)
                 self.initContext(context)
                 
                 // Connecting to Interprocess Communication share
-                try context.connect(server: server, share: "IPC$", user: self._user)
+                try context.connect(server: self.url.host!, share: "IPC$", user: self._user)
                 defer {
                     try? context.disconnect()
                 }
                 
-                var shares = try context.shareEnumSwift(serverName: self._server)
+                var shares = try context.shareEnumSwift(serverName: self.url.host!)
                 if enumerateHidden {
                     shares = shares.filter { $0.type & 0x0fffffff == SHARE_TYPE_DISKTREE }
                 } else {
@@ -301,8 +282,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
        - error: `Error` if any occured during enumeration.
      */
     @objc
-    open func contentOfDirectory(atPath path: String, recursive: Bool = false,
-                                 completionHandler: @escaping (_ contents: [[URLResourceKey: Any]], _ error: Error?) -> Void) {
+    open func contentsOfDirectory(atPath path: String, recursive: Bool = false,
+                                  completionHandler: @escaping (_ contents: [[URLResourceKey: Any]], _ error: Error?) -> Void) {
         q.async {
             do {
                 let contents = try self.listDirectory(path: path, recursive: recursive)
@@ -311,6 +292,12 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                 completionHandler([], error)
             }
         }
+    }
+    
+    @available(*, obsoleted: 1, renamed: "contentsOfDirectory(atPath:recursive:completionHandler:)")
+    open func contentOfDirectory(atPath path: String, recursive: Bool = false,
+                                 completionHandler: @escaping (_ contents: [[URLResourceKey: Any]], _ error: Error?) -> Void) {
+        contentsOfDirectory(atPath: path, recursive: recursive, completionHandler: completionHandler)
     }
     
     /**
@@ -645,50 +632,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                                  progress: SMB2ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let context = try self.tryContext()
-                let stat = try context.stat(path)
-                if stat.smb2_type == SMB2_TYPE_DIRECTORY {
-                    try context.mkdir(toPath)
-                    
-                    let list = try self.listDirectory(path: path, recursive: recursive)
-                    let sortedContents = list.sorted(by: {
-                        guard let firstPath = $0.filepath, let secPath = $1.filepath else {
-                            return false
-                        }
-                        return firstPath.localizedStandardCompare(secPath) == .orderedAscending
-                    })
-                    
-                    let overallSize = list.reduce(0, { (result, value) -> Int64 in
-                        if value.filetype  == URLFileResourceType.regular {
-                            return result + (value.filesize ?? 0)
-                        } else {
-                            return result
-                        }
-                    })
-                    
-                    var totalCopied: Int64 = 0
-                    for item in sortedContents {
-                        guard let itemPath = item.filepath else { continue }
-                        let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
-                        if item.filetype == URLFileResourceType.directory {
-                            try context.mkdir(destPath)
-                        } else {
-                            let shouldContinue = try self.copyContentsOfFile(atPath: itemPath, toPath: destPath, progress: {
-                                (bytes, _, _) -> Bool in
-                                totalCopied += bytes
-                                return progress?(totalCopied, overallSize) ?? true
-                            })
-                            if !shouldContinue {
-                                break
-                            }
-                        }
-                    }
-                } else {
-                    _ = try self.copyContentsOfFile(atPath: path, toPath: toPath, progress: { (_, soFar, total) -> Bool in
-                        return progress?(soFar, total) ?? true
-                    })
-                }
-                
+                try self.recursiveCopyIterator(atPath: path, toPath: toPath, recursive: recursive, progress: progress,
+                                               handle: self.copyContentsOfFile(atPath:toPath:progress:))
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -713,50 +658,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
                        completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
-                let context = try self.tryContext()
-                let stat = try context.stat(path)
-                if stat.smb2_type == SMB2_TYPE_DIRECTORY {
-                    try context.mkdir(toPath)
-                    
-                    let list = try self.listDirectory(path: path, recursive: recursive)
-                    let sortedContents = list.sorted(by: {
-                        guard let firstPath = $0.filepath, let secPath = $1.filepath else {
-                            return false
-                        }
-                        return firstPath.localizedStandardCompare(secPath) == .orderedAscending
-                    })
-                    
-                    let overallSize = list.reduce(0, { (result, value) -> Int64 in
-                        if value.filetype  == URLFileResourceType.regular {
-                            return result + (value.filesize ?? 0)
-                        } else {
-                            return result
-                        }
-                    })
-                    
-                    var totalCopied: Int64 = 0
-                    for item in sortedContents {
-                        guard let itemPath = item.filepath else { continue }
-                        let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
-                        if item.filetype == URLFileResourceType.directory {
-                            try context.mkdir(destPath)
-                        } else {
-                            let shouldContinue = try self.copyFile(atPath: itemPath, toPath: destPath, progress: {
-                                (bytes, _, _) -> Bool in
-                                totalCopied += bytes
-                                return progress?(totalCopied, overallSize) ?? true
-                            })
-                            if !shouldContinue {
-                                break
-                            }
-                        }
-                    }
-                } else {
-                    _ = try self.copyFile(atPath: path, toPath: toPath, progress: { (_, soFar, total) -> Bool in
-                        return progress?(soFar, total) ?? true
-                    })
-                }
-                
+                try self.recursiveCopyIterator(atPath: path, toPath: toPath, recursive: recursive, progress: progress,
+                                               handle: self.copyFile(atPath:toPath:progress:))
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -902,6 +805,53 @@ extension AMSMB2 {
         }
         
         return contents
+    }
+    
+    fileprivate func recursiveCopyIterator(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
+                                           handle: (_ path: String, _ toPath: String, _ progress: CopyProgressHandler) throws -> Bool) throws {
+        let context = try self.tryContext()
+        let stat = try context.stat(path)
+        if stat.smb2_type == SMB2_TYPE_DIRECTORY {
+            try context.mkdir(toPath)
+            
+            let list = try self.listDirectory(path: path, recursive: recursive)
+            let sortedContents = list.sorted(by: {
+                guard let firstPath = $0.filepath, let secPath = $1.filepath else {
+                    return false
+                }
+                return firstPath.localizedStandardCompare(secPath) == .orderedAscending
+            })
+            
+            let overallSize = list.reduce(0, { (result, value) -> Int64 in
+                if value.filetype  == URLFileResourceType.regular {
+                    return result + (value.filesize ?? 0)
+                } else {
+                    return result
+                }
+            })
+            
+            var totalCopied: Int64 = 0
+            for item in sortedContents {
+                guard let itemPath = item.filepath else { continue }
+                let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
+                if item.filetype == URLFileResourceType.directory {
+                    try context.mkdir(destPath)
+                } else {
+                    let shouldContinue = try handle(itemPath, destPath, {
+                        (bytes, _, _) -> Bool in
+                        totalCopied += bytes
+                        return progress?(totalCopied, overallSize) ?? true
+                    })
+                    if !shouldContinue {
+                        break
+                    }
+                }
+            }
+        } else {
+            _ = try self.copyFile(atPath: path, toPath: toPath, progress: { (_, soFar, total) -> Bool in
+                return progress?(soFar, total) ?? true
+            })
+        }
     }
     
     fileprivate func copyFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
