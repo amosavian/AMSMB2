@@ -60,11 +60,17 @@ To do listing files in directory and file operations you must use this template:
 import AMSMB2
 
 class SMBClient {
+    /// connect to: `smb://guest@XXX.XXX.XX.XX/share`
+
+    let serverURL = URL(string: "smb://XXX.XXX.XX.XX")!
+    let credential = URLCredential(user: "guest", password: "", persistence: URLCredential.Persistence.forSession)
+    let share = "share"
+    
     func connect(handler: @escaping (_ client: AMSMB2?, _ error: Error?) -> Void) {
         let client = AMSMB2(url: self.serverURL, credential: self.credential)!
-            client.connectShare(name: self.share) { error in
-                handler(client, error)
-            }
+        client.connectShare(name: self.share) { error in
+            handler(client, error)
+        }
     }
     
     func listDirectory(path: String) {
@@ -74,7 +80,7 @@ class SMBClient {
                 return
             }
             
-            client?.contentOfDirectory(atPath: self.absolutePath(path),
+            client?.contentOfDirectory(atPath: path,
                                        completionHandler: { (files, error) in
                 if let error = error {
                     print(error)
@@ -88,6 +94,7 @@ class SMBClient {
                         ", size: ", entry[.fileSizeKey] as? Int64,
                         ", modified: ", entry[.contentModificationDateKey],
                         ", created: ", entry[.creationDateKey]
+                    )
                 }
             })
         }
@@ -104,17 +111,17 @@ class SMBClient {
                 if let error = error {
                     print(error)
                 } else {
-                    print("\(path) moved siccessfully."
+                    print("\(path) moved successfully.")
                 }
                 
                 // Disconnecting is optional, it will be called eventually
                 // when `AMSMB2` object is freed.
                 // You may call it explicitly to detect errors.
-                client?.disconnectShare {
+                client?.disconnectShare(completionHandler: { (error) in
                     if let error = error {
                         print(error)
                     }
-                }
+                })
             }
         }
     }
