@@ -10,13 +10,25 @@ import Foundation
 import SMB2
 import SMB2.Raw
 
-final class SMB2Context {
+extension smb2_negotiate_version {
+    static let any = SMB2_VERSION_ANY
+    static let v2 = SMB2_VERSION_ANY2
+    static let v3 = SMB2_VERSION_ANY3
+    static let v2_02 = SMB2_VERSION_0202
+    static let v2_10 = SMB2_VERSION_0210
+    static let v3_00 = SMB2_VERSION_0300
+    static let v3_02 = SMB2_VERSION_0302
+}
+
+final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     struct NegotiateSigning: OptionSet {
         var rawValue: UInt16
         
         static let enabled = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
         static let required = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
+    
+    typealias Version = smb2_negotiate_version
     
     var context: UnsafeMutablePointer<smb2_context>?
     private var _context_lock = NSLock()
@@ -31,7 +43,7 @@ final class SMB2Context {
     }
     
     deinit {
-        if fileDescriptor > -1 {
+        if isConnected {
             try? self.disconnect()
         }
         try? withThreadSafeContext { (context) in
@@ -49,37 +61,84 @@ final class SMB2Context {
         }
         return try handler(context)
     }
+    
+    public var debugDescription: String {
+        return self.customMirror.children.reduce("") {
+            $0.appending("\($1.label ?? ""): \($1.value) ")
+        }
+    }
+    
+    public var customMirror: Mirror {
+        var c: [(label: String?, value: Any)] = []
+        if let context = self.context {
+            c.append((label: "server", value: String(cString: context.pointee.server)))
+            c.append((label: "securityMode", value: securityMode))
+            if let clientGuid = clientGuid { c.append((label: "clientGuid", value: clientGuid)) }
+            if let user = user { c.append((label: "user", value: user)) }
+            c.append((label: "versuin", value: version))
+        }
+        c.append((label: "isConnected", value: isConnected))
+        c.append((label: "timeout", value: timeout))
+        
+        let m = Mirror(self, children: c, displayStyle: .class)
+        return m
+    }
 }
 
 // MARK: Setting manipulation
 extension SMB2Context {
-    func set(workstation value: String) {
-        try? withThreadSafeContext { (context) in
-            smb2_set_workstation(context, value)
+    var workstation: String? {
+        get {
+            return (self.context?.pointee.workstation).map(String.init(cString:))
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_workstation(context, newValue)
+            }
         }
     }
     
-    func set(domain value: String) {
-        try? withThreadSafeContext { (context) in
-            smb2_set_domain(context, value)
+    var domain: String? {
+        get {
+            return (self.context?.pointee.domain).map(String.init(cString:))
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_domain(context, newValue)
+            }
         }
     }
     
-    func set(user value: String) {
-        try? withThreadSafeContext { (context) in
-            smb2_set_user(context, value)
+    var user: String? {
+        get {
+            return (self.context?.pointee.user).map(String.init(cString:))
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_user(context, newValue)
+            }
         }
     }
     
-    func set(password value: String) {
-        try? withThreadSafeContext { (context) in
-            smb2_set_password(context, value)
+    var password: String? {
+        get {
+            return (self.context?.pointee.password).map(String.init(cString:))
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_password(context, newValue)
+            }
         }
     }
     
-    func set(securityMode: NegotiateSigning) {
-        try? withThreadSafeContext { (context) in
-            smb2_set_security_mode(context, securityMode.rawValue)
+    var securityMode: NegotiateSigning {
+        get {
+            return (self.context?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_security_mode(context, newValue.rawValue)
+            }
         }
     }
     
@@ -89,6 +148,20 @@ extension SMB2Context {
         }
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
         return UUID.init(uuid: uuid)
+    }
+    
+    var version: Version {
+        return self.context?.pointee.version ?? .any
+    }
+    
+    var isConnected: Bool {
+        do {
+            return try withThreadSafeContext { (context) -> Bool in
+                context.pointee.is_connected != 0
+            }
+        } catch {
+            return false
+        }
     }
     
     var fileDescriptor: Int32 {
@@ -133,13 +206,12 @@ extension SMB2Context {
     }
     
     func echo() throws -> Void {
-        let result = try withThreadSafeContext { (context) -> Int32 in
-            smb2_echo(context)
+        if !isConnected {
+            throw POSIXError(.ENOTCONN)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ECONNREFUSED)
-        /*try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
+        try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_echo_async(context, SMB2Context.generic_handler, cbPtr)
-        }*/
+        }
         return
     }
 }
@@ -333,6 +405,7 @@ extension SMB2Context {
         return (cbResult, data)
     }
     
+    @discardableResult
     func async_await_pdu(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<UnsafeMutablePointer<smb2_pdu>?>)
         throws -> (status: UInt32, data: UnsafeMutableRawPointer?)
     {
@@ -350,7 +423,7 @@ extension SMB2Context {
         }
         try wait_for_reply(cbPtr)
         let status = cbPtr.pointee.status
-        if status & SMB2_STATUS_SEVERITY_ERROR == SMB2_STATUS_SEVERITY_ERROR {
+        if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(status)
             try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
         }

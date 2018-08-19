@@ -19,7 +19,7 @@ protocol DataInitializable {
 
 struct IOCtl {
     
-    struct Command: RawRepresentable {
+    struct Command: RawRepresentable, Equatable, Hashable {
         var rawValue: UInt32
         
         static let dfsGetReferrals = Command(rawValue: UInt32(SMB2_FSCTL_DFS_GET_REFERRALS))
@@ -38,6 +38,21 @@ struct IOCtl {
         static let deleteReparsePoint = Command(rawValue: 0x000900AC)
         static let fileLevelTrim = Command(rawValue: UInt32(SMB2_FSCTL_FILE_LEVEL_TRIM))
         static let validateNegotiateInfo = Command(rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO))
+        
+        var maxResponseSize: Int {
+            switch self {
+            case .pipeWait, .lmrRequestResilency:
+                return 0
+            case .srvCopyChunk, .srvCopyChunkWrite:
+                return 12
+            case .srvRequestResumeKey:
+                return 32
+            case .queryNetworkInterfaceInfo:
+                return 152
+            default:
+                return Int.max
+            }
+        }
     }
     
     struct SrvCopyChunk: DataRepresentable {

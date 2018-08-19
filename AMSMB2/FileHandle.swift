@@ -208,8 +208,7 @@ final class SMB2FileHandle {
     }
     
     @discardableResult
-    func fcntl(command: IOCtl.Command, data: Data) throws -> Data {
-        let handle = try self.handle()
+    func fcntl(command: IOCtl.Command, data: Data, needsReply: Bool = true) throws -> Data {
         var data = data
         let count = UInt32(data.count)
         var req: smb2_ioctl_request
@@ -221,26 +220,41 @@ final class SMB2FileHandle {
             req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: 0, input: nil, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
         }
         
-        let (_, response) = try context.async_await_pdu(defaultError: .EBADRPC) { (context, cbdata) -> UnsafeMutablePointer<smb2_pdu>? in
+        let (_, response) = try context.async_await_pdu(defaultError: .EBADRPC) {
+            (context, cbdata) -> UnsafeMutablePointer<smb2_pdu>? in
             smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbdata)
         }
         
-        guard let reply = response?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1) else {
-            throw POSIXError(.EBADMSG, description: "No reply from ioctl command.")
-        }
-        defer {
-            smb2_free_data(context.context, reply.pointee.output)
+        guard let reply = response?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1).pointee else {
+            throw POSIXError(.EBADMSG, description: "Bad reply from ioctl command.")
         }
         
-        return Data(bytes: reply.pointee.output, count: Int(reply.pointee.output_count))
+        guard reply.output_count > 0, let output = reply.output else {
+            return Data()
+        }
+        
+        if needsReply {
+            if reply.output_count > command.maxResponseSize {
+                throw POSIXError(.EBADMSG, description: "Bad reply from ioctl command.")
+            }
+            defer {
+                smb2_free_data(context.context, output)
+            }
+            return Data(bytes: output, count: Int(reply.output_count))
+        } else {
+            if reply.output_count <= command.maxResponseSize {
+                smb2_free_data(context.context, output)
+            }
+            return Data()
+        }
     }
     
     func fcntl(command: IOCtl.Command) throws -> Void {
-        try fcntl(command: command, data: Data())
+        try fcntl(command: command, data: Data(), needsReply: false)
     }
     
     func fcntl<T: DataRepresentable>(command: IOCtl.Command, args: T) throws -> Void {
-        try fcntl(command: command, data: args.data())
+        try fcntl(command: command, data: args.data(), needsReply: false)
     }
     
     func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {

@@ -16,7 +16,7 @@ private typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ tota
 
 /// Implements SMB2 File operations.
 @objc @objcMembers
-public class AMSMB2: NSObject, NSSecureCoding, Codable {
+public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
     fileprivate var context: SMB2Context?
     
     public let url: URL
@@ -43,6 +43,27 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
             _timeout = newValue
             context?.timeout = newValue
         }
+    }
+    
+    public override var debugDescription: String {
+        return self.customMirror.children.reduce("") {
+            $0.appending("\($1.label ?? ""): \($1.value) ")
+        }
+    }
+    
+    public var customMirror: Mirror {
+        var c: [(label: String?, value: Any)] = []
+        
+        c.append((label: "url", value: self.url))
+        c.append((label: "isConnected", value: (context?.isConnected ?? false)))
+        c.append((label: "timeout", value: _timeout))
+        if _domain.isEmpty { c.append((label: "domain", value: _domain)) }
+        if _workstation.isEmpty { c.append((label: "workstation", value: _workstation)) }
+        c.append((label: "user", value: _user))
+        if let connectedShare = connectedShare { c.append((label: "share", value: connectedShare)) }
+        
+        let m = Mirror(self, children: c, displayStyle: .class)
+        return m
     }
     
     /**
@@ -736,11 +757,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable {
 
 extension AMSMB2 {
     fileprivate func initContext(_ context: SMB2Context) {
-        context.set(securityMode: [.enabled])
-        context.set(domain: _domain)
-        context.set(workstation: _workstation)
-        context.set(user: _user)
-        context.set(password: _password)
+        context.securityMode = [.enabled]
+        context.domain = _domain
+        context.workstation = _workstation
+        context.user = _user
+        context.password = _password
         context.timeout = _timeout
     }
     
