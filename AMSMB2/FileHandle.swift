@@ -45,7 +45,7 @@ final class SMB2FileHandle {
         try self.init(path, flags: O_RDWR | O_APPEND, on: context)
     }
     
-    init(forPipe path: String, on context: SMB2Context) throws {
+    convenience init(forPipe path: String, on context: SMB2Context) throws {
         // smb2_open() sets overwrite flag, which is incompatible with pipe in mac's smbx
         let (_, cmddata) = try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
             let pReq = UnsafeMutablePointer<smb2_create_request>.allocate(capacity: 1)
@@ -61,9 +61,17 @@ final class SMB2FileHandle {
             throw POSIXError(.EIO)
         }
         
-        
+        self.init(fileDescriptor: reply.pointee.file_id, on: context)
+    }
+    
+    init(fileDescriptor: smb2_file_id, on context: SMB2Context) {
         self.context = context
-        self._handle = SMB2FileHandle.fileHandle(withFileId: reply.pointee.file_id)
+        // smb2fh is not exported, we assume memory layout and advance to file_id field according to layout
+        let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
+        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int64>.size)
+        handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
+        handle.storeBytes(of: fileDescriptor, toByteOffset: MemoryLayout<Int>.size * 2, as: smb2_file_id.self)
+        self._handle = smb2fh(handle)
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
@@ -86,7 +94,10 @@ final class SMB2FileHandle {
     }
     
     var fileId: smb2_file_id {
-        return _handle.map(smb2_get_file_id)?.pointee ?? compound_file_id
+        guard let id = smb2_get_file_id(_handle) else {
+            return compound_file_id
+        }
+        return id.pointee
     }
     
     func close() {
@@ -289,14 +300,5 @@ fileprivate extension SMB2FileHandle {
             req.name = path
             return req
         }
-    }
-    
-    fileprivate static func fileHandle(withFileId file_id: smb2_file_id) -> smb2fh {
-        // smb2fh is not exported, we assume memory layout and advance to file_id field according to layout
-        let smbfh_size = MemoryLayout<Int>.size * 2 /* cb, cb_data */ + Int(SMB2_FD_SIZE) + MemoryLayout<Int64>.size /* offset */
-        let handle = UnsafeMutableRawPointer.allocate(byteCount: smbfh_size, alignment: MemoryLayout<Int64>.size)
-        handle.initializeMemory(as: UInt8.self, repeating: 0, count: smbfh_size)
-        handle.storeBytes(of: file_id, toByteOffset: MemoryLayout<Int>.size * 2, as: smb2_file_id.self)
-        return smb2fh(handle)
     }
 }
