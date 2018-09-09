@@ -81,7 +81,7 @@ class MSRPC {
             let commentActualCount = Int(commentActualCount_32)
             
             offset += 12
-            if offset + nameActualCount * 2 > data.count {
+            if offset + commentActualCount * 2 > data.count {
                 throw POSIXError(.EBADRPC)
             }
             
