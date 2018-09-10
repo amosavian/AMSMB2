@@ -21,20 +21,19 @@ class AMSMB2Tests: XCTestCase {
         super.tearDown()
     }
     
-    @available(iOS 10.0, macOS 10.12, tvOS 10.0, *)
+    @available(iOS 11.0, macOS 10.13, tvOS 11.0, *)
     func testNSCodable() {
         let url = URL(string: "smb://192.168.1.1/share")!
         let credential = URLCredential(user: "user", password: "password", persistence: .forSession)
-        let smb = AMSMB2(url: url, domain: "", credential: credential)
+        let smb = AMSMB2(url: url, credential: credential)
         XCTAssertNotNil(smb)
-        let archiver = NSKeyedArchiver()
-        archiver.requiresSecureCoding = true
+        let archiver = NSKeyedArchiver(requiringSecureCoding: true)
         archiver.encode(smb, forKey: "smb")
         archiver.finishEncoding()
         let data = archiver.encodedData
         XCTAssertNil(archiver.error)
         XCTAssertFalse(data.isEmpty)
-        let unarchiver = NSKeyedUnarchiver(forReadingWith: data)
+        let unarchiver = try! NSKeyedUnarchiver(forReadingFrom: data)
         unarchiver.decodingFailurePolicy = .setErrorAndReturn
         unarchiver.requiresSecureCoding = true
         let decodedSMB = unarchiver.decodeObject(of: AMSMB2.self, forKey: "smb")
@@ -63,12 +62,23 @@ class AMSMB2Tests: XCTestCase {
     }
     
     // Change server address and testing share
-    let server = URL(string: "smb://192.168.1.5/")!
-    let share = "Files"
-    let credential: URLCredential? = nil
+    lazy var server: URL = {
+        return URL(string: ProcessInfo.processInfo.environment["SMBServer"] ?? "smb://192.168.1.5/")!
+    }()
+    lazy var share: String = {
+        return ProcessInfo.processInfo.environment["SMBServer"] ?? "Files"
+    }()
+    lazy var credential: URLCredential? = {
+        if let user = ProcessInfo.processInfo.environment["SMBUser"],
+            let pass = ProcessInfo.processInfo.environment["SMBPassword"] {
+            return URLCredential(user: user, password: pass, persistence: .forSession)
+        } else {
+            return nil
+        }
+    }()
     
     func testShareEnum() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
         smb.listShares { (name, comments, error) in
@@ -83,13 +93,13 @@ class AMSMB2Tests: XCTestCase {
     }
     
     func testListing() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
         smb.connectShare(name: share) { (error) in
             XCTAssertNil(error)
             
-            smb.contentOfDirectory(atPath: "/") { (files, error) in
+            smb.contentsOfDirectory(atPath: "/") { (files, error) in
                 XCTAssertNil(error)
                 XCTAssertFalse(files.isEmpty)
                 XCTAssertNotNil(files.first?.filename)
@@ -101,7 +111,7 @@ class AMSMB2Tests: XCTestCase {
     }
     
     func testDirectoryOperation() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 5
         
         let smb = AMSMB2(url: server, credential: credential)!
@@ -138,7 +148,7 @@ class AMSMB2Tests: XCTestCase {
     }
     
     func testWriteRead() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
         let smb = AMSMB2(url: server, credential: credential)!
@@ -178,7 +188,7 @@ class AMSMB2Tests: XCTestCase {
     }
     
     func testUploadDownload() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
         let smb = AMSMB2(url: server, credential: credential)!
@@ -220,7 +230,7 @@ class AMSMB2Tests: XCTestCase {
     }
     
     func testCopy() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
         
@@ -261,7 +271,7 @@ class AMSMB2Tests: XCTestCase {
     }
     
     func testMove() {
-        let expectation = XCTestExpectation(description: #function)
+        let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
         addTeardownBlock {
