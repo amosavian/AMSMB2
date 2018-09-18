@@ -13,9 +13,9 @@ extension POSIXError {
         guard result < 0 else {
             return
         }
-        
-        let code = POSIXErrorCode(rawValue: abs(result)) ?? `default`
-        let errorDesc = description.map { "Error code \(abs(result)): \($0)" }
+        let errno = -result
+        let code = POSIXErrorCode(rawValue: errno) ?? `default`
+        let errorDesc = description.map { "Error code \(errno): \($0)" }
         throw POSIXError(code, description: errorDesc)
     }
     
@@ -43,18 +43,11 @@ extension Dictionary where Key == URLResourceKey, Value == Any {
     }
 }
 
-extension Data {
-    mutating func append(value: UInt16) {
-        self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff)])
-    }
-    
-    mutating func append(value: UInt32) {
-        self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff), UInt8(value >> 16 & 0xff), UInt8(value >> 24 & 0xff)])
-    }
-    
-    mutating func append(value: UInt64) {
-        self.append(contentsOf: [UInt8(value & 0xff), UInt8(value >> 8 & 0xff), UInt8(value >> 16 & 0xff), UInt8(value >> 24 & 0xff),
-                                 UInt8(value >> 32 & 0xff), UInt8(value >> 40 & 0xff), UInt8(value >> 48 & 0xff), UInt8(value >> 56 & 0xff)])
+extension Data {    
+    mutating func append<T: FixedWidthInteger>(value: T) {
+        var value = value.littleEndian
+        let bytes = Swift.withUnsafeBytes(of: &value) { Array($0) }
+        self.append(contentsOf: bytes)
     }
     
     mutating func append(value uuid: UUID) {
@@ -66,6 +59,14 @@ extension Data {
     }
     
     func scanValue<T: FixedWidthInteger>(start: Int) -> T? {
+        let length = MemoryLayout<T>.size
+        guard self.count >= start + length else { return nil }
+        var result: T = 0
+        (self as NSData).getBytes(&result, range: NSRange(location: start, length: length))
+        return result.littleEndian
+    }
+    
+    func scanValue<T: FixedWidthInteger>(start: Int, as: T.Type) -> T? {
         let length = MemoryLayout<T>.size
         guard self.count >= start + length else { return nil }
         var result: T = 0

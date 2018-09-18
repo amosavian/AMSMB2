@@ -46,9 +46,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
     }
     
     public override var debugDescription: String {
-        return self.customMirror.children.reduce("") {
-            $0.appending("\($1.label ?? ""): \($1.value) ")
+        var result: String = ""
+        for (label, value) in customMirror.children {
+            result.append("\(label ?? ""): \(value) ")
         }
+        return result
     }
     
     public var customMirror: Mirror {

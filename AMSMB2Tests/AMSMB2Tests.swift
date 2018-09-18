@@ -152,7 +152,7 @@ class AMSMB2Tests: XCTestCase {
         expectation.expectedFulfillmentCount = 2
         
         let smb = AMSMB2(url: server, credential: credential)!
-        let size = Int(arc4random_uniform(0xF00000))
+        let size: Int = random(max: 0xF00000)
         print(#function, "test size:", size)
         let data = randomData(size: size)
         
@@ -192,7 +192,7 @@ class AMSMB2Tests: XCTestCase {
         expectation.expectedFulfillmentCount = 2
         
         let smb = AMSMB2(url: server, credential: credential)!
-        let size = Int(arc4random_uniform(0xF00000))
+        let size: Int = random(max: 0xF00000)
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
         let dlURL = url.appendingPathExtension("downloaded")
@@ -235,7 +235,7 @@ class AMSMB2Tests: XCTestCase {
         
         
         let smb = AMSMB2(url: server, credential: credential)!
-        let size = Int(arc4random_uniform(0x400000))
+        let size: Int = random(max: 0x400000)
         print(#function, "test size:", size)
         let data = randomData(size: size)
         
@@ -296,6 +296,14 @@ class AMSMB2Tests: XCTestCase {
 }
 
 extension AMSMB2Tests {
+    fileprivate func random<T: FixedWidthInteger>(max: T) -> T {
+        #if swift(>=4.2)
+        return T.random(in: 0...max)
+        #else
+        return T(arc4random_uniform(Int32(max)))
+        #endif
+    }
+    
     fileprivate func randomData(size: Int = 262144) -> Data {
         var keyData = Data(count: size)
         let count = keyData.count

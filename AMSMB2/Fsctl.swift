@@ -107,11 +107,11 @@ struct IOCtl {
                 throw POSIXError(.EINVAL)
             }
             
-            guard let substituteOffset = (data.scanValue(start: 8) as UInt16?).map(Int.init),
-                let substituteLen = (data.scanValue(start: 10) as UInt16?).map(Int.init),
-                let printOffset = (data.scanValue(start: 12) as UInt16?).map(Int.init),
-                let printLen = (data.scanValue(start: 14) as UInt16?).map(Int.init),
-                let flag: UInt32 = data.scanValue(start: 16) else {
+            guard let substituteOffset = data.scanValue(start: 8, as: UInt16.self).map(Int.init),
+                let substituteLen = data.scanValue(start: 10, as: UInt16.self).map(Int.init),
+                let printOffset = data.scanValue(start: 12, as: UInt16.self).map(Int.init),
+                let printLen = data.scanValue(start: 14, as: UInt16.self).map(Int.init),
+                let flag = data.scanValue(start: 16, as: UInt32.self) else {
                 throw POSIXError(.EINVAL)
             }
             

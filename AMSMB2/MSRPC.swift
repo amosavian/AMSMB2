@@ -42,22 +42,20 @@ class MSRPC {
         }
         
         // Count of shares to be enumerated, [44-47]
-        guard let count_32: UInt32 = data.scanValue(start: 44) else {
+        guard let count = data.scanValue(start: 44, as: UInt32.self).map(Int.init) else {
             throw POSIXError(.EBADMSG)
         }
-        let count = Int(count_32)
         
         // start of nameString structs header size + (_SHARE_INFO_1 * count)
         var offset = 48 + count * 12
         for i in 0..<count {
             // Type of current share, see https://msdn.microsoft.com/en-us/library/windows/desktop/cc462916(v=vs.85).aspx
-            let type: UInt32 = data.scanValue(start: typeOffset(i)) ?? 0xffffffff
+            let type = data.scanValue(start: typeOffset(i), as: UInt32.self) ?? 0xffffffff
             
             // Parse name part
-            guard let nameActualCount_32: UInt32 = data.scanValue(start: offset + 8) else {
+            guard let nameActualCount = data.scanValue(start: offset + 8, as: UInt32.self).map(Int.init) else {
                 throw POSIXError(.EBADRPC)
             }
-            let nameActualCount = Int(nameActualCount_32)
             
             offset += 12
             if offset + nameActualCount * 2 > data.count {
@@ -66,7 +64,8 @@ class MSRPC {
             
             // Getting utf16le data, omitting nul char
             let nameStringData = data.dropFirst(offset).prefix((nameActualCount - 1) * 2)
-            let nameString = nameActualCount > 1 ? (String(data: nameStringData, encoding: .utf16LittleEndian) ?? "") : ""
+            let nameString: String = nameActualCount > 1 ?
+                (String(data: nameStringData, encoding: .utf16LittleEndian) ?? "") : ""
             
             offset += nameActualCount * 2
             if nameActualCount % 2 == 1 {
@@ -75,10 +74,9 @@ class MSRPC {
             }
             
             // Parse comment part
-            guard let commentActualCount_32: UInt32 = data.scanValue(start: offset + 8) else {
+            guard let commentActualCount = data.scanValue(start: offset + 8, as: UInt32.self).map(Int.init) else {
                 throw POSIXError(.EBADRPC)
             }
-            let commentActualCount = Int(commentActualCount_32)
             
             offset += 12
             if offset + commentActualCount * 2 > data.count {
@@ -87,7 +85,8 @@ class MSRPC {
             
             // Getting utf16le data, omitting nul char
             let commentStringData = data.dropFirst(offset).prefix((commentActualCount - 1) * 2)
-            let commentString = commentActualCount > 1 ? (String(data: commentStringData, encoding: .utf16LittleEndian) ?? "") : ""
+            let commentString: String = commentActualCount > 1 ?
+                (String(data: commentStringData, encoding: .utf16LittleEndian) ?? "") : ""
             
             offset += commentActualCount * 2
             
