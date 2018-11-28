@@ -200,6 +200,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
             self.context = context
             self.initContext(context)
             try context.connect(server: url.host!, share: name, user: self._user)
+            self.connectedShare = name
         }
         
         q.async {
@@ -233,6 +234,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
             do {
                 try self.context?.disconnect()
                 self.context = nil
+                self.connectedShare = nil
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
