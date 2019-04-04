@@ -135,7 +135,7 @@ While source code shipped with project is MIT licensed, but it has static link t
 You **must** link this library dynamically to your app if you intend to distribute your app on App Store.
 
 [cocoapods]: https://cocoapods.org/pods/AMSMB2
-[swift-image]: https://img.shields.io/badge/swift-4.1-orange.svg
+[swift-image]: https://img.shields.io/badge/swift-5.0-orange.svg
 [swift-url]: https://swift.org/
 [platform-image]: https://img.shields.io/cocoapods/p/AMSMB2.svg
 [license-image]: https://img.shields.io/github/license/amosavian/AMSMB2.svg

@@ -8,8 +8,8 @@ env:
   - FRAMEWORK_NAME="$PROJECTNAME.framework"
 
 before_install:
-  - gem install xcpretty --no-rdoc --no-ri --no-document --quiet
-  - gem install cocoapods --no-rdoc --no-ri --no-document --quiet
+  - gem install xcpretty --no-document --quiet
+  - gem install cocoapods --no-document --quiet
   # - gem install xcpretty-travis-formatter
 
 script:
