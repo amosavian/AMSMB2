@@ -282,7 +282,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
                     try? context.disconnect()
                 }
                 
-                var shares = try context.shareEnumSwift(serverName: self.url.host!)
+                var shares = try context.shareEnum()//Swift(serverName: self.url.host!)
                 if enumerateHidden {
                     shares = shares.filter { $0.type & 0x0fffffff == SHARE_TYPE_DISKTREE }
                 } else {
@@ -317,12 +317,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
                 completionHandler([], error)
             }
         }
-    }
-    
-    @available(*, obsoleted: 1, renamed: "contentsOfDirectory(atPath:recursive:completionHandler:)")
-    open func contentOfDirectory(atPath path: String, recursive: Bool = false,
-                                 completionHandler: @escaping (_ contents: [[URLResourceKey: Any]], _ error: Error?) -> Void) {
-        contentsOfDirectory(atPath: path, recursive: recursive, completionHandler: completionHandler)
     }
     
     /**

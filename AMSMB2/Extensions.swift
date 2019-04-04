@@ -78,8 +78,9 @@ extension Data {
 extension InputStream {
     func readData(ofLength length: Int) throws -> Data {
         var data = Data(count: length)
-        let result = data.withUnsafeMutableBytes { (p) -> Int in
-            self.read(p, maxLength: length)
+        let result = data.withUnsafeMutableBytes { (buf) -> Int in
+            let p = buf.bindMemory(to: UInt8.self).baseAddress!
+            return self.read(p, maxLength: buf.count)
         }
         if result < 0 {
             throw self.streamError ?? POSIXError(.EIO, description: "Unknown stream error.")
@@ -92,9 +93,9 @@ extension InputStream {
 
 extension OutputStream {
     func write(data: Data) throws -> Int {
-        let count = data.count
-        let result = data.withUnsafeBytes { (p) -> Int in
-            self.write(p, maxLength: count)
+        let result = data.withUnsafeBytes { (buf) -> Int in
+            let p = buf.bindMemory(to: UInt8.self).baseAddress!
+            return self.write(p, maxLength: buf.count)
         }
         if result < 0 {
             throw self.streamError ?? POSIXError(.EIO, description: "Unknown stream error.")

@@ -306,9 +306,8 @@ extension AMSMB2Tests {
     
     fileprivate func randomData(size: Int = 262144) -> Data {
         var keyData = Data(count: size)
-        let count = keyData.count
         let result = keyData.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, count, $0)
+            SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!)
         }
         if result == errSecSuccess {
             return keyData

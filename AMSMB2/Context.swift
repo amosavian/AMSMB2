@@ -351,7 +351,7 @@ extension SMB2Context {
         switch (data, finishing) {
         case (true, true):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -360,7 +360,7 @@ extension SMB2Context {
             }
         case (true, false):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -368,7 +368,7 @@ extension SMB2Context {
             }
         case (false, true):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -376,7 +376,7 @@ extension SMB2Context {
             }
         case (false, false):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
+                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -435,7 +435,7 @@ extension SMB2Context {
 }
 
 fileprivate extension SMB2Context {
-    fileprivate func parseShareEnum(ctr1: srvsvc_netsharectr1) -> [(name: String, type: UInt32, comment: String)] {
+    func parseShareEnum(ctr1: srvsvc_netsharectr1) -> [(name: String, type: UInt32, comment: String)] {
         var result = [(name: String, type: UInt32, comment: String)]()
         let array = Array(UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count)))
         for item in array {
@@ -447,7 +447,7 @@ fileprivate extension SMB2Context {
         return result
     }
     
-    fileprivate func validateBindData(_ recvBindData: Data) throws {
+    func validateBindData(_ recvBindData: Data) throws {
         // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
         if recvBindData.count < 68 {
             throw POSIXError(.EBADMSG, description:  "Binding failure: Invalid size")

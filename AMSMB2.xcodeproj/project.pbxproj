@@ -180,11 +180,11 @@
 				TargetAttributes = {
 					79FDFE5320AD439F00749FB5 = {
 						CreatedOnToolsVersion = 9.3.1;
-						LastSwiftMigration = 1000;
+						LastSwiftMigration = 1020;
 					};
 					79FDFE5C20AD439F00749FB5 = {
 						CreatedOnToolsVersion = 9.3.1;
-						LastSwiftMigration = 1000;
+						LastSwiftMigration = 1020;
 					};
 				};
 			};
@@ -194,6 +194,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				Base,
 			);
 			mainGroup = 79FDFE4A20AD439F00749FB5;
 			productRefGroup = 79FDFE5520AD439F00749FB5 /* Products */;
@@ -419,6 +420,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SWIFT_INCLUDE_PATHS = "${SRCROOT}/libsmb2/**";
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,3";
 			};
 			name = Debug;
@@ -451,6 +453,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
 				SWIFT_INCLUDE_PATHS = "${SRCROOT}/libsmb2/**";
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,3";
 			};
 			name = Release;
@@ -472,6 +475,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2Tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -493,6 +497,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2Tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
