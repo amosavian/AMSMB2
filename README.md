@@ -11,6 +11,7 @@ This is small Swift library for iOS, macOS and tvOS which wraps [libsmb2](https:
 [![Release version][release-image]][release-url]
 [![CocoaPods version][pod-release-image]][cocoapods]
 [![Carthage compatible][carthage-image]](https://github.com/Carthage/Carthage)
+[![Accio supported](accio-image)](https://github.com/JamitLabs/Accio)
 
 ## Install
 
@@ -27,6 +28,27 @@ Or add this to Cartfile:
 ```
 github "amosavian/AMSMB2"
 ```
+
+### Accio
+
+Add the following to your Package.swift:
+
+```swift
+.package(url: "https://github.com/amosavian/AMSMB2.git", .upToNextMajor(from: "1.8.0")),
+```
+
+Next, add `AMSMB2` to your App targets dependencies like so:
+
+```swift
+.target(
+    name: "App",
+    dependencies: [
+        "AMSMB2",
+    ]
+),
+```
+
+Then run `accio update`.
 
 ### Manually
 
@@ -146,5 +168,6 @@ You **must** link this library dynamically to your app if you intend to distribu
 [release-image]: https://img.shields.io/github/release/amosavian/AMSMB2.svg
 [pod-release-image]: https://img.shields.io/cocoapods/v/AMSMB2.svg
 [carthage-image]: https://img.shields.io/badge/Carthage-compatible-4BC51D.svg
+[accio-image]: https://img.shields.io/badge/Accio-supported-0A7CF5.svg
 [cocoapods-downloads]: https://img.shields.io/cocoapods/dt/AMSMB2.svg
 [cocoapods-apps]: https://img.shields.io/cocoapods/at/AMSMB2.svg
