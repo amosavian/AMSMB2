@@ -45,6 +45,7 @@
 		79FDFE7B20AD545D00749FB5 /* Context.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Context.swift; sourceTree = "<group>"; };
 		79FDFF0020AD852200749FB5 /* FileHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileHandle.swift; sourceTree = "<group>"; };
 		79FDFF0920ADA2B000749FB5 /* Directory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Directory.swift; sourceTree = "<group>"; };
+		BD240BEE2124388000E22C9A /* AMSMB2.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = AMSMB2.modulemap; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,6 +99,7 @@
 				790FA33820B2CC5600578C8A /* Extensions.swift */,
 				79FDFF0020AD852200749FB5 /* FileHandle.swift */,
 				79FDFE7920AD541500749FB5 /* URL.swift */,
+				BD240BEE2124388000E22C9A /* AMSMB2.modulemap */,
 			);
 			path = AMSMB2;
 			sourceTree = "<group>";
