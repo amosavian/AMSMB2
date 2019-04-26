@@ -179,10 +179,10 @@ class AMSMB2Tests: XCTestCase {
     
     private func readWrite(size: Int, checkLeak: Bool = false, function: String) {
         let expectation = self.expectation(description: function)
-        expectation.expectedFulfillmentCount = 2
+        expectation.expectedFulfillmentCount = 3
         
         let smb = AMSMB2(url: server, credential: credential)!
-        print(#function, "Large test size:", size)
+        print(#function, "test size:", size)
         let data = randomData(size: size)
         let baseMemUsage = report_memory()
         
@@ -203,17 +203,35 @@ class AMSMB2Tests: XCTestCase {
                 if checkLeak {
                     XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
                 }
+                
                 smb.contents(atPath: "writetest.dat", progress: { (progress, total) -> Bool in
                     XCTAssertGreaterThan(progress, 0)
                     XCTAssertEqual(total, Int64(data.count))
                     print(function, "downloaded:", progress, "of", total)
                     return true
-                }, completionHandler: { (rdata, error) in
+                }, completionHandler: { result in
                     if checkLeak {
                         XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
                     }
-                    XCTAssertNil(error)
-                    XCTAssertEqual(data, rdata)
+                    switch result {
+                    case .success(let rdata):
+                        XCTAssertEqual(data, rdata)
+                    case .failure:
+                        XCTAssert(false)
+                    }
+                    expectation.fulfill()
+                })
+                
+                smb.contents(atPath: "writetest.dat", range: ..<UInt64(10), progress: nil, completionHandler: { result in
+                    if checkLeak {
+                        XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+                    }
+                    switch result {
+                    case .success(let rdata):
+                        XCTAssertEqual(data.prefix(10), rdata)
+                    case .failure:
+                        XCTAssert(false)
+                    }
                     expectation.fulfill()
                 })
             }
