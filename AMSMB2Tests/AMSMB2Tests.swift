@@ -147,14 +147,37 @@ class AMSMB2Tests: XCTestCase {
         wait(for: [expectation], timeout: 20)
     }
     
-    func testWriteRead() {
-        let expectation = self.expectation(description: #function)
+    func testZeroWriteRead() {
+        let size: Int = 0
+        readWrite(size: size, function: #function)
+    }
+    
+    func testSmallWriteRead() {
+        let size: Int = random(max: 14)
+        readWrite(size: size, function: #function)
+    }
+    
+    private var optimizedSize = 1024 * 1024 // 1MB
+    private var maxSize = 4 * 1024 * 1024 // 4MB
+    
+    func testMediumWriteRead() {
+        let size: Int = 15 + random(max: optimizedSize - 15)
+        readWrite(size: size, function: #function)
+    }
+    
+    func testLargeWriteRead() {
+        let size: Int = maxSize * 3 + random(max: optimizedSize)
+        readWrite(size: size, function: #function)
+    }
+    
+    private func readWrite(size: Int, checkLeak: Bool = false, function: String) {
+        let expectation = self.expectation(description: function)
         expectation.expectedFulfillmentCount = 2
         
         let smb = AMSMB2(url: server, credential: credential)!
-        let size: Int = random(max: 0xF00000)
-        print(#function, "test size:", size)
+        print(#function, "Large test size:", size)
         let data = randomData(size: size)
+        let baseMemUsage = report_memory()
         
         addTeardownBlock {
             smb.removeFile(atPath: "writetest.dat", completionHandler: nil)
@@ -165,18 +188,23 @@ class AMSMB2Tests: XCTestCase {
             
             smb.write(data: data, toPath: "writetest.dat", progress: { (progress) -> Bool in
                 XCTAssertGreaterThan(progress, 0)
-                print(#function, "uploaded:", progress, "of", size)
+                print(function, "uploaded:", progress, "of", size)
                 return true
             }) { (error) in
                 XCTAssertNil(error)
                 expectation.fulfill()
-                
+                if checkLeak {
+                    XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+                }
                 smb.contents(atPath: "writetest.dat", progress: { (progress, total) -> Bool in
                     XCTAssertGreaterThan(progress, 0)
                     XCTAssertEqual(total, Int64(data.count))
-                    print(#function, "downloaded:", progress, "of", total)
+                    print(function, "downloaded:", progress, "of", total)
                     return true
                 }, completionHandler: { (rdata, error) in
+                    if checkLeak {
+                        XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+                    }
                     XCTAssertNil(error)
                     XCTAssertEqual(data, rdata)
                     expectation.fulfill()
@@ -185,6 +213,10 @@ class AMSMB2Tests: XCTestCase {
         }
         
         wait(for: [expectation], timeout: 60)
+        print("\(function) after free memory usage:", self.report_memory() - baseMemUsage)
+        if checkLeak {
+            XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+        }
     }
     
     func testUploadDownload() {
@@ -305,12 +337,10 @@ extension AMSMB2Tests {
     }
     
     fileprivate func randomData(size: Int = 262144) -> Data {
-        var keyData = Data(count: size)
-        let result = keyData.withUnsafeMutableBytes {
-            SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!)
-        }
+        var keyBuffer = [UInt8](repeating: 0, count: size)
+        let result = SecRandomCopyBytes(kSecRandomDefault, keyBuffer.count, &keyBuffer)
         if result == errSecSuccess {
-            return keyData
+            return Data(keyBuffer)
         } else {
             fatalError("Problem generating random bytes")
         }
@@ -337,5 +367,22 @@ extension AMSMB2Tests {
         let data = randomData(size: size)
         try! data.write(to: url)
         return url
+    }
+    
+    fileprivate func report_memory() -> Int {
+        var taskInfo = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &taskInfo) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        
+        if kerr == KERN_SUCCESS {
+            return Int(taskInfo.resident_size)
+        }
+        else {
+            return -1
+        }
     }
 }

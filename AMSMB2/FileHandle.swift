@@ -142,15 +142,11 @@ final class SMB2FileHandle {
         
         let handle = try self.handle()
         let count = length > 0 ? length : optimizedReadSize
-        var data = Data(count: count)
+        var buffer = [UInt8](repeating: 0, count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
-            data.withUnsafeMutableBytes { buffer in
-                let p = buffer.bindMemory(to: UInt8.self).baseAddress
-                return smb2_read_async(context, handle, p, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr)
-            }
+            smb2_read_async(context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr)
         }
-        data.count = Int(result)
-        return data
+        return Data(buffer.prefix(Int(result)))
     }
     
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
@@ -158,15 +154,11 @@ final class SMB2FileHandle {
         
         let handle = try self.handle()
         let count = length > 0 ? length : optimizedReadSize
-        var data = Data(count: count)
+        var buffer = [UInt8](repeating: 0, count: count)
         let (result, _) = try context.async_await(defaultError: .EIO) { (context, cbPtr) -> Int32 in
-            data.withUnsafeMutableBytes { buffer in
-                let p = buffer.bindMemory(to: UInt8.self).baseAddress
-                return smb2_pread_async(context, handle, p, UInt32(buffer.count), offset, SMB2Context.generic_handler, cbPtr)
-            }
+            smb2_pread_async(context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler, cbPtr)
         }
-        data.count = Int(result)
-        return data
+        return Data(buffer.prefix(Int(result)))
     }
     
     var maxWriteSize: Int {
@@ -181,13 +173,9 @@ final class SMB2FileHandle {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
         let handle = try self.handle()
-        var data = data
-        let (result, _) = try data.withUnsafeMutableBytes { (buf: UnsafeMutableRawBufferPointer) -> (result: Int32, data: UnsafeMutableRawPointer?) in
-            try context.async_await(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
-                let p = buf.bindMemory(to: UInt8.self).baseAddress
-                return smb2_write_async(context, handle, p, UInt32(buf.count),
-                                        SMB2Context.generic_handler, cbPtr)
-            }
+        var buffer = Array(data)
+        let (result, _) = try context.async_await(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
+            smb2_write_async(context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr)
         }
         
         return Int(result)
@@ -197,13 +185,9 @@ final class SMB2FileHandle {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
         let handle = try self.handle()
-        var data = data
-        let (result, _) = try data.withUnsafeMutableBytes { (buf: UnsafeMutableRawBufferPointer) -> (result: Int32, data: UnsafeMutableRawPointer?) in
-            try context.async_await(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
-                let p = buf.bindMemory(to: UInt8.self).baseAddress
-                return smb2_pwrite_async(context, handle, p, UInt32(buf.count), offset,
-                                         SMB2Context.generic_handler, cbPtr)
-            }
+        var buffer = Array(data)
+        let (result, _) = try context.async_await(defaultError: .EBUSY) { (context, cbPtr) -> Int32 in
+            smb2_pwrite_async(context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler, cbPtr)
         }
         
         return Int(result)
@@ -218,17 +202,9 @@ final class SMB2FileHandle {
     
     @discardableResult
     func fcntl(command: IOCtl.Command, data: Data, needsReply: Bool = true) throws -> Data {
-        var data = data
-        var req: smb2_ioctl_request
-        if !data.isEmpty {
-            req = data.withUnsafeMutableBytes {
-                smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: UInt32($0.count),
-                                   input: $0.baseAddress!, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
-            }
-        } else {
-            req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId,
-                                     input_count: 0, input: nil, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
-        }
+        var buffer = [UInt8](data)
+        var req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buffer.count),
+                                 input: &buffer, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
         
         let (_, response) = try context.async_await_pdu(defaultError: .EBADRPC) {
             (context, cbdata) -> UnsafeMutablePointer<smb2_pdu>? in
