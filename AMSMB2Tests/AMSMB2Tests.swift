@@ -81,11 +81,14 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
-        smb.listShares { (name, comments, error) in
-            XCTAssertNil(error)
-            XCTAssertFalse(name.isEmpty)
-            XCTAssertFalse(comments.isEmpty)
-            XCTAssert(name.contains(self.share))
+        smb.listShares { result in
+            switch result {
+            case .success(let value):
+                XCTAssertFalse(value.isEmpty)
+                XCTAssert(value.contains(where: { $0.name == self.share }))
+            case .failure:
+                XCTAssert(false)
+            }
             expectation.fulfill()
         }
         
@@ -99,10 +102,14 @@ class AMSMB2Tests: XCTestCase {
         smb.connectShare(name: share) { (error) in
             XCTAssertNil(error)
             
-            smb.contentsOfDirectory(atPath: "/") { (files, error) in
-                XCTAssertNil(error)
-                XCTAssertFalse(files.isEmpty)
-                XCTAssertNotNil(files.first?.filename)
+            smb.contentsOfDirectory(atPath: "/") { result in
+                switch result {
+                case .success(let value):
+                    XCTAssertFalse(value.isEmpty)
+                    XCTAssertNotNil(value.first?.filename)
+                case .failure:
+                    XCTAssert(false)
+                }
                 expectation.fulfill()
             }
         }
@@ -167,7 +174,7 @@ class AMSMB2Tests: XCTestCase {
     
     func testLargeWriteRead() {
         let size: Int = maxSize * 3 + random(max: optimizedSize)
-        readWrite(size: size, function: #function)
+        readWrite(size: size, checkLeak: true, function: #function)
     }
     
     private func readWrite(size: Int, checkLeak: Bool = false, function: String) {
@@ -213,8 +220,9 @@ class AMSMB2Tests: XCTestCase {
         }
         
         wait(for: [expectation], timeout: 60)
-        print("\(function) after free memory usage:", self.report_memory() - baseMemUsage)
+        
         if checkLeak {
+            print("\(function) after free memory usage:", self.report_memory() - baseMemUsage)
             XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
         }
     }
@@ -290,9 +298,13 @@ class AMSMB2Tests: XCTestCase {
                     XCTAssertNil(error)
                     expectation.fulfill()
                     
-                    smb.attributesOfItem(atPath: "copyTestDest.dat", completionHandler: { (file, error) in
-                        XCTAssertNil(error)
-                        XCTAssertEqual(file?.filesize, Int64(data.count))
+                    smb.attributesOfItem(atPath: "copyTestDest.dat", completionHandler: { result in
+                        switch result {
+                        case .success(let value):
+                            XCTAssertEqual(value.filesize, Int64(data.count))
+                        case .failure:
+                            XCTAssert(false)
+                        }
                         expectation.fulfill()
                     })
                 }

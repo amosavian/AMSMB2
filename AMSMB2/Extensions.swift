@@ -76,7 +76,7 @@ extension Data {
 }
 
 extension InputStream {
-    func readData(ofLength length: Int) throws -> Data {
+    func readData(maxLength length: Int) throws -> Data {
         var buffer = [UInt8](repeating: 0, count: length)
         let result = self.read(&buffer, maxLength: buffer.count)
         if result < 0 {
@@ -88,7 +88,7 @@ extension InputStream {
 }
 
 extension OutputStream {
-    func write(data: Data) throws -> Int {
+    func write<DataType: DataProtocol>(_ data: DataType) throws -> Int {
         var buffer = Array(data)
         let result = self.write(&buffer, maxLength: buffer.count)
         if result < 0 {

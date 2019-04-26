@@ -16,12 +16,12 @@ private typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ tota
 
 /// Implements SMB2 File operations.
 @objc @objcMembers
-public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
+public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable {
     fileprivate var context: SMB2Context?
     
     public let url: URL
     fileprivate let _domain: String
-    fileprivate let _workstation: String
+    fileprivate var _workstation: String
     fileprivate let _user: String
     fileprivate let _password: String
     fileprivate let q: DispatchQueue
@@ -190,11 +190,18 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
         try container.encode(timeout, forKey: .timeout)
     }
     
+    open func copy(with zone: NSZone? = nil) -> Any {
+        let new = AMSMB2(url: url, domain: _domain, credential: URLCredential(user: _user, password: _password, persistence: .forSession))!
+        new._workstation = _workstation
+        new.timeout = timeout
+        return new
+    }
+    
     /**
      Connects to a share.
      */
-    @objc
-    open func connectShare(name: String, completionHandler: SimpleCompletionHandler) {
+    @objc(connectShareWithName:completionHandler:)
+    open func connectShare(name: String, completionHandler: @escaping (_ error: Error?) -> Void) {
         func establishContext() throws {
             let context = try SMB2Context(timeout: self._timeout)
             self.context = context
@@ -218,9 +225,9 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
                     try establishContext()
                 }
                
-                completionHandler?(nil)
+                completionHandler(nil)
             } catch {
-                completionHandler?(error)
+                completionHandler(error)
             }
         }
     }
@@ -228,8 +235,16 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
     /**
      Disconnects from a share.
      */
-    @objc
-    open func disconnectShare(completionHandler: SimpleCompletionHandler = nil) {
+    @objc(disconnectShare)
+    open func disconnectShare() {
+        self.disconnectShare(completionHandler: nil)
+    }
+    
+    /**
+     Disconnects from a share.
+     */
+    @objc(disconnectShareWithCompletionHandler:)
+    open func disconnectShare(completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
                 try self.context?.disconnect()
@@ -245,7 +260,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
     /**
      Send echo to server. Use it to prevent timeout or check connectivity.
      */
-    @objc
+    @objc(echoWithCompletionHandler:)
     open func echo(completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -264,12 +279,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
-       - names: An array of share names. Can be passed to `connectShare()` function.
-       - comments: An array of share remark name, related to names array with same index. Suitable for displaying shares to user.
-       - error: `Error` if any occured during enumeration.
+       - result: An array of shares' name and remark name. `name` element can be passed to `connectShare()` function.
+           remark name is suitable for displaying shares to user, but it is sometimes empty.
      */
-    @objc
-    open func listShares(enumerateHidden: Bool = false, completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) -> Void) {
+    open func listShares(enumerateHidden: Bool = false,
+                         completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void) {
         q.async {
             do {
                 // We use separate context because when a context connects to a tree, it won't connect to another tree.
@@ -282,18 +296,82 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
                     try? context.disconnect()
                 }
                 
-                var shares = try context.shareEnum()//Swift(serverName: self.url.host!)
+                var shares = try context.shareEnum()
                 if enumerateHidden {
                     shares = shares.filter { $0.type & 0x0fffffff == SHARE_TYPE_DISKTREE }
                 } else {
                     shares = shares.filter { $0.type == SHARE_TYPE_DISKTREE }
                 }
-                completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
+                let result = shares.map { ($0.name, $0.comment) }
+                completionHandler(.success(result))
             } catch {
+                completionHandler(.failure(error))
+            }
+        }
+    }
+    
+    /**
+     Enumerates shares' list on server.
+     
+     - Parameters:
+       - completionHandler: closure will be run after enumerating is completed.
+       - names: An array of share names. Can be passed to `connectShare()` function.
+       - comments: An array of share remark name, related to names array with same index. Suitable for displaying shares to user.
+       - error: `Error` if any occured during enumeration.
+     */
+    @available(swift, obsoleted: 1.0)
+    @objc(listSharesWithCompletionHandler:)
+    public func __listShares(completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) -> Void) {
+        listShares(enumerateHidden: false) { (result) in
+            switch result {
+            case .success(let shares):
+                completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
+            case .failure(let error):
                 completionHandler([], [], error)
             }
         }
-        
+    }
+    
+    /**
+     Enumerates shares' list on server.
+     
+     - Parameters:
+       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+         shares usually ends with `$`, e.g. `C$` or `admin$`.
+       - completionHandler: closure will be run after enumerating is completed.
+       - names: An array of share names. Can be passed to `connectShare()` function.
+       - comments: An array of share remark name, related to names array with same index. Suitable for displaying shares to user.
+       - error: `Error` if any occured during enumeration.
+     */
+    @available(swift, obsoleted: 1.0)
+    @objc(listSharesWithEnumerateHidden:completionHandler:)
+    public func __listShares(enumerateHidden: Bool, completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) -> Void) {
+        listShares(enumerateHidden: enumerateHidden) { (result) in
+            switch result {
+            case .success(let shares):
+                completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
+            case .failure(let error):
+                completionHandler([], [], error)
+            }
+        }
+    }
+    
+    /**
+     Enumerates directory contents in the give path.
+     
+     - Parameters:
+       - atPath: path of directory to be enumerated.
+       - completionHandler: closure will be run after enumerating is completed.
+       - recursive: subdirectories will enumerated if `true`.
+       - result: An array of `[URLResourceKey: Any]` which holds files' attributes. file name is stored in `.nameKey`.
+     */
+    open func contentsOfDirectory(atPath path: String, recursive: Bool = false,
+                                  completionHandler: @escaping (_ result: Result<[[URLResourceKey: Any]], Error>) -> Void) {
+        q.async {
+            completionHandler(.init(catching: {
+                return try self.listDirectory(path: path, recursive: recursive)
+            }))
+        }
     }
     
     /**
@@ -306,16 +384,40 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - contents: An array of `[URLResourceKey: Any]` which holds files' attributes. file name is stored in `.nameKey`.
        - error: `Error` if any occured during enumeration.
      */
-    @objc
-    open func contentsOfDirectory(atPath path: String, recursive: Bool = false,
-                                  completionHandler: @escaping (_ contents: [[URLResourceKey: Any]], _ error: Error?) -> Void) {
+    @available(swift, obsoleted: 1.0)
+    @objc(contentsOfDirectoryAtPath:recursive:completionHandler:)
+    public func __contentsOfDirectory(atPath path: String, recursive: Bool = false,
+                                  completionHandler: @escaping (_ contents: [[URLResourceKey: Any]]?, _ error: Error?) -> Void) {
+        contentsOfDirectory(atPath: path, recursive: recursive, completionHandler: convert(completionHandler))
+    }
+    
+    /**
+     Returns a dictionary that describes the attributes of the mounted file system on which a given path resides.
+     
+     - Parameters:
+       - forPath: Any pathname within the mounted file system.
+       - completionHandler: closure will be run after fetching attributes is completed.
+       - result: A dictionary object that describes the attributes of the mounted file system on which path resides.
+           See _File-System Attribute Keys_ for a description of the keys available in the dictionary.
+     */
+    open func attributesOfFileSystem(forPath path: String,
+                                     completionHandler: @escaping (_ result: Result<[FileAttributeKey: Any], Error>) -> Void) {
         q.async {
-            do {
-                let contents = try self.listDirectory(path: path, recursive: recursive)
-                completionHandler(contents, nil)
-            } catch {
-                completionHandler([], error)
-            }
+            completionHandler(.init(catching: {
+                let context = try self.tryContext()
+                // This exactly matches implementation of Swift Foundation.
+                let stat = try context.statvfs(path)
+                var result = [FileAttributeKey: Any]()
+                let blockSize = UInt64(stat.f_bsize)
+                result[.systemNumber] = NSNumber(value: UInt64(stat.f_fsid))
+                if stat.f_blocks < UInt64.max / blockSize {
+                    result[.systemSize] = NSNumber(value: blockSize * UInt64(stat.f_blocks))
+                    result[.systemFreeSize] = NSNumber(value: blockSize * UInt64(stat.f_bavail))
+                }
+                result[.systemNodes] = NSNumber(value: UInt64(stat.f_files))
+                result[.systemFreeNodes] = NSNumber(value: UInt64(stat.f_ffree))
+                return result
+            }))
         }
     }
     
@@ -329,27 +431,34 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
            See _File-System Attribute Keys_ for a description of the keys available in the dictionary.
        - error: `Error` if any occured during enumeration.
      */
-    @objc
-    open func attributesOfFileSystem(forPath path: String,
+    @available(swift, obsoleted: 1.0)
+    @objc(attributesOfFileSystemForPath:completionHandler:)
+    public func __attributesOfFileSystem(forPath path: String,
                                      completionHandler: @escaping (_ attrubutes: [FileAttributeKey: Any]?, _ error: Error?) -> Void) {
+        attributesOfFileSystem(forPath: path, completionHandler: convert(completionHandler))
+    }
+    
+    /**
+     Returns the attributes of the item at given path.
+     
+     - Parameters:
+       - atPath: path of file to be enumerated.
+       - completionHandler: closure will be run after enumerating is completed.
+       - result: An dictionary with `URLResourceKey` as key which holds file's attributes.
+     */
+    open func attributesOfItem(atPath path: String,
+                               completionHandler: @escaping (_ result: Result<[URLResourceKey: Any], Error>) -> Void) {
         q.async {
-            do {
+            completionHandler(.init(catching: {
                 let context = try self.tryContext()
-                // This exactly matches implementation of Swift Foundation.
-                let stat = try context.statvfs(path)
-                var result = [FileAttributeKey: Any]()
-                let blockSize = UInt64(stat.f_bsize)
-                result[.systemNumber] = NSNumber(value: UInt64(stat.f_fsid))
-                if stat.f_blocks < UInt64.max / blockSize {
-                    result[.systemSize] = NSNumber(value: blockSize * UInt64(stat.f_blocks))
-                    result[.systemFreeSize] = NSNumber(value: blockSize * UInt64(stat.f_bavail))
-                }
-                result[.systemNodes] = NSNumber(value: UInt64(stat.f_files))
-                result[.systemFreeNodes] = NSNumber(value: UInt64(stat.f_ffree))
-                completionHandler(result, nil)
-            } catch {
-                completionHandler(nil, error)
-            }
+                let stat = try context.stat(path)
+                var result = [URLResourceKey: Any]()
+                let name = NSString(string: (path as NSString).lastPathComponent)
+                result[.nameKey] = name
+                result[.pathKey] = (path as NSString).appendingPathComponent(name as String)
+                self.populateResourceValue(&result, stat: stat)
+                return result
+            }))
         }
     }
     
@@ -362,23 +471,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - file: An dictionary with `URLResourceKey` as key which holds file's attributes.
        - error: `Error` if any occured during enumeration.
      */
-    @objc
-    open func attributesOfItem(atPath path: String,
+    @available(swift, obsoleted: 1.0)
+    @objc(attributesOfItemAtPath:completionHandler:)
+    public func __attributesOfItem(atPath path: String,
                                completionHandler: @escaping (_ file: [URLResourceKey: Any]?, _ error: Error?) -> Void) {
-        q.async {
-            do {
-                let context = try self.tryContext()
-                let stat = try context.stat(path)
-                var result = [URLResourceKey: Any]()
-                let name = NSString(string: (path as NSString).lastPathComponent)
-                result[.nameKey] = name
-                result[.pathKey] = (path as NSString).appendingPathComponent(name as String)
-                self.populateResourceValue(&result, stat: stat)
-                completionHandler(result, nil)
-            } catch {
-                completionHandler(nil, error)
-            }
-        }
+        attributesOfItem(atPath: path, completionHandler: convert(completionHandler))
     }
     
     /**
@@ -388,7 +485,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - atPath: path of new directory to be created.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc
+    @objc(createDirectoryAtPath:completionHandler:)
     open func createDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -409,7 +506,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - recursive: children items will be deleted if `true`.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc
+    @objc(removeDirectoryAtPath:recursive:completionHandler:)
     open func removeDirectory(atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -455,7 +552,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - atPath: path of file to be removed.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc
+    @objc(removeFileAtPath:completionHandler:)
     open func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -476,9 +573,10 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
      
      - Parameters:
        - atPath: path of file to be truncated.
+       - atOffset: final size of truncated file.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc
+    @objc(truncateFileAtPath:atOffset:completionHandler:)
     open func truncateFile(atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -499,7 +597,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - toPath: new location of file.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc
+    @objc(moveItemAtPath:toPath:completionHandler:)
     open func moveItem(atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
@@ -531,7 +629,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - contents: a `Data` object which contains file contents.
        - error: `Error` if any occured during reading.
      */
-    @objc
+    @objc(contentsAtPath:fromOffset:toLength:progress:completionHandler:)
     open func contents(atPath path: String, offset: Int64 = 0, length: Int = -1, progress: SMB2ReadProgressHandler,
                        completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         q.async {
@@ -574,7 +672,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - data: data portion which read from server.
        - completionHandler: closure will be run after reading data is completed.
      */
-    @objc
+    @objc(contentsAtPath:fromOffset:fetchedData:completionHandler:)
     open func contents(atPath path: String, offset: Int64 = 0,
                        fetchedData: @escaping ((_ offset: Int64, _ total: Int64, _ data: Data) -> Bool),
                        completionHandler: SimpleCompletionHandler) {
@@ -615,13 +713,42 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - bytes: written bytes count.
        - completionHandler: closure will be run after writing is completed.
      */
-    @objc
+    @objc(writeData:toPath:progress:completionHandler:)
     open func write(data: Data, toPath path: String, progress: SMB2WriteProgressHandler,
                     completionHandler: SimpleCompletionHandler) {
         q.async {
             do {
                 let stream = InputStream(data: data)
-                try self.write(from: stream, size: UInt64(data.count), toPath: path, progress: progress)
+                try self.write(from: stream, toPath: path, chunkSize: 0, progress: progress)
+                completionHandler?(nil)
+            } catch {
+                completionHandler?(error)
+            }
+        }
+    }
+    
+    /**
+     Creates and writes input stream to file. With reporting progress on about every 1MiB.
+     
+     - Note: Data saved in server maybe truncated when completion handler returns error.
+     
+     - Important: Stream will be closed eventually if is not alrady opened.
+     
+     - Parameters:
+       - stream: input stream that provides data to be written to file.
+       - toPath: path of file to be written.
+       - chunkSize: optimized chunk size to read from stream. Default value is abount 1MB.
+       - progress: reports progress of written bytes count so far.
+           User must return `true` if they want to continuing or `false` to abort writing.
+       - bytes: written bytes count.
+       - completionHandler: closure will be run after writing is completed.
+     */
+    @objc(writeStream:toPath:chunkSize:progress:completionHandler:)
+    open func write(stream: InputStream, toPath path: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler,
+                    completionHandler: SimpleCompletionHandler) {
+        q.async {
+            do {
+                try self.write(from: stream, toPath: path, chunkSize: chunkSize, progress: progress)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -646,7 +773,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
      */
     @available(*, deprecated, message: "New method does server-side copy and is much faster.",
                renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)")
-    @objc
+    @objc(copyContentsOfItemAtPath:toPath:recursiveprogress::completionHandler:)
     open func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
                                  progress: SMB2ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
         q.async {
@@ -672,7 +799,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
        - bytes: written bytes count.
        - completionHandler: closure will be run after copying is completed.
      */
-    @objc
+    @objc(copyItemAtPath:toPath:recursive:progress:completionHandler:)
     open func copyItem(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
                        completionHandler: SimpleCompletionHandler) {
         q.async {
@@ -698,7 +825,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
            User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
-    @objc
+    @objc(uploadItemAtURL:toPath:progress:completionHandler:)
     open func uploadItem(at url: URL, toPath: String, progress: SMB2WriteProgressHandler,
                          completionHandler: SimpleCompletionHandler) {
         q.async {
@@ -706,14 +833,14 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
                 guard url.isFileURL, let stream = InputStream(url: url) else {
                     throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
                 }
-                guard let size = (try url.resourceValues(forKeys: [.fileSizeKey]).allValues[.fileSizeKey] as? NSNumber)?.uint64Value else {
+                guard (try url.resourceValues(forKeys: [.fileSizeKey]).allValues[.fileSizeKey] as? NSNumber)?.uint64Value != nil else {
                     throw POSIXError(.EFTYPE, description: "Could not retrieve file size from URL.")
                 }
                 if try !url.checkResourceIsReachable() {
                     throw POSIXError(.EIO)
                 }
                 
-                try self.write(from: stream, size: size, toPath: toPath, progress: progress)
+                try self.write(from: stream, toPath: toPath, progress: progress)
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -726,7 +853,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
      
      - Note: if a file already exists on given url, This function will overwrite to that url.
      
-      Note: given url must be local file url otherwise it will throw error.
+     - Note: given url must be local file url otherwise it will throw error.
      
      - Parameters:
        - atPath: path of file to be downloaded from.
@@ -735,7 +862,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
            User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
-    @objc
+    @objc(downloadItemAtPath:toURL:progress:completionHandler:)
     open func downloadItem(atPath path: String, to url: URL, progress: SMB2ReadProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
         q.async {
@@ -747,6 +874,35 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, CustomReflectable {
                 completionHandler?(nil)
             } catch {
                 try? FileManager.default.removeItem(at: url)
+                completionHandler?(error)
+            }
+        }
+    }
+    
+    /**
+     Downloads file contents to a local url. With reporting progress on about every 1MiB.
+     
+     - Note: if a file already exists on given url, This function will overwrite to that url.
+     
+     - Note: given url must be local file url otherwise it will throw error.
+     
+     - Important: Stream will be closed eventually if is not alrady opened.
+     
+     - Parameters:
+       - atPath: path of file to be downloaded from.
+       - at: url of a local file to be written to.
+       - progress: reports progress of written bytes count so farand expected length of contents.
+         User must return `true` if they want to continuing or `false` to abort copying.
+       - completionHandler: closure will be run after uploading is completed.
+     */
+    @objc(downloadItemAtPath:toStream:progress:completionHandler:)
+    open func downloadItem(atPath path: String, to stream: OutputStream, progress: SMB2ReadProgressHandler,
+                           completionHandler: SimpleCompletionHandler) {
+        q.async {
+            do {
+                try self.read(path: path, to: stream, progress: progress)
+                completionHandler?(nil)
+            } catch {
                 completionHandler?(error)
             }
         }
@@ -930,7 +1086,9 @@ extension AMSMB2 {
             shouldCloseStream = true
         }
         defer {
-            stream.close()
+            if shouldCloseStream {
+                stream.close()
+            }
         }
         
         var shouldContinue = true
@@ -947,7 +1105,7 @@ extension AMSMB2 {
                 if data.isEmpty {
                     return true
                 }
-                let written = try stream.write(data: data)
+                let written = try stream.write(data)
                 guard written == data.count else {
                     throw POSIXError(.EIO, description: "Inconsitency in reading from SMB file handle.")
                 }
@@ -962,7 +1120,7 @@ extension AMSMB2 {
         }
     }
     
-    fileprivate func write(from stream: InputStream, size: UInt64, toPath: String, progress: SMB2WriteProgressHandler) throws {
+    fileprivate func write(from stream: InputStream, toPath: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler) throws {
         let context = try self.tryContext()
         let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         
@@ -977,11 +1135,15 @@ extension AMSMB2 {
             }
         }
         
+        let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
+        
+        var totalWritten: UInt64 = 0
         while true {
-            var segment = try stream.readData(ofLength: file.optimizedWriteSize)
+            var segment = try stream.readData(maxLength: chunkSize)
             if segment.count == 0 {
                 break
             }
+            totalWritten += UInt64(segment.count)
             // For last part, we make it size equal with other chunks in order to prevent POLLHUP on some servers
             if segment.count < file.optimizedWriteSize {
                 segment.count = file.optimizedWriteSize
@@ -990,15 +1152,29 @@ extension AMSMB2 {
             if written != segment.count {
                 throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
             }
+            
             var offset = try file.lseek(offset: 0, whence: .current)
-            if offset > size {
-                offset = Int64(size)
+            if offset > totalWritten {
+                offset = Int64(totalWritten)
             }
             if let shouldContinue = progress?(offset), !shouldContinue {
                 break
             }
         }
-        try file.ftruncate(toLength: size)
+        try file.ftruncate(toLength: totalWritten)
         try file.fsync()
+    }
+}
+
+extension AMSMB2 {
+    func convert<T>(_ resultCompletion: @escaping (T?, Error?) -> Void) -> ((Result<T, Error>) -> Void) {
+        return { result in
+            switch result {
+            case .success(let val):
+                resultCompletion(val, nil)
+            case .failure(let error):
+                resultCompletion(nil, error)
+            }
+        }
     }
 }

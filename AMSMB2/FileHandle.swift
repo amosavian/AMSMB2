@@ -239,8 +239,8 @@ final class SMB2FileHandle {
         try fcntl(command: command, data: Data(), needsReply: false)
     }
     
-    func fcntl<T: DataRepresentable>(command: IOCtl.Command, args: T) throws -> Void {
-        try fcntl(command: command, data: args.data(), needsReply: false)
+    func fcntl<T: DataProtocol>(command: IOCtl.Command, args: T) throws -> Void where T.Regions == CollectionOfOne<Data> {
+        try fcntl(command: command, data: args.regions[0], needsReply: false)
     }
     
     func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {
@@ -248,8 +248,8 @@ final class SMB2FileHandle {
         return try R(data: result)
     }
     
-    func fcntl<T: DataRepresentable, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R {
-        let result = try fcntl(command: command, data: args.data())
+    func fcntl<T: DataProtocol, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R where T.Regions == CollectionOfOne<Data> {
+        let result = try fcntl(command: command, data: args.regions[0])
         return try R(data: result)
     }
 }
