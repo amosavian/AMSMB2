@@ -10,9 +10,9 @@ import Foundation
 
 class MSRPC {
     static func parseNetShareEnumAllLevel1(data: Data) throws
-        -> [(name: String, type: UInt32, comment: String)]
+        -> [(name: String, props: ShareProperties, comment: String)]
     {
-        var shares = [(name: String, type: UInt32, comment: String)]()
+        var shares = [(name: String, props: ShareProperties, comment: String)]()
         
         /*
          Data Layout :
@@ -42,7 +42,7 @@ class MSRPC {
         }
         
         // Count of shares to be enumerated, [44-47]
-        guard let count = data.scanValue(start: 44, as: UInt32.self).map(Int.init) else {
+        guard let count = data.scanInt(offset: 44, as: UInt32.self) else {
             throw POSIXError(.EBADMSG)
         }
         
@@ -50,10 +50,10 @@ class MSRPC {
         var offset = 48 + count * 12
         for i in 0..<count {
             // Type of current share, see https://msdn.microsoft.com/en-us/library/windows/desktop/cc462916(v=vs.85).aspx
-            let type = data.scanValue(start: typeOffset(i), as: UInt32.self) ?? 0xffffffff
+            let type = data.scanValue(offset: typeOffset(i), as: UInt32.self) ?? 0xffffffff
             
             // Parse name part
-            guard let nameActualCount = data.scanValue(start: offset + 8, as: UInt32.self).map(Int.init) else {
+            guard let nameActualCount = data.scanInt(offset: offset + 8, as: UInt32.self) else {
                 throw POSIXError(.EBADRPC)
             }
             
@@ -74,7 +74,7 @@ class MSRPC {
             }
             
             // Parse comment part
-            guard let commentActualCount = data.scanValue(start: offset + 8, as: UInt32.self).map(Int.init) else {
+            guard let commentActualCount = data.scanInt(offset: offset + 8, as: UInt32.self) else {
                 throw POSIXError(.EBADRPC)
             }
             
@@ -95,7 +95,7 @@ class MSRPC {
                 offset += 2
             }
             
-            shares.append((name: nameString, type: type, comment: commentString))
+            shares.append((name: nameString, props: ShareProperties(rawValue: type), comment: commentString))
             
             if offset > data.count {
                 break

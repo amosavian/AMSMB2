@@ -9,10 +9,6 @@
 import Foundation
 import SMB2
 
-protocol DataRepresentable {
-    func data() -> Data
-}
-
 protocol DataInitializable {
     init(data: Data) throws
 }
@@ -55,33 +51,43 @@ struct IOCtl {
         }
     }
     
-    struct SrvCopyChunk: DataRepresentable {
+    struct SrvCopyChunk: DataProtocol {
         let sourceOffset: UInt64
         let targetOffset: UInt64
         let length: UInt32
         
-        func data() -> Data {
+        var regions: CollectionOfOne<Data> {
             var data = Data()
             data.append(value: sourceOffset)
             data.append(value: targetOffset)
             data.append(value: length)
             data.append(value: 0 as UInt32)
-            return data
+            return CollectionOfOne(data)
         }
+        
+        var startIndex: Int { return 0 }
+        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
+        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
+        func index(after i: Int) -> Int { return i + 1 }
     }
     
-    struct SrvCopyChunkCopy: DataRepresentable {
+    struct SrvCopyChunkCopy: DataProtocol {
         let sourceKey: Data
         let chunks: [SrvCopyChunk]
         
-        func data() -> Data {
+        public var regions: CollectionOfOne<Data> {
             var data = Data()
             data.append(sourceKey)
             data.append(value: UInt32(chunks.count))
             data.append(value: 0 as UInt32)
-            chunks.forEach { data.append($0.data()) }
-            return data
+            chunks.forEach { data.append($0.regions[0]) }
+            return CollectionOfOne(data)
         }
+        
+        var startIndex: Int { return 0 }
+        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
+        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
+        func index(after i: Int) -> Int { return i + 1 }
     }
     
     struct RequestResumeKey: DataInitializable {
@@ -95,7 +101,7 @@ struct IOCtl {
         }
     }
     
-    struct SymbolicLinkReparse: DataInitializable, DataRepresentable {
+    struct SymbolicLinkReparse: DataInitializable, DataProtocol {
         static private let headerLength = 16
         private let reparseTag: UInt32 = 0xA000000C
         let substituteName: String
@@ -103,15 +109,15 @@ struct IOCtl {
         let isRelative: Bool
         
         init(data: Data) throws {
-            guard data.scanValue(start: 0) as UInt32? == self.reparseTag else {
+            guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
                 throw POSIXError(.EINVAL)
             }
             
-            guard let substituteOffset = data.scanValue(start: 8, as: UInt16.self).map(Int.init),
-                let substituteLen = data.scanValue(start: 10, as: UInt16.self).map(Int.init),
-                let printOffset = data.scanValue(start: 12, as: UInt16.self).map(Int.init),
-                let printLen = data.scanValue(start: 14, as: UInt16.self).map(Int.init),
-                let flag = data.scanValue(start: 16, as: UInt32.self) else {
+            guard let substituteOffset = data.scanInt(offset: 8, as: UInt16.self),
+                let substituteLen = data.scanInt(offset: 10, as: UInt16.self),
+                let printOffset = data.scanInt(offset: 12, as: UInt16.self),
+                let printLen = data.scanInt(offset: 14, as: UInt16.self),
+                let flag = data.scanValue(offset: 16, as: UInt32.self) else {
                 throw POSIXError(.EINVAL)
             }
             
@@ -127,7 +133,7 @@ struct IOCtl {
             self.isRelative = flag & 1 == 1
         }
         
-        func data() -> Data {
+        var regions: CollectionOfOne<Data> {
             let substituteData = substituteName.data(using: .utf16LittleEndian)!
             let substituteLen = UInt16(substituteData.count)
             let printData = printName.data(using: .utf16LittleEndian)!
@@ -143,25 +149,30 @@ struct IOCtl {
             data.append(value: UInt32(isRelative ? 1 : 0))
             data.append(printData)
             data.append(substituteData)
-            return data
+            return CollectionOfOne(data)
         }
+        
+        var startIndex: Int { return 0 }
+        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
+        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
+        func index(after i: Int) -> Int { return i + 1 }
     }
     
-    struct MountPointReparse: DataInitializable, DataRepresentable {
+    struct MountPointReparse: DataInitializable, DataProtocol {
         static private let headerLength = 16
         private let reparseTag: UInt32 = 0xA0000003
         let substituteName: String
         let printName: String
         
         init(data: Data) throws {
-            guard data.scanValue(start: 0) as UInt32? == self.reparseTag else {
+            guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
                 throw POSIXError(.EINVAL)
             }
             
-            guard let substituteOffset = (data.scanValue(start: 8) as UInt16?).map(Int.init),
-                let substituteLen = (data.scanValue(start: 10) as UInt16?).map(Int.init),
-                let printOffset = (data.scanValue(start: 12) as UInt16?).map(Int.init),
-                let printLen = (data.scanValue(start: 14) as UInt16?).map(Int.init) else {
+            guard let substituteOffset = data.scanInt(offset: 8, as: UInt16.self),
+                let substituteLen = data.scanInt(offset: 10, as: UInt16.self),
+                let printOffset = data.scanInt(offset: 12, as: UInt16.self),
+                let printLen = data.scanInt(offset: 14, as: UInt16.self) else {
                     throw POSIXError(.EINVAL)
             }
             
@@ -176,7 +187,7 @@ struct IOCtl {
             self.printName = printName
         }
         
-        func data() -> Data {
+        var regions: CollectionOfOne<Data> {
             let substituteData = substituteName.data(using: .utf16LittleEndian)!
             let substituteLen = UInt16(substituteData.count)
             let printData = printName.data(using: .utf16LittleEndian)!
@@ -191,7 +202,12 @@ struct IOCtl {
             data.append(value: printLen)
             data.append(printData)
             data.append(substituteData)
-            return data
+            return CollectionOfOne(data)
         }
+        
+        var startIndex: Int { return 0 }
+        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
+        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
+        func index(after i: Int) -> Int { return i + 1 }
     }
 }

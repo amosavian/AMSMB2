@@ -18,6 +18,43 @@ extension smb2_negotiate_version {
     static let v2_10 = SMB2_VERSION_0210
     static let v3_00 = SMB2_VERSION_0300
     static let v3_02 = SMB2_VERSION_0302
+    
+    static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
+        if lhs.rawValue == rhs.rawValue { return true }
+        switch (lhs, rhs) {
+        case (.any, _), (_, .any):
+            return true
+        case (.v2, v2_02), (v2_02, v2), (.v2, v2_10), (v2_10, v2):
+            return true
+        case (.v3, v3_00), (v3_00, v3), (.v3, v3_02), (v3_02, v3):
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+struct ShareProperties: RawRepresentable {
+    enum ShareType: UInt32 {
+        case diskTree
+        case printQ
+        case device
+        case ipc
+    }
+    
+    let rawValue: UInt32
+    
+    var type: ShareType {
+        return ShareType(rawValue: rawValue & 0x0fffffff)!
+    }
+    
+    var isTemporary: Bool {
+        return rawValue & UInt32(bitPattern: SHARE_TYPE_TEMPORARY) != 0
+    }
+    
+    var isHidden: Bool {
+        return rawValue & SHARE_TYPE_HIDDEN != 0
+    }
 }
 
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
@@ -153,7 +190,7 @@ extension SMB2Context {
     }
     
     var version: Version {
-        return self.context?.pointee.version ?? .any
+        return (self.context?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
     }
     
     var isConnected: Bool {
@@ -220,7 +257,7 @@ extension SMB2Context {
 
 // MARK: DCE-RPC
 extension SMB2Context {
-    func shareEnum() throws -> [(name: String, type: UInt32, comment: String)] {
+    func shareEnum() throws -> [(name: String, props: ShareProperties, comment: String)] {
         let (_, cmddata) = try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
             smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
         }
@@ -236,7 +273,7 @@ extension SMB2Context {
         return parseShareEnum(ctr1: rep.pointee.ctr.pointee.ctr1)
     }
     
-    func shareEnumSwift(serverName: String) throws -> [(name: String, type: UInt32, comment: String)]
+    func shareEnumSwift(serverName: String) throws -> [(name: String, props: ShareProperties, comment: String)]
     {
         // Connection to server service.
         let srvsvc = try SMB2FileHandle(forPipe: "srvsvc", on: self)
@@ -314,17 +351,11 @@ extension SMB2Context {
         var status: UInt32 {
             return UInt32(bitPattern: result)
         }
-        
-        static func new() -> UnsafeMutablePointer<CBData> {
-            let cbPtr = UnsafeMutablePointer<CBData>.allocate(capacity: 1)
-            cbPtr.initialize(to: .init())
-            return cbPtr
-        }
     }
     
-    private func wait_for_reply(_ cbPtr: UnsafeMutablePointer<CBData>) throws {
+    private func wait_for_reply(_ cb: inout CBData) throws {
         let startDate = Date()
-        while !cbPtr.pointee.isFinished {
+        while !cb.isFinished {
             var pfd = pollfd()
             pfd.fd = fileDescriptor
             pfd.events = Int16(whichEvents())
@@ -351,7 +382,7 @@ extension SMB2Context {
         switch (data, finishing) {
         case (true, true):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -360,7 +391,7 @@ extension SMB2Context {
             }
         case (true, false):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -368,7 +399,7 @@ extension SMB2Context {
             }
         case (false, true):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -376,7 +407,7 @@ extension SMB2Context {
             }
         case (false, false):
             return { smb2, status, command_data, cbdata in
-                guard let cbdata = cbdata?.assumingMemoryBound(to: CBData.self).pointee else { return }
+                guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
@@ -390,20 +421,16 @@ extension SMB2Context {
     func async_await(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<Int32>)
         throws -> (result: Int32, data: UnsafeMutableRawPointer?)
     {
-        let cbPtr = CBData.new()
-        defer {
-            cbPtr.deinitialize(count: 1)
-            cbPtr.deallocate()
-        }
+        var cb = CBData()
         
         let result = try withThreadSafeContext { (context) -> Int32 in
-            return handler(context, cbPtr)
+            return handler(context, &cb)
         }
         try POSIXError.throwIfError(result, description: error, default: .ECONNRESET)
-        try wait_for_reply(cbPtr)
-        let cbResult = cbPtr.pointee.result
+        try wait_for_reply(&cb)
+        let cbResult = cb.result
         try POSIXError.throwIfError(cbResult, description: error, default: defaultError)
-        let data = cbPtr.pointee.data
+        let data = cb.data
         return (cbResult, data)
     }
     
@@ -411,38 +438,34 @@ extension SMB2Context {
     func async_await_pdu(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<UnsafeMutablePointer<smb2_pdu>?>)
         throws -> (status: UInt32, data: UnsafeMutableRawPointer?)
     {
-        let cbPtr = CBData.new()
-        defer {
-            cbPtr.deinitialize(count: 1)
-            cbPtr.deallocate()
-        }
+        var cb = CBData()
         
         try withThreadSafeContext { (context) -> Void in
-            guard let pdu = handler(context, cbPtr) else {
+            guard let pdu = handler(context, &cb) else {
                 throw POSIXError(.ENOMEM)
             }
             smb2_queue_pdu(context, pdu)
         }
-        try wait_for_reply(cbPtr)
-        let status = cbPtr.pointee.status
+        try wait_for_reply(&cb)
+        let status = cb.status
         if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(status)
             try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
         }
-        let data = cbPtr.pointee.data
+        let data = cb.data
         return (status, data)
     }
 }
 
 fileprivate extension SMB2Context {
-    func parseShareEnum(ctr1: srvsvc_netsharectr1) -> [(name: String, type: UInt32, comment: String)] {
-        var result = [(name: String, type: UInt32, comment: String)]()
+    func parseShareEnum(ctr1: srvsvc_netsharectr1) -> [(name: String, props: ShareProperties, comment: String)] {
+        var result = [(name: String, props: ShareProperties, comment: String)]()
         let array = Array(UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count)))
         for item in array {
             let name = String(cString: item.name)
-            let type = item.type
+            let type = ShareProperties(rawValue: item.type)
             let comment = String(cString: item.comment)
-            result.append((name: name, type: type, comment: comment))
+            result.append((name: name, props: type, comment: comment))
         }
         return result
     }

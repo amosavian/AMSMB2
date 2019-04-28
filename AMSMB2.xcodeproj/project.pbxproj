@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		790FA33920B2CC5600578C8A /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 790FA33820B2CC5600578C8A /* Extensions.swift */; };
 		7957E1F220F1EEB100F96CE4 /* Fsctl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7957E1F120F1EEB100F96CE4 /* Fsctl.swift */; };
+		7966DC4D2273A5CA00BBC39D /* ObjCCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7966DC4C2273A5CA00BBC39D /* ObjCCompat.swift */; };
 		79B5EDBD210FE1DB00449EF6 /* MSRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79B5EDBC210FE1DB00449EF6 /* MSRPC.swift */; };
 		79FDFE5E20AD439F00749FB5 /* AMSMB2.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 79FDFE5420AD439F00749FB5 /* AMSMB2.framework */; };
 		79FDFE6320AD439F00749FB5 /* AMSMB2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FDFE6220AD439F00749FB5 /* AMSMB2Tests.swift */; };
@@ -33,6 +34,7 @@
 /* Begin PBXFileReference section */
 		790FA33820B2CC5600578C8A /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		7957E1F120F1EEB100F96CE4 /* Fsctl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Fsctl.swift; sourceTree = "<group>"; };
+		7966DC4C2273A5CA00BBC39D /* ObjCCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ObjCCompat.swift; sourceTree = "<group>"; };
 		79B5EDBC210FE1DB00449EF6 /* MSRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MSRPC.swift; sourceTree = "<group>"; };
 		79FDFE5420AD439F00749FB5 /* AMSMB2.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AMSMB2.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		79FDFE5720AD439F00749FB5 /* AMSMB2.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AMSMB2.h; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 				79FDFE5820AD439F00749FB5 /* Info.plist */,
 				79FDFE5720AD439F00749FB5 /* AMSMB2.h */,
 				79FDFE6E20AD45C100749FB5 /* AMSMB2.swift */,
+				7966DC4C2273A5CA00BBC39D /* ObjCCompat.swift */,
 				79FDFE7B20AD545D00749FB5 /* Context.swift */,
 				79B5EDBC210FE1DB00449EF6 /* MSRPC.swift */,
 				7957E1F120F1EEB100F96CE4 /* Fsctl.swift */,
@@ -235,6 +238,7 @@
 				790FA33920B2CC5600578C8A /* Extensions.swift in Sources */,
 				79FDFE6F20AD45C100749FB5 /* AMSMB2.swift in Sources */,
 				79B5EDBD210FE1DB00449EF6 /* MSRPC.swift in Sources */,
+				7966DC4D2273A5CA00BBC39D /* ObjCCompat.swift in Sources */,
 				7957E1F220F1EEB100F96CE4 /* Fsctl.swift in Sources */,
 				79FDFE7A20AD541500749FB5 /* URL.swift in Sources */,
 				79FDFF0120AD852200749FB5 /* FileHandle.swift in Sources */,

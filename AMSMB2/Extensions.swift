@@ -26,20 +26,32 @@ extension POSIXError {
 }
 
 extension Dictionary where Key == URLResourceKey, Value == Any {
-    var filename: String? {
+    var fileName: String? {
         return self[.nameKey] as? String
     }
     
-    var filepath: String? {
+    var filePath: String? {
         return self[.pathKey] as? String
     }
     
-    var filetype: URLFileResourceType? {
+    var fileType: URLFileResourceType? {
         return self[.fileResourceTypeKey] as? URLFileResourceType
     }
     
-    var filesize: Int64? {
+    var fileSize: Int64? {
         return self[.fileSizeKey] as? Int64
+    }
+    
+    var fileModificationDate: Date? {
+        return self[.contentModificationDateKey] as? Date
+    }
+    
+    var fileAccessDate: Date? {
+        return self[.contentAccessDateKey] as? Date
+    }
+    
+    var fileCreationDate: Date? {
+        return self[.creationDateKey] as? Date
     }
 }
 
@@ -58,25 +70,18 @@ extension Data {
                              uuid.uuid.12, uuid.uuid.13, uuid.uuid.14, uuid.uuid.15])
     }
     
-    func scanValue<T: FixedWidthInteger>(start: Int) -> T? {
-        let length = MemoryLayout<T>.size
-        guard self.count >= start + length else { return nil }
-        var result: T = 0
-        (self as NSData).getBytes(&result, range: NSRange(location: start, length: length))
-        return result.littleEndian
+    func scanValue<T: FixedWidthInteger>(offset: Int, as: T.Type) -> T? {
+        guard self.count >= offset + MemoryLayout<T>.size else { return nil }
+        return T(littleEndian: withUnsafeBytes { $0.load(fromByteOffset: offset, as: T.self) })
     }
     
-    func scanValue<T: FixedWidthInteger>(start: Int, as: T.Type) -> T? {
-        let length = MemoryLayout<T>.size
-        guard self.count >= start + length else { return nil }
-        var result: T = 0
-        (self as NSData).getBytes(&result, range: NSRange(location: start, length: length))
-        return result.littleEndian
+    func scanInt<T: FixedWidthInteger>(offset: Int, as: T.Type) -> Int? {
+        return scanValue(offset: offset, as: T.self).map(Int.init)
     }
 }
 
 extension InputStream {
-    func readData(ofLength length: Int) throws -> Data {
+    func readData(maxLength length: Int) throws -> Data {
         var buffer = [UInt8](repeating: 0, count: length)
         let result = self.read(&buffer, maxLength: buffer.count)
         if result < 0 {
@@ -88,7 +93,7 @@ extension InputStream {
 }
 
 extension OutputStream {
-    func write(data: Data) throws -> Int {
+    func write<DataType: DataProtocol>(_ data: DataType) throws -> Int {
         var buffer = Array(data)
         let result = self.write(&buffer, maxLength: buffer.count)
         if result < 0 {

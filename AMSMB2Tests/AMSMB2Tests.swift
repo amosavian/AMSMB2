@@ -81,11 +81,14 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
-        smb.listShares { (name, comments, error) in
-            XCTAssertNil(error)
-            XCTAssertFalse(name.isEmpty)
-            XCTAssertFalse(comments.isEmpty)
-            XCTAssert(name.contains(self.share))
+        smb.listShares { result in
+            switch result {
+            case .success(let value):
+                XCTAssertFalse(value.isEmpty)
+                XCTAssert(value.contains(where: { $0.name == self.share }))
+            case .failure(let error):
+                XCTAssert(false, error.localizedDescription)
+            }
             expectation.fulfill()
         }
         
@@ -99,10 +102,19 @@ class AMSMB2Tests: XCTestCase {
         smb.connectShare(name: share) { (error) in
             XCTAssertNil(error)
             
-            smb.contentsOfDirectory(atPath: "/") { (files, error) in
-                XCTAssertNil(error)
-                XCTAssertFalse(files.isEmpty)
-                XCTAssertNotNil(files.first?.filename)
+            smb.contentsOfDirectory(atPath: "/") { result in
+                switch result {
+                case .success(let value):
+                    XCTAssertFalse(value.isEmpty)
+                    XCTAssertNotNil(value.first)
+                    guard let file = value.first else { break }
+                    XCTAssertNotNil(file.fileName)
+                    XCTAssertNotNil(file.fileModificationDate)
+                    XCTAssertNotNil(file.fileCreationDate)
+                    XCTAssertGreaterThanOrEqual(file.fileModificationDate!, file.fileCreationDate!)
+                case .failure(let error):
+                    XCTAssert(false, error.localizedDescription)
+                }
                 expectation.fulfill()
             }
         }
@@ -167,15 +179,15 @@ class AMSMB2Tests: XCTestCase {
     
     func testLargeWriteRead() {
         let size: Int = maxSize * 3 + random(max: optimizedSize)
-        readWrite(size: size, function: #function)
+        readWrite(size: size, checkLeak: true, function: #function)
     }
     
     private func readWrite(size: Int, checkLeak: Bool = false, function: String) {
         let expectation = self.expectation(description: function)
-        expectation.expectedFulfillmentCount = 2
+        expectation.expectedFulfillmentCount = 3
         
         let smb = AMSMB2(url: server, credential: credential)!
-        print(#function, "Large test size:", size)
+        print(#function, "test size:", size)
         let data = randomData(size: size)
         let baseMemUsage = report_memory()
         
@@ -196,25 +208,44 @@ class AMSMB2Tests: XCTestCase {
                 if checkLeak {
                     XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
                 }
+                
                 smb.contents(atPath: "writetest.dat", progress: { (progress, total) -> Bool in
                     XCTAssertGreaterThan(progress, 0)
                     XCTAssertEqual(total, Int64(data.count))
                     print(function, "downloaded:", progress, "of", total)
                     return true
-                }, completionHandler: { (rdata, error) in
+                }, completionHandler: { result in
                     if checkLeak {
                         XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
                     }
-                    XCTAssertNil(error)
-                    XCTAssertEqual(data, rdata)
+                    switch result {
+                    case .success(let rdata):
+                        XCTAssertEqual(data, rdata)
+                    case .failure(let error):
+                        XCTAssert(false, error.localizedDescription)
+                    }
+                    expectation.fulfill()
+                })
+                
+                smb.contents(atPath: "writetest.dat", range: ..<UInt64(10), progress: nil, completionHandler: { result in
+                    if checkLeak {
+                        XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+                    }
+                    switch result {
+                    case .success(let rdata):
+                        XCTAssertEqual(data.prefix(10), rdata)
+                    case .failure(let error):
+                        XCTAssert(false, error.localizedDescription)
+                    }
                     expectation.fulfill()
                 })
             }
         }
         
         wait(for: [expectation], timeout: 60)
-        print("\(function) after free memory usage:", self.report_memory() - baseMemUsage)
+        
         if checkLeak {
+            print("\(function) after free memory usage:", self.report_memory() - baseMemUsage)
             XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
         }
     }
@@ -290,9 +321,13 @@ class AMSMB2Tests: XCTestCase {
                     XCTAssertNil(error)
                     expectation.fulfill()
                     
-                    smb.attributesOfItem(atPath: "copyTestDest.dat", completionHandler: { (file, error) in
-                        XCTAssertNil(error)
-                        XCTAssertEqual(file?.filesize, Int64(data.count))
+                    smb.attributesOfItem(atPath: "copyTestDest.dat", completionHandler: { result in
+                        switch result {
+                        case .success(let value):
+                            XCTAssertEqual(value.fileSize, Int64(data.count))
+                        case .failure(let error):
+                            XCTAssert(false, error.localizedDescription)
+                        }
                         expectation.fulfill()
                     })
                 }

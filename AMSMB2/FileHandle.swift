@@ -48,13 +48,18 @@ final class SMB2FileHandle {
     convenience init(forPipe path: String, on context: SMB2Context) throws {
         // smb2_open() sets overwrite flag, which is incompatible with pipe in mac's smbx
         let (_, cmddata) = try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
-            let pReq = UnsafeMutablePointer<smb2_create_request>.allocate(capacity: 1)
-            pReq.initialize(to: SMB2FileHandle.standardOpenRequest(path: path))
-            defer {
-                pReq.deinitialize(count: 1)
-                pReq.deallocate()
+            return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
+                var req = smb2_create_request()
+                req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
+                req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
+                req.desired_access = UInt32(SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES |
+                    SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES)
+                req.share_access = UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE)
+                req.create_disposition = UInt32(SMB2_FILE_OPEN)
+                req.create_options = UInt32(SMB2_FILE_NON_DIRECTORY_FILE)
+                req.name = path
+                return smb2_cmd_create_async(context, &req, SMB2Context.generic_handler, cbPtr)
             }
-            return smb2_cmd_create_async(context, pReq, SMB2Context.generic_handler, cbPtr)
         }
         
         guard let reply = cmddata?.bindMemory(to: smb2_create_reply.self, capacity: 1) else {
@@ -207,8 +212,8 @@ final class SMB2FileHandle {
                                  input: &buffer, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
         
         let (_, response) = try context.async_await_pdu(defaultError: .EBADRPC) {
-            (context, cbdata) -> UnsafeMutablePointer<smb2_pdu>? in
-            smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbdata)
+            (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+            smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
         }
         
         guard let reply = response?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1).pointee else {
@@ -239,8 +244,8 @@ final class SMB2FileHandle {
         try fcntl(command: command, data: Data(), needsReply: false)
     }
     
-    func fcntl<T: DataRepresentable>(command: IOCtl.Command, args: T) throws -> Void {
-        try fcntl(command: command, data: args.data(), needsReply: false)
+    func fcntl<T: DataProtocol>(command: IOCtl.Command, args: T) throws -> Void where T.Regions == CollectionOfOne<Data> {
+        try fcntl(command: command, data: args.regions[0], needsReply: false)
     }
     
     func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {
@@ -248,8 +253,8 @@ final class SMB2FileHandle {
         return try R(data: result)
     }
     
-    func fcntl<T: DataRepresentable, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R {
-        let result = try fcntl(command: command, data: args.data())
+    func fcntl<T: DataProtocol, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R where T.Regions == CollectionOfOne<Data> {
+        let result = try fcntl(command: command, data: args.regions[0])
         return try R(data: result)
     }
 }
@@ -260,20 +265,5 @@ fileprivate extension SMB2FileHandle {
             throw POSIXError(.EBADF, description: "SMB2 file is already closed.")
         }
         return handle
-    }
-    
-    static func standardOpenRequest(path: String) -> smb2_create_request {
-        return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
-            var req = smb2_create_request()
-            req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
-            req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
-            req.desired_access = UInt32(SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES |
-                SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES)
-            req.share_access = UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE)
-            req.create_disposition = UInt32(SMB2_FILE_OPEN)
-            req.create_options = UInt32(SMB2_FILE_NON_DIRECTORY_FILE)
-            req.name = path
-            return req
-        }
     }
 }
