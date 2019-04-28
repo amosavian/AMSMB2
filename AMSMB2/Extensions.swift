@@ -26,20 +26,32 @@ extension POSIXError {
 }
 
 extension Dictionary where Key == URLResourceKey, Value == Any {
-    var filename: String? {
+    var fileName: String? {
         return self[.nameKey] as? String
     }
     
-    var filepath: String? {
+    var filePath: String? {
         return self[.pathKey] as? String
     }
     
-    var filetype: URLFileResourceType? {
+    var fileType: URLFileResourceType? {
         return self[.fileResourceTypeKey] as? URLFileResourceType
     }
     
-    var filesize: Int64? {
+    var fileSize: Int64? {
         return self[.fileSizeKey] as? Int64
+    }
+    
+    var fileModificationDate: Date? {
+        return self[.contentModificationDateKey] as? Date
+    }
+    
+    var fileAccessDate: Date? {
+        return self[.contentAccessDateKey] as? Date
+    }
+    
+    var fileCreationDate: Date? {
+        return self[.creationDateKey] as? Date
     }
 }
 

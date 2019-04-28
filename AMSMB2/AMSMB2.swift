@@ -430,15 +430,15 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                     // This block will only delete children of directory, the path itself will removed after if block.
                     let list = try self.listDirectory(path: path, recursive: true)
                     let sortedContents = list.sorted(by: {
-                        guard let firstPath = $0.filepath, let secPath = $1.filepath else {
+                        guard let firstPath = $0.filePath, let secPath = $1.filePath else {
                             return false
                         }
                         return firstPath.localizedStandardCompare(secPath) == .orderedDescending
                     })
                     
                     for item in sortedContents {
-                        guard let itemPath = item.filepath else { continue }
-                        if item.filetype == URLFileResourceType.directory {
+                        guard let itemPath = item.filePath else { continue }
+                        if item.fileType == URLFileResourceType.directory {
                             try context.rmdir(itemPath)
                         } else {
                             try context.unlink(itemPath)
@@ -845,7 +845,7 @@ extension AMSMB2 {
     fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
         
         func convertDate(unixTime: UInt64, nsec: UInt64) -> NSDate {
-            let time = TimeInterval(unixTime) + TimeInterval(nsec) / TimeInterval(NSEC_PER_SEC)
+            let time = TimeInterval(unixTime) + TimeInterval(nsec / 1000) / TimeInterval(USEC_PER_SEC)
             return NSDate(timeIntervalSince1970: time)
         }
         
@@ -866,10 +866,12 @@ extension AMSMB2 {
         
         dic[.contentModificationDateKey] = convertDate(unixTime: stat.smb2_mtime,
                                                        nsec: stat.smb2_mtime_nsec)
-        dic[.creationDateKey] = convertDate(unixTime: stat.smb2_ctime,
-                                            nsec: stat.smb2_ctime_nsec)
+        dic[.attributeModificationDateKey] = convertDate(unixTime: stat.smb2_ctime,
+                                                         nsec: stat.smb2_ctime_nsec)
         dic[.contentAccessDateKey] = convertDate(unixTime: stat.smb2_atime,
                                                  nsec: stat.smb2_atime_nsec)
+        dic[.creationDateKey] = convertDate(unixTime: stat.smb2_btime,
+                                            nsec: stat.smb2_btime_nsec)
     }
     
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
@@ -887,10 +889,10 @@ extension AMSMB2 {
         }
         
         if recursive {
-            let subDirectories = contents.filter { $0.filetype == .directory }
+            let subDirectories = contents.filter { $0.fileType == .directory }
             
             for subDir in subDirectories {
-                guard let path = subDir.filepath else { continue }
+                guard let path = subDir.filePath else { continue }
                 contents.append(contentsOf: try listDirectory(path: path, recursive: true))
             }
         }
@@ -907,15 +909,15 @@ extension AMSMB2 {
             
             let list = try self.listDirectory(path: path, recursive: recursive)
             let sortedContents = list.sorted(by: {
-                guard let firstPath = $0.filepath, let secPath = $1.filepath else {
+                guard let firstPath = $0.filePath, let secPath = $1.filePath else {
                     return false
                 }
                 return firstPath.localizedStandardCompare(secPath) == .orderedAscending
             })
             
             let overallSize = list.reduce(0, { (result, value) -> Int64 in
-                if value.filetype  == URLFileResourceType.regular {
-                    return result + (value.filesize ?? 0)
+                if value.fileType  == URLFileResourceType.regular {
+                    return result + (value.fileSize ?? 0)
                 } else {
                     return result
                 }
@@ -923,9 +925,9 @@ extension AMSMB2 {
             
             var totalCopied: Int64 = 0
             for item in sortedContents {
-                guard let itemPath = item.filepath else { continue }
+                guard let itemPath = item.filePath else { continue }
                 let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
-                if item.filetype == URLFileResourceType.directory {
+                if item.fileType == URLFileResourceType.directory {
                     try context.mkdir(destPath)
                 } else {
                     let shouldContinue = try handle(itemPath, destPath, {

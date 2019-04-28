@@ -106,7 +106,12 @@ class AMSMB2Tests: XCTestCase {
                 switch result {
                 case .success(let value):
                     XCTAssertFalse(value.isEmpty)
-                    XCTAssertNotNil(value.first?.filename)
+                    XCTAssertNotNil(value.first)
+                    guard let file = value.first else { break }
+                    XCTAssertNotNil(file.fileName)
+                    XCTAssertNotNil(file.fileModificationDate)
+                    XCTAssertNotNil(file.fileCreationDate)
+                    XCTAssertGreaterThanOrEqual(file.fileModificationDate!, file.fileCreationDate!)
                 case .failure:
                     XCTAssert(false)
                 }
@@ -319,7 +324,7 @@ class AMSMB2Tests: XCTestCase {
                     smb.attributesOfItem(atPath: "copyTestDest.dat", completionHandler: { result in
                         switch result {
                         case .success(let value):
-                            XCTAssertEqual(value.filesize, Int64(data.count))
+                            XCTAssertEqual(value.fileSize, Int64(data.count))
                         case .failure:
                             XCTAssert(false)
                         }
