@@ -29,6 +29,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     
     fileprivate var connectedShare: String?
     fileprivate let connectLock = NSLock()
+    fileprivate let operationLock = NSCondition()
+    fileprivate var operationCount: Int = 0
     
     /**
      The timeout interval to use when doing an operation until getting response. Default value is 60 seconds.
@@ -210,7 +212,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             self.connectedShare = name
         }
         
-        q.async {
+        queue {
             do {
                 self.connectLock.lock()
                 defer { self.connectLock.unlock() }
@@ -235,22 +237,23 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     /**
      Disconnects from a share.
      
-     - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
-     */
-    @objc(disconnectShare)
-    open func disconnectShare() {
-        self.disconnectShare(completionHandler: nil)
-    }
-    
-    /**
-     Disconnects from a share.
+     - Parameters:
+       - gracefully: waits until all queued operations are done before disconnecting from server. Default value is false.
+       - completionHandler: closure will be run after enumerating is completed.
      
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
      */
-    @objc(disconnectShareWithCompletionHandler:)
-    open func disconnectShare(completionHandler: SimpleCompletionHandler) {
-        q.async {
+    @objc(disconnectShareGraceFully:completionHandler:)
+    open func disconnectShare(gracefully: Bool = false, completionHandler: SimpleCompletionHandler = nil) {
+        queue {
             do {
+                if gracefully {
+                    self.operationLock.lock()
+                    while self.operationCount > 0 {
+                        self.operationLock.wait()
+                    }
+                    self.operationLock.unlock()
+                }
                 self.connectLock.lock()
                 defer { self.connectLock.unlock() }
                 try self.context?.disconnect()
@@ -268,7 +271,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(echoWithCompletionHandler:)
     open func echo(completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 try self.context?.echo()
                 completionHandler?(nil)
@@ -290,7 +293,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func listShares(enumerateHidden: Bool = false,
                          completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void) {
-        q.async {
+        queue {
             do {
                 // We use separate context because when a context connects to a tree, it won't connect to another tree.
                 let context = try SMB2Context(timeout: self.timeout)
@@ -304,9 +307,9 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                 
                 var shares = try context.shareEnum()
                 if enumerateHidden {
-                    shares = shares.filter { $0.type & 0x0fffffff == SHARE_TYPE_DISKTREE }
+                    shares = shares.filter { $0.props.type == .diskTree }
                 } else {
-                    shares = shares.filter { $0.type == SHARE_TYPE_DISKTREE }
+                    shares = shares.filter { !$0.props.isHidden && $0.props.type == .diskTree }
                 }
                 let result = shares.map { ($0.name, $0.comment) }
                 completionHandler(.success(result))
@@ -327,7 +330,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func contentsOfDirectory(atPath path: String, recursive: Bool = false,
                                   completionHandler: @escaping (_ result: Result<[[URLResourceKey: Any]], Error>) -> Void) {
-        q.async {
+        queue {
             completionHandler(.init(catching: {
                 return try self.listDirectory(path: path, recursive: recursive)
             }))
@@ -345,7 +348,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func attributesOfFileSystem(forPath path: String,
                                      completionHandler: @escaping (_ result: Result<[FileAttributeKey: Any], Error>) -> Void) {
-        q.async {
+        queue {
             completionHandler(.init(catching: {
                 let context = try self.tryContext()
                 // This exactly matches implementation of Swift Foundation.
@@ -374,7 +377,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func attributesOfItem(atPath path: String,
                                completionHandler: @escaping (_ result: Result<[URLResourceKey: Any], Error>) -> Void) {
-        q.async {
+        queue {
             completionHandler(.init(catching: {
                 let context = try self.tryContext()
                 let stat = try context.stat(path)
@@ -397,7 +400,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(createDirectoryAtPath:completionHandler:)
     open func createDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let context = try self.tryContext()
                 try context.mkdir(path)
@@ -418,7 +421,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(removeDirectoryAtPath:recursive:completionHandler:)
     open func removeDirectory(atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let context = try self.tryContext()
                 
@@ -464,7 +467,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(removeFileAtPath:completionHandler:)
     open func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let context = try self.tryContext()
                 try context.unlink(path)
@@ -488,7 +491,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(truncateFileAtPath:atOffset:completionHandler:)
     open func truncateFile(atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let context = try self.tryContext()
                 try context.truncate(path, toLength: atOffset)
@@ -509,7 +512,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(moveItemAtPath:toPath:completionHandler:)
     open func moveItem(atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let context = try self.tryContext()
                 try context.rename(path, to: toPath)
@@ -563,7 +566,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         let upper = Int64(exactly: range.upperBound) ?? Int64.max
         let int64Range = lower..<upper
         
-        q.async {
+        queue {
             completionHandler(.init(catching: { () -> Data in
                 let stream = OutputStream.toMemory()
                 try self.read(path: path, range: int64Range, to: stream, progress: progress)
@@ -593,7 +596,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     open func contents(atPath path: String, offset: Int64 = 0,
                        fetchedData: @escaping ((_ offset: Int64, _ total: Int64, _ data: Data) -> Bool),
                        completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let context = try self.tryContext()
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
@@ -632,7 +635,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func write<DataType: DataProtocol>(data: DataType, toPath path: String, progress: SMB2WriteProgressHandler,
                                             completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 let stream = InputStream(data: Data(data))
                 try self.write(from: stream, toPath: path, chunkSize: 0, progress: progress)
@@ -662,7 +665,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(writeStream:toPath:chunkSize:progress:completionHandler:)
     open func write(stream: InputStream, toPath path: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler,
                     completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 try self.write(from: stream, toPath: path, chunkSize: chunkSize, progress: progress)
                 completionHandler?(nil)
@@ -692,7 +695,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(copyContentsOfItemAtPath:toPath:recursiveprogress::completionHandler:)
     open func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
                                  progress: SMB2ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 try self.recursiveCopyIterator(atPath: path, toPath: toPath, recursive: recursive, progress: progress,
                                                handle: self.copyContentsOfFile(atPath:toPath:progress:))
@@ -718,7 +721,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(copyItemAtPath:toPath:recursive:progress:completionHandler:)
     open func copyItem(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
                        completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 try self.recursiveCopyIterator(atPath: path, toPath: toPath, recursive: recursive, progress: progress,
                                                handle: self.copyFile(atPath:toPath:progress:))
@@ -744,7 +747,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(uploadItemAtURL:toPath:progress:completionHandler:)
     open func uploadItem(at url: URL, toPath: String, progress: SMB2WriteProgressHandler,
                          completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 guard url.isFileURL, let stream = InputStream(url: url) else {
                     throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
@@ -781,7 +784,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(downloadItemAtPath:toURL:progress:completionHandler:)
     open func downloadItem(atPath path: String, to url: URL, progress: SMB2ReadProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
                     throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
@@ -814,7 +817,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(downloadItemAtPath:toStream:progress:completionHandler:)
     open func downloadItem(atPath path: String, to stream: OutputStream, progress: SMB2ReadProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
-        q.async {
+        queue {
             do {
                 try self.read(path: path, to: stream, progress: progress)
                 completionHandler?(nil)
@@ -826,6 +829,19 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
 }
 
 extension AMSMB2 {
+    fileprivate func queue(_ closure: @escaping () -> Void) {
+        self.operationLock.lock()
+        self.operationCount += 1
+        self.operationLock.unlock()
+        q.async {
+            closure()
+            self.operationLock.lock()
+            self.operationCount -= 1
+            self.operationLock.broadcast()
+            self.operationLock.unlock()
+        }
+    }
+    
     fileprivate func initContext(_ context: SMB2Context) {
         context.securityMode = [.enabled]
         context.domain = _domain
@@ -837,7 +853,7 @@ extension AMSMB2 {
     
     fileprivate func tryContext() throws -> SMB2Context {
         guard let context = self.context else {
-            throw POSIXError(POSIXError.ENOTCONN)
+            throw POSIXError.init(.ENOTCONN, description: "SMB2 server not connected.")
         }
         return context
     }

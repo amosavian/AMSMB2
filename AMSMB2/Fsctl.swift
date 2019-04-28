@@ -109,15 +109,15 @@ struct IOCtl {
         let isRelative: Bool
         
         init(data: Data) throws {
-            guard data.scanValue(start: 0) as UInt32? == self.reparseTag else {
+            guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
                 throw POSIXError(.EINVAL)
             }
             
-            guard let substituteOffset = data.scanValue(start: 8, as: UInt16.self).map(Int.init),
-                let substituteLen = data.scanValue(start: 10, as: UInt16.self).map(Int.init),
-                let printOffset = data.scanValue(start: 12, as: UInt16.self).map(Int.init),
-                let printLen = data.scanValue(start: 14, as: UInt16.self).map(Int.init),
-                let flag = data.scanValue(start: 16, as: UInt32.self) else {
+            guard let substituteOffset = data.scanInt(offset: 8, as: UInt16.self),
+                let substituteLen = data.scanInt(offset: 10, as: UInt16.self),
+                let printOffset = data.scanInt(offset: 12, as: UInt16.self),
+                let printLen = data.scanInt(offset: 14, as: UInt16.self),
+                let flag = data.scanValue(offset: 16, as: UInt32.self) else {
                 throw POSIXError(.EINVAL)
             }
             
@@ -165,14 +165,14 @@ struct IOCtl {
         let printName: String
         
         init(data: Data) throws {
-            guard data.scanValue(start: 0) as UInt32? == self.reparseTag else {
+            guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
                 throw POSIXError(.EINVAL)
             }
             
-            guard let substituteOffset = (data.scanValue(start: 8) as UInt16?).map(Int.init),
-                let substituteLen = (data.scanValue(start: 10) as UInt16?).map(Int.init),
-                let printOffset = (data.scanValue(start: 12) as UInt16?).map(Int.init),
-                let printLen = (data.scanValue(start: 14) as UInt16?).map(Int.init) else {
+            guard let substituteOffset = data.scanInt(offset: 8, as: UInt16.self),
+                let substituteLen = data.scanInt(offset: 10, as: UInt16.self),
+                let printOffset = data.scanInt(offset: 12, as: UInt16.self),
+                let printLen = data.scanInt(offset: 14, as: UInt16.self) else {
                     throw POSIXError(.EINVAL)
             }
             

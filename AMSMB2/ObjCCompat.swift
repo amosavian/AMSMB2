@@ -10,6 +10,29 @@ import Foundation
 
 extension AMSMB2 {
     /**
+     Disconnects from a share.
+     
+     - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
+     */
+    @objc(disconnectShare)
+    open func __disconnectShare() {
+        self.disconnectShare()
+    }
+    
+    /**
+     Disconnects from a share.
+     
+     - Parameters:
+       - completionHandler: closure will be run after enumerating is completed.
+     
+     - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
+     */
+    @objc(disconnectWithCompletionHandler:)
+    open func __disconnectShare(completionHandler: SimpleCompletionHandler) {
+        self.disconnectShare(completionHandler: completionHandler)
+    }
+    
+    /**
      Enumerates shares' list on server.
      
      - Parameters:

@@ -86,8 +86,8 @@ class AMSMB2Tests: XCTestCase {
             case .success(let value):
                 XCTAssertFalse(value.isEmpty)
                 XCTAssert(value.contains(where: { $0.name == self.share }))
-            case .failure:
-                XCTAssert(false)
+            case .failure(let error):
+                XCTAssert(false, error.localizedDescription)
             }
             expectation.fulfill()
         }
@@ -112,8 +112,8 @@ class AMSMB2Tests: XCTestCase {
                     XCTAssertNotNil(file.fileModificationDate)
                     XCTAssertNotNil(file.fileCreationDate)
                     XCTAssertGreaterThanOrEqual(file.fileModificationDate!, file.fileCreationDate!)
-                case .failure:
-                    XCTAssert(false)
+                case .failure(let error):
+                    XCTAssert(false, error.localizedDescription)
                 }
                 expectation.fulfill()
             }
@@ -221,8 +221,8 @@ class AMSMB2Tests: XCTestCase {
                     switch result {
                     case .success(let rdata):
                         XCTAssertEqual(data, rdata)
-                    case .failure:
-                        XCTAssert(false)
+                    case .failure(let error):
+                        XCTAssert(false, error.localizedDescription)
                     }
                     expectation.fulfill()
                 })
@@ -234,8 +234,8 @@ class AMSMB2Tests: XCTestCase {
                     switch result {
                     case .success(let rdata):
                         XCTAssertEqual(data.prefix(10), rdata)
-                    case .failure:
-                        XCTAssert(false)
+                    case .failure(let error):
+                        XCTAssert(false, error.localizedDescription)
                     }
                     expectation.fulfill()
                 })
@@ -325,8 +325,8 @@ class AMSMB2Tests: XCTestCase {
                         switch result {
                         case .success(let value):
                             XCTAssertEqual(value.fileSize, Int64(data.count))
-                        case .failure:
-                            XCTAssert(false)
+                        case .failure(let error):
+                            XCTAssert(false, error.localizedDescription)
                         }
                         expectation.fulfill()
                     })
