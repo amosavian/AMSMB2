@@ -10,53 +10,7 @@ import Foundation
 import SMB2
 import SMB2.Raw
 
-extension smb2_negotiate_version {
-    static let any = SMB2_VERSION_ANY
-    static let v2 = SMB2_VERSION_ANY2
-    static let v3 = SMB2_VERSION_ANY3
-    static let v2_02 = SMB2_VERSION_0202
-    static let v2_10 = SMB2_VERSION_0210
-    static let v3_00 = SMB2_VERSION_0300
-    static let v3_02 = SMB2_VERSION_0302
-    
-    static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
-        if lhs.rawValue == rhs.rawValue { return true }
-        switch (lhs, rhs) {
-        case (.any, _), (_, .any):
-            return true
-        case (.v2, v2_02), (v2_02, v2), (.v2, v2_10), (v2_10, v2):
-            return true
-        case (.v3, v3_00), (v3_00, v3), (.v3, v3_02), (v3_02, v3):
-            return true
-        default:
-            return false
-        }
-    }
-}
-
-struct ShareProperties: RawRepresentable {
-    enum ShareType: UInt32 {
-        case diskTree
-        case printQ
-        case device
-        case ipc
-    }
-    
-    let rawValue: UInt32
-    
-    var type: ShareType {
-        return ShareType(rawValue: rawValue & 0x0fffffff)!
-    }
-    
-    var isTemporary: Bool {
-        return rawValue & UInt32(bitPattern: SHARE_TYPE_TEMPORARY) != 0
-    }
-    
-    var isHidden: Bool {
-        return rawValue & SHARE_TYPE_HIDDEN != 0
-    }
-}
-
+/// Provides synchronous operation on SMB2
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     struct NegotiateSigning: OptionSet {
         var rawValue: UInt16
@@ -186,7 +140,7 @@ extension SMB2Context {
             return nil
         }
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
-        return UUID.init(uuid: uuid)
+        return UUID(uuid: uuid)
     }
     
     var version: Version {
@@ -239,6 +193,10 @@ extension SMB2Context {
     }
     
     func disconnect() throws {
+        try withThreadSafeContext { (context) in
+            smb2_free_all_dirs(context)
+            smb2_free_all_fhs(context)
+        }
         try async_await(defaultError: .ECONNREFUSED) { (context, cbPtr) -> Int32 in
             smb2_disconnect_share_async(context, SMB2Context.generic_handler, cbPtr)
         }
@@ -483,5 +441,52 @@ fileprivate extension SMB2Context {
             let errorCodeString = String(errorCode, radix: 16, uppercase: false)
             throw POSIXError(.EBADMSG, description:  "Binding failure: \(errorCodeString)")
         }
+    }
+}
+
+extension smb2_negotiate_version {
+    static let any = SMB2_VERSION_ANY
+    static let v2 = SMB2_VERSION_ANY2
+    static let v3 = SMB2_VERSION_ANY3
+    static let v2_02 = SMB2_VERSION_0202
+    static let v2_10 = SMB2_VERSION_0210
+    static let v3_00 = SMB2_VERSION_0300
+    static let v3_02 = SMB2_VERSION_0302
+    
+    static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
+        if lhs.rawValue == rhs.rawValue { return true }
+        switch (lhs, rhs) {
+        case (.any, _), (_, .any):
+            return true
+        case (.v2, v2_02), (v2_02, v2), (.v2, v2_10), (v2_10, v2):
+            return true
+        case (.v3, v3_00), (v3_00, v3), (.v3, v3_02), (v3_02, v3):
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+struct ShareProperties: RawRepresentable {
+    enum ShareType: UInt32 {
+        case diskTree
+        case printQ
+        case device
+        case ipc
+    }
+    
+    let rawValue: UInt32
+    
+    var type: ShareType {
+        return ShareType(rawValue: rawValue & 0x0fffffff)!
+    }
+    
+    var isTemporary: Bool {
+        return rawValue & UInt32(bitPattern: SHARE_TYPE_TEMPORARY) != 0
+    }
+    
+    var isHidden: Bool {
+        return rawValue & SHARE_TYPE_HIDDEN != 0
     }
 }

@@ -28,7 +28,7 @@ class AMSMB2Tests: XCTestCase {
         let smb = AMSMB2(url: url, credential: credential)
         XCTAssertNotNil(smb)
         let archiver = NSKeyedArchiver(requiringSecureCoding: true)
-        archiver.encode(smb, forKey: "smb")
+        archiver.encode(smb, forKey: NSKeyedArchiveRootObjectKey)
         archiver.finishEncoding()
         let data = archiver.encodedData
         XCTAssertNil(archiver.error)
@@ -36,7 +36,7 @@ class AMSMB2Tests: XCTestCase {
         let unarchiver = try! NSKeyedUnarchiver(forReadingFrom: data)
         unarchiver.decodingFailurePolicy = .setErrorAndReturn
         unarchiver.requiresSecureCoding = true
-        let decodedSMB = unarchiver.decodeObject(of: AMSMB2.self, forKey: "smb")
+        let decodedSMB = unarchiver.decodeObject(of: AMSMB2.self, forKey: NSKeyedArchiveRootObjectKey)
         XCTAssertNotNil(decodedSMB)
         XCTAssertEqual(smb?.url, decodedSMB?.url)
         XCTAssertEqual(smb?.timeout, decodedSMB?.timeout)
@@ -79,9 +79,35 @@ class AMSMB2Tests: XCTestCase {
     
     func testShareEnum() {
         let expectation = self.expectation(description: #function)
+        expectation.expectedFulfillmentCount = 3
         
         let smb = AMSMB2(url: server, credential: credential)!
         smb.listShares { result in
+            var resultCount = 0
+            switch result {
+            case .success(let value):
+                XCTAssertFalse(value.isEmpty)
+                XCTAssert(value.contains(where: { $0.name == self.share }))
+                resultCount = value.count
+            case .failure(let error):
+                XCTAssert(false, error.localizedDescription)
+            }
+            expectation.fulfill()
+            
+            smb.listShares(enumerateHidden: true) { result in
+                switch result {
+                case .success(let value):
+                    XCTAssertFalse(value.isEmpty)
+                    XCTAssert(value.contains(where: { $0.name == self.share }))
+                    XCTAssertGreaterThanOrEqual(value.count, resultCount)
+                case .failure(let error):
+                    XCTAssert(false, error.localizedDescription)
+                }
+                expectation.fulfill()
+            }
+        }
+        
+        smb._swift_listShares { result in
             switch result {
             case .success(let value):
                 XCTAssertFalse(value.isEmpty)
@@ -90,6 +116,30 @@ class AMSMB2Tests: XCTestCase {
                 XCTAssert(false, error.localizedDescription)
             }
             expectation.fulfill()
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
+    func testFileSystemAttributes() {
+        let expectation = self.expectation(description: #function)
+        
+        let smb = AMSMB2(url: server, credential: credential)!
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+            
+            smb.attributesOfFileSystem(forPath: "/") { result in
+                switch result {
+                case .success(let value):
+                    XCTAssertFalse(value.isEmpty)
+                    XCTAssertGreaterThanOrEqual(value[.systemSize] as! Int64, 0)
+                    XCTAssertGreaterThanOrEqual(value[.systemFreeSize] as! Int64, 0)
+                    XCTAssertGreaterThanOrEqual(value[.systemSize] as! Int64, value[.systemFreeSize] as! Int64)
+                case .failure(let error):
+                    XCTAssert(false, error.localizedDescription)
+                }
+                expectation.fulfill()
+            }
         }
         
         wait(for: [expectation], timeout: 20)
@@ -127,6 +177,7 @@ class AMSMB2Tests: XCTestCase {
         expectation.expectedFulfillmentCount = 5
         
         let smb = AMSMB2(url: server, credential: credential)!
+        smb.timeout = 20
         smb.connectShare(name: share) { (error) in
             XCTAssertNil(error)
             
@@ -250,6 +301,43 @@ class AMSMB2Tests: XCTestCase {
         }
     }
     
+    func testChunkedLoad() {
+        let expectation = self.expectation(description: #function)
+        expectation.expectedFulfillmentCount = 2
+        
+        let file = "chunkedreadtest.dat"
+        let size: Int = random(max: 0xF00000)
+        let smb = AMSMB2(url: server, credential: credential)!
+        print(#function, "test size:", size)
+        let data = randomData(size: size)
+        
+        addTeardownBlock {
+            smb.removeFile(atPath: file, completionHandler: nil)
+        }
+        
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+            
+            smb.write(data: data, toPath: file, progress: nil) { (error) in
+                XCTAssertNil(error)
+                expectation.fulfill()
+                
+                var cachedOffset: Int64 = 0
+                smb.contents(atPath: file, fetchedData: { (offset, total, chunk) -> Bool in
+                    XCTAssertEqual(offset, cachedOffset)
+                    cachedOffset += Int64(chunk.count)
+                    XCTAssertEqual(data[Int(offset)..<Int(cachedOffset)], chunk)
+                    return true
+                }) { (error) in
+                    XCTAssertNil(error)
+                    expectation.fulfill()
+                }
+            }
+        }
+        
+        wait(for: [expectation], timeout: 60)
+    }
+    
     func testUploadDownload() {
         let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 2
@@ -284,9 +372,103 @@ class AMSMB2Tests: XCTestCase {
                     return true
                 }) { (error) in
                     XCTAssertNil(error)
+                    XCTAssert(FileManager.default.contentsEqual(atPath: url.path, andPath: dlURL.path))
                     expectation.fulfill()
                 }
             }
+            
+            smb.echo(completionHandler: nil)
+            smb.disconnectShare(gracefully: true)
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
+    func testStreamUploadDownload() {
+        let expectation = self.expectation(description: #function)
+        expectation.expectedFulfillmentCount = 2
+        
+        let file = "uploadtest.dat"
+        let smb = AMSMB2(url: server, credential: credential)!
+        let size: Int = random(max: 0xF00000)
+        print(#function, "test size:", size)
+        let url = dummyFile(size: size)
+        let dlURL = url.appendingPathExtension("downloaded")
+        let inputStream = InputStream(url: url)!
+        let outputStream = OutputStream(url: dlURL, append: false)!
+        
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: dlURL)
+            smb.removeFile(atPath: file, completionHandler: nil)
+        }
+        
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+            
+            smb.write(stream: inputStream, toPath: file, progress: { (progress) -> Bool in
+                XCTAssertGreaterThan(progress, 0)
+                print(#function, "uploaded:", progress, "of", size)
+                return true
+            }) { (error) in
+                XCTAssertNil(error)
+                expectation.fulfill()
+                
+                smb.downloadItem(atPath: file, to: outputStream, progress: { (progress, total) -> Bool in
+                    XCTAssertGreaterThan(progress, 0)
+                    XCTAssertGreaterThan(total, 0)
+                    print(#function, "downloaded:", progress, "of", total)
+                    return true
+                }) { (error) in
+                    XCTAssertNil(error)
+                    XCTAssert(FileManager.default.contentsEqual(atPath: url.path, andPath: dlURL.path))
+                    expectation.fulfill()
+                }
+            }
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
+    func testTruncate() {
+        let expectation = self.expectation(description: #function)
+        expectation.expectedFulfillmentCount = 2
+        
+        let smb = AMSMB2(url: server, credential: credential)!
+        let size: Int = random(max: 0xF00000)
+        let url = dummyFile(size: size)
+        let file = "tructest.dat"
+        
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: url)
+            smb.removeFile(atPath: file, completionHandler: nil)
+        }
+        
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+            
+            smb.uploadItem(at: url, toPath: file, progress: nil) { (error) in
+                XCTAssertNil(error)
+                expectation.fulfill()
+                
+                smb.truncateFile(atPath: file, atOffset: 0x10000) { error in
+                    XCTAssertNil(error)
+                    
+                    smb.attributesOfItem(atPath: file) { result in
+                        switch result {
+                        case .success(let value):
+                            XCTAssertEqual(value.fileSize, 0x10000)
+                        case .failure(let error):
+                            XCTAssert(false, error.localizedDescription)
+                        }
+                        
+                        expectation.fulfill()
+                    }
+                }
+            }
+            
+            smb.echo(completionHandler: nil)
+            smb.disconnectShare(gracefully: true)
         }
         
         wait(for: [expectation], timeout: 20)
@@ -354,6 +536,82 @@ class AMSMB2Tests: XCTestCase {
                 smb.moveItem(atPath: "moveTest", toPath: "moveTestDest") { (error) in
                     XCTAssertNil(error)
                     expectation.fulfill()
+                }
+            }
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
+    func testRecursiveCopyRemove() {
+        let expectation = self.expectation(description: #function)
+        
+        let root = "recCopyTest"
+        let rootCopy = "recCopyTest Copy"
+        let smb = AMSMB2(url: server, credential: credential)!
+        
+        addTeardownBlock {
+            smb.removeDirectory(atPath: root, recursive: true, completionHandler: nil)
+            smb.removeDirectory(atPath: rootCopy, recursive: true, completionHandler: nil)
+        }
+        
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+
+            smb.createDirectory(atPath: root) { (error) in
+                XCTAssertNil(error)
+                
+                smb.createDirectory(atPath: "\(root)/subdir")  { (error) in
+                    XCTAssertNil(error)
+                    
+                    smb.write(data: [0x01, 0x02, 0x03], toPath: "\(root)/file", progress: nil) { (error) in
+                        XCTAssertNil(error)
+                        
+                        smb.copyItem(atPath: root, toPath: rootCopy, recursive: true, progress: nil) { (error) in
+                            XCTAssertNil(error)
+                            
+                            smb.attributesOfItem(atPath: "\(rootCopy)/file") { result in
+                                switch result {
+                                case .success(let value):
+                                    XCTAssertEqual(value.fileSize, 3)
+                                case .failure(let error):
+                                    XCTAssert(false, error.localizedDescription)
+                                }
+                                
+                                expectation.fulfill()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
+    func testRemove() {
+        let expectation = self.expectation(description: #function)
+        
+        let smb = AMSMB2(url: server, credential: credential)!
+        
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+            
+            smb.removeDirectory(atPath: "removeTest", recursive: true, completionHandler: nil)
+            smb.createDirectory(atPath: "removeTest") { (error) in
+                XCTAssertNil(error)
+                
+                smb.createDirectory(atPath: "removeTest/subdir")  { (error) in
+                    XCTAssertNil(error)
+                    
+                    smb.write(data: Data(), toPath: "removeTest/file", progress: nil) { (error) in
+                        XCTAssertNil(error)
+                        
+                        smb.removeDirectory(atPath: "removeTest", recursive: true) { (error) in
+                            XCTAssertNil(error)
+                            expectation.fulfill()
+                        }
+                    }
                 }
             }
         }

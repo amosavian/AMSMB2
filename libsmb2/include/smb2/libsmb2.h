@@ -96,6 +96,12 @@ struct smb2_context *smb2_init_context(void);
 
 /*
  * Destroy an smb2 context.
+ *
+ * Any open "struct smb2fh" will automatically be freed. You can not reference
+ * any "struct smb2fh" after the context is destroyed.
+ * Any open "struct smb2dir" will automatically be freed. You can not reference
+ * any "struct smb2dir" after the context is destroyed.
+ * Any pending async commands will be aborted with -ECONNRESET.
  */
 void smb2_destroy_context(struct smb2_context *smb2);
 

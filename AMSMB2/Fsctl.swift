@@ -100,7 +100,7 @@ struct IOCtl {
             self.resumeKey = data.prefix(24)
         }
     }
-    
+    /*
     struct SymbolicLinkReparse: DataInitializable, DataProtocol {
         static private let headerLength = 16
         private let reparseTag: UInt32 = 0xA000000C
@@ -209,5 +209,5 @@ struct IOCtl {
         var endIndex: Int { return MemoryLayout.size(ofValue: self) }
         subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
         func index(after i: Int) -> Int { return i + 1 }
-    }
+    }*/
 }

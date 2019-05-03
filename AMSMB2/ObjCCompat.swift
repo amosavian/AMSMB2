@@ -27,7 +27,7 @@ extension AMSMB2 {
      
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
      */
-    @objc(disconnectWithCompletionHandler:)
+    @objc(disconnectShareWithCompletionHandler:)
     open func __disconnectShare(completionHandler: SimpleCompletionHandler) {
         self.disconnectShare(completionHandler: completionHandler)
     }

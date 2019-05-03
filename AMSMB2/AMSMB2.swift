@@ -247,6 +247,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     open func disconnectShare(gracefully: Bool = false, completionHandler: SimpleCompletionHandler = nil) {
         queue {
             do {
+                self.connectLock.lock()
+                defer { self.connectLock.unlock() }
                 if gracefully {
                     self.operationLock.lock()
                     while self.operationCount > 0 {
@@ -254,8 +256,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                     }
                     self.operationLock.unlock()
                 }
-                self.connectLock.lock()
-                defer { self.connectLock.unlock() }
                 try self.context?.disconnect()
                 self.context = nil
                 self.connectedShare = nil
@@ -319,6 +319,35 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         }
     }
     
+    /// Only for test case coverage
+    func _swift_listShares(enumerateHidden: Bool = false,
+                         completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void) {
+        queue {
+            do {
+                // We use separate context because when a context connects to a tree, it won't connect to another tree.
+                let context = try SMB2Context(timeout: self.timeout)
+                self.initContext(context)
+                
+                // Connecting to Interprocess Communication share
+                try context.connect(server: self.url.host!, share: "IPC$", user: self._user)
+                defer {
+                    try? context.disconnect()
+                }
+                
+                var shares = try context.shareEnumSwift(serverName: self.url.host!)
+                if enumerateHidden {
+                    shares = shares.filter { $0.props.type == .diskTree }
+                } else {
+                    shares = shares.filter { !$0.props.isHidden && $0.props.type == .diskTree }
+                }
+                let result = shares.map { ($0.name, $0.comment) }
+                completionHandler(.success(result))
+            } catch {
+                completionHandler(.failure(error))
+            }
+        }
+    }
+    
     /**
      Enumerates directory contents in the give path.
      
@@ -352,7 +381,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             completionHandler(.init(catching: {
                 let context = try self.tryContext()
                 // This exactly matches implementation of Swift Foundation.
-                let stat = try context.statvfs(path)
+                let stat = try context.statvfs(path.trimmingCharacters(in: .init(charactersIn: "/\\")))
                 var result = [FileAttributeKey: Any]()
                 let blockSize = UInt64(stat.f_bsize)
                 result[.systemNumber] = NSNumber(value: UInt64(stat.f_fsid))
@@ -605,11 +634,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                 var shouldContinue = true
                 try file.lseek(offset: offset, whence: .set)
                 while shouldContinue {
+                    let offset = try file.lseek(offset: 0, whence: .current)
                     let data = try file.read()
                     if data.isEmpty {
                         break
                     }
-                    let offset = try file.lseek(offset: 0, whence: .current)
                     shouldContinue = fetchedData(offset, size, data)
                 }
                 
@@ -973,7 +1002,7 @@ extension AMSMB2 {
         let chunkArray = stride(from: 0, to: UInt64(size), by: chunkSize).map {
             IOCtl.SrvCopyChunk(sourceOffset: $0, targetOffset: $0, length: min(UInt32(UInt64(size) - $0), UInt32(chunkSize)))
         }
-        let fileCreate = try SMB2FileHandle(forCreatingIfNotExistsAtPath:  toPath, on: context)
+        let fileCreate = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         fileCreate.close()
         let fileDest = try SMB2FileHandle(forUpdatingAtPath: toPath, on: context)
         var shouldContinue = true
