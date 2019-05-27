@@ -138,7 +138,7 @@ extension AMSMB2 {
      - Parameters:
        - atPath: path of file to be fetched.
        - offset: first byte of file to be read, starting from zero.
-       - length: length of bytes should be read from offset. If a value.
+       - length: length of bytes should be read from offset.
        - progress: reports progress of recieved bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
        - bytes: recieved bytes count.
@@ -157,13 +157,8 @@ extension AMSMB2 {
             return
         }
         
-        if length > 0 {
-            contents(atPath: path, range: offset..<(offset + Int64(length)), progress: progress, completionHandler: convert(completionHandler))
-        } else if length < 0 {
-            contents(atPath: path, range: offset..<Int64.max, progress: progress, completionHandler: convert(completionHandler))
-        } else {
-            completionHandler(Data(), nil)
-        }
+        let range = length >= 0 ? offset..<(offset + Int64(length)) : offset..<Int64.max
+        contents(atPath: path, range: range, progress: progress, completionHandler: convert(completionHandler))
     }
     
     /**

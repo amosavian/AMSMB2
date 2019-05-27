@@ -97,8 +97,8 @@
 				79B5EDBC210FE1DB00449EF6 /* MSRPC.swift */,
 				7957E1F120F1EEB100F96CE4 /* Fsctl.swift */,
 				79FDFF0920ADA2B000749FB5 /* Directory.swift */,
-				790FA33820B2CC5600578C8A /* Extensions.swift */,
 				79FDFF0020AD852200749FB5 /* FileHandle.swift */,
+				790FA33820B2CC5600578C8A /* Extensions.swift */,
 				BD240BEE2124388000E22C9A /* AMSMB2.modulemap */,
 			);
 			path = AMSMB2;
@@ -399,6 +399,7 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = "";
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -433,6 +434,7 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
+				DEVELOPMENT_TEAM = "";
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
@@ -465,8 +467,8 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_IDENTITY = "Mac Developer";
-				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = X4J7RFLCBN;
 				INFOPLIST_FILE = AMSMB2Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -477,6 +479,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2Tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -487,8 +490,8 @@
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_IDENTITY = "Mac Developer";
-				CODE_SIGN_STYLE = Manual;
-				DEVELOPMENT_TEAM = "";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = X4J7RFLCBN;
 				INFOPLIST_FILE = AMSMB2Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -499,6 +502,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mousavian.AMSMB2Tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

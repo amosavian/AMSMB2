@@ -55,6 +55,12 @@ extension Dictionary where Key == URLResourceKey, Value == Any {
     }
 }
 
+extension Date {
+    init(_ timespec: timespec) {
+        self.init(timeIntervalSince1970: TimeInterval(timespec.tv_sec) + TimeInterval(timespec.tv_nsec / 1000) / TimeInterval(USEC_PER_SEC))
+    }
+}
+
 extension Data {    
     mutating func append<T: FixedWidthInteger>(value: T) {
         var value = value.littleEndian
@@ -77,6 +83,27 @@ extension Data {
     
     func scanInt<T: FixedWidthInteger>(offset: Int, as: T.Type) -> Int? {
         return scanValue(offset: offset, as: T.self).map(Int.init)
+    }
+}
+
+extension String {
+    var canonical: String {
+        return trimmingCharacters(in: .init(charactersIn: "/\\"))
+    }
+}
+
+extension Stream {
+    func withOpenStream(_ handler: () throws -> Void) rethrows {
+        let shouldCloseStream = streamStatus == .notOpen
+        if streamStatus == .notOpen {
+            open()
+        }
+        defer {
+            if shouldCloseStream {
+                close()
+            }
+        }
+        try handler()
     }
 }
 

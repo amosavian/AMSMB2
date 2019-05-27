@@ -155,13 +155,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     }
     
     enum CodingKeys: CodingKey {
-        case url
-        case server
-        case domain
-        case workstation
-        case user
-        case password
-        case timeout
+        case url, domain, workstation
+        case user, password, timeout
     }
     
     public required init(from decoder: Decoder) throws {
@@ -208,7 +203,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             let context = try SMB2Context(timeout: self._timeout)
             self.context = context
             self.initContext(context)
-            try context.connect(server: url.host!, share: name, user: self._user)
+            let server = url.host! + (url.port.map { ":\($0)" } ?? "")
+            try context.connect(server: server, share: name, user: self._user)
             self.connectedShare = name
         }
         
@@ -381,16 +377,17 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             completionHandler(.init(catching: {
                 let context = try self.tryContext()
                 // This exactly matches implementation of Swift Foundation.
-                let stat = try context.statvfs(path.trimmingCharacters(in: .init(charactersIn: "/\\")))
+                let stat = try context.statvfs(path.canonical)
                 var result = [FileAttributeKey: Any]()
                 let blockSize = UInt64(stat.f_bsize)
-                result[.systemNumber] = NSNumber(value: UInt64(stat.f_fsid))
+                // NSNumber allows to cast to any number type, but it is unsafe to cast to types with lower bitwidth
+                result[.systemNumber] = NSNumber(value: stat.f_fsid)
                 if stat.f_blocks < UInt64.max / blockSize {
-                    result[.systemSize] = NSNumber(value: blockSize * UInt64(stat.f_blocks))
-                    result[.systemFreeSize] = NSNumber(value: blockSize * UInt64(stat.f_bavail))
+                    result[.systemSize] = NSNumber(value: blockSize * stat.f_blocks)
+                    result[.systemFreeSize] = NSNumber(value: blockSize * stat.f_bavail)
                 }
-                result[.systemNodes] = NSNumber(value: UInt64(stat.f_files))
-                result[.systemFreeNodes] = NSNumber(value: UInt64(stat.f_ffree))
+                result[.systemNodes] = NSNumber(value: stat.f_files)
+                result[.systemFreeNodes] = NSNumber(value: stat.f_ffree)
                 return result
             }))
         }
@@ -409,11 +406,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         queue {
             completionHandler(.init(catching: {
                 let context = try self.tryContext()
-                let stat = try context.stat(path)
+                let stat = try context.stat(path.canonical)
                 var result = [URLResourceKey: Any]()
-                let name = NSString(string: (path as NSString).lastPathComponent)
+                let name = (path as NSString).lastPathComponent
                 result[.nameKey] = name
-                result[.pathKey] = (path as NSString).appendingPathComponent(name as String)
+                result[.pathKey] = (path as NSString).appendingPathComponent(name)
                 self.populateResourceValue(&result, stat: stat)
                 return result
             }))
@@ -591,16 +588,20 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         where R.Bound: FixedWidthInteger
     {
         let range: Range<R.Bound> = range?.relative(to: 0..<R.Bound.max) ?? 0..<R.Bound.max
-        let lower = Int64(exactly: range.lowerBound) ?? Int64.max
+        let lower = Int64(exactly: range.lowerBound) ?? (Int64.max - 1)
         let upper = Int64(exactly: range.upperBound) ?? Int64.max
         let int64Range = lower..<upper
         
         queue {
             completionHandler(.init(catching: { () -> Data in
+                guard !int64Range.isEmpty else {
+                    return Data()
+                }
+                
                 let stream = OutputStream.toMemory()
                 try self.read(path: path, range: int64Range, to: stream, progress: progress)
                 guard let data = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data else {
-                    throw POSIXError(.EIO, description: "Data missed from stream")
+                    throw POSIXError(.ENOMEM, description: "Data missed from stream")
                 }
                 return data
             }))
@@ -664,15 +665,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func write<DataType: DataProtocol>(data: DataType, toPath path: String, progress: SMB2WriteProgressHandler,
                                             completionHandler: SimpleCompletionHandler) {
-        queue {
-            do {
-                let stream = InputStream(data: Data(data))
-                try self.write(from: stream, toPath: path, chunkSize: 0, progress: progress)
-                completionHandler?(nil)
-            } catch {
-                completionHandler?(error)
-            }
-        }
+        self.write(stream: InputStream(data: Data(data)), toPath: path,
+                   progress: progress, completionHandler: completionHandler)
     }
     
     /**
@@ -680,7 +674,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      
      - Note: Data saved in server maybe truncated when completion handler returns error.
      
-     - Important: Stream will be closed eventually if is not alrady opened.
+     - Important: Stream will be closed eventually if is not already opened when passed.
      
      - Parameters:
        - stream: input stream that provides data to be written to file.
@@ -707,8 +701,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     /**
      Copy file contents to a new location. With reporting progress on about every 1MiB.
      
-     - Note: This operation consists downloading and uploading file, which may take bandwidth.
-     Unfortunately there is not a way to copy file remotely right now.
+     - Note: This operation consists downloading and uploading file.
      
      - Parameters:
        - atPath: path of file to be copied from.
@@ -778,14 +771,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                          completionHandler: SimpleCompletionHandler) {
         queue {
             do {
-                guard url.isFileURL, let stream = InputStream(url: url) else {
-                    throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
-                }
-                guard (try url.resourceValues(forKeys: [.fileSizeKey]).allValues[.fileSizeKey] as? NSNumber)?.uint64Value != nil else {
-                    throw POSIXError(.EFTYPE, description: "Could not retrieve file size from URL.")
-                }
-                if try !url.checkResourceIsReachable() {
-                    throw POSIXError(.EIO)
+                guard try url.checkResourceIsReachable(), url.isFileURL, let stream = InputStream(url: url) else {
+                    throw POSIXError(.EIO, description: "Could not create Stream from given URL, or given URL is not a local file.")
                 }
                 
                 try self.write(from: stream, toPath: toPath, progress: progress)
@@ -816,7 +803,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         queue {
             do {
                 guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
-                    throw POSIXError(.EIO, description: "Could not create NSStream from given URL.")
+                    throw POSIXError(.EIO, description: "Could not create Stream from given URL, or given URL is not a local file.")
                 }
                 try self.read(path: path, to: stream, progress: progress)
                 completionHandler?(nil)
@@ -888,12 +875,6 @@ extension AMSMB2 {
     }
     
     fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
-        
-        func convertDate(unixTime: UInt64, nsec: UInt64) -> NSDate {
-            let time = TimeInterval(unixTime) + TimeInterval(nsec / 1000) / TimeInterval(USEC_PER_SEC)
-            return NSDate(timeIntervalSince1970: time)
-        }
-        
         dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
         dic[.linkCountKey] = NSNumber(value: stat.smb2_nlink)
         dic[.documentIdentifierKey] = NSNumber(value: stat.smb2_ino)
@@ -909,20 +890,16 @@ extension AMSMB2 {
         dic[.isDirectoryKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_DIRECTORY)
         dic[.isRegularFileKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_FILE)
         
-        dic[.contentModificationDateKey] = convertDate(unixTime: stat.smb2_mtime,
-                                                       nsec: stat.smb2_mtime_nsec)
-        dic[.attributeModificationDateKey] = convertDate(unixTime: stat.smb2_ctime,
-                                                         nsec: stat.smb2_ctime_nsec)
-        dic[.contentAccessDateKey] = convertDate(unixTime: stat.smb2_atime,
-                                                 nsec: stat.smb2_atime_nsec)
-        dic[.creationDateKey] = convertDate(unixTime: stat.smb2_btime,
-                                            nsec: stat.smb2_btime_nsec)
+        dic[.contentModificationDateKey] = Date(timespec(tv_sec: Int(stat.smb2_mtime), tv_nsec: Int(stat.smb2_mtime_nsec)))
+        dic[.attributeModificationDateKey] = Date(timespec(tv_sec: Int(stat.smb2_ctime), tv_nsec: Int(stat.smb2_ctime_nsec)))
+        dic[.contentAccessDateKey] = Date(timespec(tv_sec: Int(stat.smb2_atime), tv_nsec: Int(stat.smb2_atime_nsec)))
+        dic[.creationDateKey] = Date(timespec(tv_sec: Int(stat.smb2_btime), tv_nsec: Int(stat.smb2_btime_nsec)))
     }
     
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
         let context = try self.tryContext()
         var contents = [[URLResourceKey: Any]]()
-        let dir = try SMB2Directory(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")), on: context)
+        let dir = try SMB2Directory(path.canonical, on: context)
         for ent in dir {
             guard let name = String(utf8String: ent.name) else { continue }
             if [".", ".."].contains(name) { continue }
@@ -1002,6 +979,9 @@ extension AMSMB2 {
         let chunkArray = stride(from: 0, to: UInt64(size), by: chunkSize).map {
             IOCtl.SrvCopyChunk(sourceOffset: $0, targetOffset: $0, length: min(UInt32(UInt64(size) - $0), UInt32(chunkSize)))
         }
+        if (try? context.stat(toPath)) != nil {
+            throw POSIXError(POSIXError.EEXIST, description: "File already exists.")
+        }
         let fileCreate = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         fileCreate.close()
         let fileDest = try SMB2FileHandle(forUpdatingAtPath: toPath, on: context)
@@ -1043,88 +1023,72 @@ extension AMSMB2 {
         let length = range.upperBound - range.lowerBound
         let size = min(length, filesize - range.lowerBound)
         
-        var shouldCloseStream = false
-        if stream.streamStatus == .notOpen {
-            stream.open()
-            shouldCloseStream = true
-        }
-        defer {
-            if shouldCloseStream {
-                stream.close()
-            }
-        }
-        
-        var shouldContinue = true
-        var sent: Int64 = 0
-        try file.lseek(offset: range.lowerBound, whence: .set)
-        while shouldContinue {
-            let prefCount = Int(min(Int64(file.optimizedReadSize), Int64(size - sent)))
-            guard prefCount > 0 else {
-                break
-            }
-            
-            let shouldBreak: Bool = try autoreleasepool {
+        try stream.withOpenStream {
+            var shouldContinue = true
+            var sent: Int64 = 0
+            try file.lseek(offset: range.lowerBound, whence: .set)
+            while shouldContinue {
+                let prefCount = Int(min(Int64(file.optimizedReadSize), Int64(size - sent)))
+                guard prefCount > 0 else {
+                    break
+                }
+                
                 let data = try file.read(length: prefCount)
                 if data.isEmpty {
-                    return true
+                    break
                 }
                 let written = try stream.write(data)
                 guard written == data.count else {
                     throw POSIXError(.EIO, description: "Inconsitency in reading from SMB file handle.")
                 }
                 sent += Int64(written)
-                return false
+                shouldContinue = progress?(sent, size) ?? true
             }
-            if shouldBreak {
-                break
-            }
-            
-            shouldContinue = progress?(sent, size) ?? true
         }
     }
     
     fileprivate func write(from stream: InputStream, toPath: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler) throws {
         let context = try self.tryContext()
-        let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         
-        var shouldCloseStream = false
-        if stream.streamStatus == .notOpen {
-            stream.open()
-            shouldCloseStream = true
+        if (try? context.stat(toPath)) != nil {
+            throw POSIXError(POSIXError.EEXIST, description: "File already exists.")
         }
-        defer {
-            if shouldCloseStream {
-                stream.close()
-            }
-        }
-        
+        let file = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: context)
         let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
-        
         var totalWritten: UInt64 = 0
-        while true {
-            var segment = try stream.readData(maxLength: chunkSize)
-            if segment.count == 0 {
-                break
-            }
-            totalWritten += UInt64(segment.count)
-            // For last part, we make it size equal with other chunks in order to prevent POLLHUP on some servers
-            if segment.count < file.optimizedWriteSize {
-                segment.count = file.optimizedWriteSize
-            }
-            let written = try file.write(data: segment)
-            if written != segment.count {
-                throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
+        
+        do {
+            try stream.withOpenStream {
+                while true {
+                    var segment = try stream.readData(maxLength: chunkSize)
+                    if segment.count == 0 {
+                        break
+                    }
+                    totalWritten += UInt64(segment.count)
+                    // For last part, we make it size equal with other chunks in order to prevent POLLHUP on some servers
+                    if segment.count < file.optimizedWriteSize {
+                        segment.count = file.optimizedWriteSize
+                    }
+                    let written = try file.write(data: segment)
+                    if written != segment.count {
+                        throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
+                    }
+                    
+                    var offset = try file.lseek(offset: 0, whence: .current)
+                    if offset > totalWritten {
+                        offset = Int64(totalWritten)
+                    }
+                    if let shouldContinue = progress?(offset), !shouldContinue {
+                        break
+                    }
+                }
             }
             
-            var offset = try file.lseek(offset: 0, whence: .current)
-            if offset > totalWritten {
-                offset = Int64(totalWritten)
-            }
-            if let shouldContinue = progress?(offset), !shouldContinue {
-                break
-            }
+            try file.ftruncate(toLength: totalWritten)
+            try file.fsync()
+        } catch {
+            try? context.unlink(toPath)
+            throw error
         }
-        try file.ftruncate(toLength: totalWritten)
-        try file.fsync()
     }
 }

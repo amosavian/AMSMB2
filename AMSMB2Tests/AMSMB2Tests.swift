@@ -63,7 +63,7 @@ class AMSMB2Tests: XCTestCase {
     
     // Change server address and testing share
     lazy var server: URL = {
-        return URL(string: ProcessInfo.processInfo.environment["SMBServer"] ?? "smb://192.168.1.5/")!
+        return URL(string: ProcessInfo.processInfo.environment["SMBServer"] ?? "smb://192.168.1.5:445/")!
     }()
     lazy var share: String = {
         return ProcessInfo.processInfo.environment["SMBServer"] ?? "Files"
@@ -412,6 +412,7 @@ class AMSMB2Tests: XCTestCase {
                 return true
             }) { (error) in
                 XCTAssertNil(error)
+                XCTAssert(inputStream.streamStatus == .closed)
                 expectation.fulfill()
                 
                 smb.downloadItem(atPath: file, to: outputStream, progress: { (progress, total) -> Bool in
@@ -421,6 +422,7 @@ class AMSMB2Tests: XCTestCase {
                     return true
                 }) { (error) in
                     XCTAssertNil(error)
+                    XCTAssert(outputStream.streamStatus == .closed)
                     XCTAssert(FileManager.default.contentsEqual(atPath: url.path, andPath: dlURL.path))
                     expectation.fulfill()
                 }
