@@ -55,6 +55,40 @@ extension Dictionary where Key == URLResourceKey, Value == Any {
     }
 }
 
+extension Array where Element == [URLResourceKey: Any] {
+    func sortedByName(_ comparison: ComparisonResult) -> [[URLResourceKey: Any]] {
+        return sorted {
+            guard let firstPath = $0.filePath, let secPath = $1.filePath else {
+                return false
+            }
+            return firstPath.localizedStandardCompare(secPath) == comparison
+        }
+    }
+    
+    var overallSize: Int64 {
+        return reduce(0, { (result, value) -> Int64 in
+            if value.fileType  == URLFileResourceType.regular {
+                return result + (value.fileSize ?? 0)
+            } else {
+                return result
+            }
+        })
+    }
+}
+
+
+extension Array where Element == (name: String, props: ShareProperties, comment: String) {
+    func map(enumerateHidden: Bool) -> [(name: String, comment: String)] {
+        var shares = self
+        if enumerateHidden {
+            shares = shares.filter { $0.props.type == .diskTree }
+        } else {
+            shares = shares.filter { !$0.props.isHidden && $0.props.type == .diskTree }
+        }
+        return shares.map { ($0.name, $0.comment) }
+    }
+}
+
 extension Date {
     init(_ timespec: timespec) {
         self.init(timeIntervalSince1970: TimeInterval(timespec.tv_sec) + TimeInterval(timespec.tv_nsec / 1000) / TimeInterval(USEC_PER_SEC))
