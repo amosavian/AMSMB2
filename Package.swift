@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "LibraryName",
+    name: "AMSMB2",
     // platforms: [.iOS("9.0"), .macOS("10.11"), tvOS("9.0")],
     products: [
         .library(name: "AMSMB2", targets: ["AMSMB2"])
