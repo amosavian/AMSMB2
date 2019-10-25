@@ -79,7 +79,8 @@ struct smb2_header {
         uint8_t signature[16];
 };
 
-/* States that we transition when we read data back from the server :
+/* States that we transition when we read data back from the server for
+ * normal SMB2/3 :
  * 1: SMB2_RECV_SPL        SPL
  * 2: SMB2_RECV_HEADER     SMB2 Header
  * 3: SMB2_RECV_FIXED      The fixed part of the payload. 
@@ -89,6 +90,11 @@ struct smb2_header {
  * 2-5 will be repeated for compound commands.
  * 4-5 are optional and may or may not be present depending on the
  *     type of command.
+ *
+ * States for SMB3 encryption:
+ * 1: SMB2_RECV_SPL        SPL
+ * 2: SMB2_RECV_HEADER     SMB3 Transform Header
+ * 3: SMB2_RECV_TRFM       encrypted payload
  */
 enum smb2_recv_state {
         SMB2_RECV_SPL = 0,
@@ -96,6 +102,7 @@ enum smb2_recv_state {
         SMB2_RECV_FIXED,
         SMB2_RECV_VARIABLE,
         SMB2_RECV_PAD,
+        SMB2_RECV_TRFM,
 };
 
 enum smb2_sec {
@@ -141,8 +148,18 @@ struct smb2_context {
         uint8_t *session_key;
         uint8_t session_key_size;
 
-        uint8_t signing_required;
+        uint8_t seal:1;
+        uint8_t sign:1;
         uint8_t signing_key[SMB2_KEY_SIZE];
+        uint8_t serverin_key[SMB2_KEY_SIZE];
+        uint8_t serverout_key[SMB2_KEY_SIZE];
+
+        /*
+         * For handling received smb3 encrypted blobs
+         */
+        unsigned char *enc;
+        size_t enc_len;
+        int enc_pos;
 
         /*
          * For sending PDUs
@@ -216,6 +233,11 @@ struct smb2_pdu {
         /* Data we need to retain between request/reply for QUERY INFO */
         uint8_t info_type;
         uint8_t file_info_class;
+
+        /* For encrypted PDUs */
+        uint8_t seal:1;
+        uint32_t crypt_len;
+        unsigned char *crypt;
 };
 
 /* UCS2 is always in Little Endianness */
@@ -373,8 +395,15 @@ int smb2_decode_file_fs_sector_size_info(struct smb2_context *smb2,
                                      void *memctx,
                                      struct smb2_file_fs_sector_size_info *fs,
                                      struct smb2_iovec *vec);
+int smb2_decode_reparse_data_buffer(struct smb2_context *smb2,
+                                    void *memctx,
+                                    struct smb2_reparse_data_buffer *rp,
+                                    struct smb2_iovec *vec);
 void smb2_free_all_fhs(struct smb2_context *smb2);
 void smb2_free_all_dirs(struct smb2_context *smb2);
+
+int smb2_read_from_buf(struct smb2_context *smb2);
+
 #ifdef __cplusplus
 }
 #endif

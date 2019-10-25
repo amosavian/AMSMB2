@@ -56,9 +56,20 @@ class AMSMB2Tests: XCTestCase {
             let decodedSMB = try decoder.decode(AMSMB2.self, from: json)
             XCTAssertEqual(smb!.url, decodedSMB.url)
             XCTAssertEqual(smb!.timeout, decodedSMB.timeout)
+            
+            let errorJson = String(data: json, encoding: .utf8)!.replacingOccurrences(of: "smb:", with: "smb2:").data(using: .utf8)!
+            XCTAssertThrowsError(try decoder.decode(AMSMB2.self, from: errorJson))
         } catch {
             XCTAssert(false, error.localizedDescription)
         }
+    }
+    
+    func testNSCopy() {
+        let url = URL(string: "smb://192.168.1.1/share")!
+        let credential = URLCredential(user: "user", password: "password", persistence: .forSession)
+        let smb = AMSMB2(url: url, domain: "", credential: credential)!
+        let smbCopy = smb.copy() as! AMSMB2
+        XCTAssertEqual(smb.url, smbCopy.url)
     }
     
     // Change server address and testing share
@@ -66,7 +77,7 @@ class AMSMB2Tests: XCTestCase {
         return URL(string: ProcessInfo.processInfo.environment["SMBServer"] ?? "smb://192.168.1.5:445/")!
     }()
     lazy var share: String = {
-        return ProcessInfo.processInfo.environment["SMBServer"] ?? "Files"
+        return ProcessInfo.processInfo.environment["SMBShare"] ?? "Files"
     }()
     lazy var credential: URLCredential? = {
         if let user = ProcessInfo.processInfo.environment["SMBUser"],
@@ -166,6 +177,39 @@ class AMSMB2Tests: XCTestCase {
                     XCTAssert(false, error.localizedDescription)
                 }
                 expectation.fulfill()
+            }
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
+    func testSymlink() {
+        let expectation = self.expectation(description: #function)
+        
+        let smb = AMSMB2(url: server, credential: credential)!
+        smb.connectShare(name: share) { (error) in
+            XCTAssertNil(error)
+            
+            smb.contentsOfDirectory(atPath: "/") { result in
+                switch result {
+                case .success(let value):
+                    if let symlink = value.first(where: { $0.fileType == .symbolicLink }) {
+                        smb.destinationOfSymbolicLink(atPath: symlink.filePath!) { result in
+                            switch result {
+                            case .success(let value):
+                                print(value)
+                            case .failure(let error):
+                                XCTAssert(false, error.localizedDescription)
+                            }
+                            expectation.fulfill()
+                        }
+                    } else {
+                        expectation.fulfill()
+                    }
+                case .failure(let error):
+                    XCTAssert(false, error.localizedDescription)
+                    expectation.fulfill()
+                }
             }
         }
         

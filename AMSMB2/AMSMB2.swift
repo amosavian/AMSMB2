@@ -27,7 +27,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     fileprivate let q: DispatchQueue
     fileprivate var _timeout: TimeInterval
     
-    fileprivate var connectedShare: String?
     fileprivate let connectLock = NSLock()
     fileprivate let operationLock = NSCondition()
     fileprivate var operationCount: Int = 0
@@ -64,7 +63,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         if _domain.isEmpty { c.append((label: "domain", value: _domain)) }
         if _workstation.isEmpty { c.append((label: "workstation", value: _workstation)) }
         c.append((label: "user", value: _user))
-        if let connectedShare = connectedShare { c.append((label: "share", value: connectedShare)) }
+        if let connectedShare = context?.share { c.append((label: "share", value: connectedShare)) }
         
         let m = Mirror(self, children: c, displayStyle: .class)
         return m
@@ -202,9 +201,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
         with(completionHandler: completionHandler) {
             self.connectLock.lock()
             defer { self.connectLock.unlock() }
-            if self.context == nil || self.context?.fileDescriptor == -1 || self.connectedShare != name {
+            if self.context == nil || self.context?.fileDescriptor == -1 || self.context?.share != name {
                 self.context = try self.connnect(shareName: name)
-                self.connectedShare = name
             }
             
             // Workaround disgraceful disconnect issue (e.g. server timeout)
@@ -212,7 +210,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                 try self.context!.echo()
             } catch {
                 self.context = try self.connnect(shareName: name)
-                self.connectedShare = name
             }
         }
     }
@@ -240,7 +237,6 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             }
             try self.context?.disconnect()
             self.context = nil
-            self.connectedShare = nil
         }
     }
     
@@ -276,7 +272,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     func _swift_listShares(enumerateHidden: Bool = false,
                          completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void) {
         with(shareName: "IPC$", completionHandler: completionHandler) { context in
-            return try context.shareEnumSwift(serverName: self.url.host!).map(enumerateHidden: enumerateHidden)
+            return try context.shareEnumSwift().map(enumerateHidden: enumerateHidden)
         }
     }
     
@@ -342,6 +338,22 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             result[.pathKey] = (path as NSString).appendingPathComponent(name)
             self.populateResourceValue(&result, stat: stat)
             return result
+        }
+    }
+    
+    /**
+    Returns the path of the item pointed to by a symbolic link.
+    
+    - Parameters:
+      - atPath: The path of a file or directory.
+      - completionHandler: closure will be run after reading link is completed.
+      - result: An String object containing the path of the directory or file to which the symbolic link path refers.
+                If the symbolic link is specified as a relative path, that relative path is returned.
+    */
+    open func destinationOfSymbolicLink(atPath path: String,
+                                        completionHandler: @escaping (_ result: Result<String, Error>) -> Void) {
+        with(completionHandler: completionHandler) { context in
+            return try context.readlink(path)
         }
     }
     
@@ -710,6 +722,8 @@ extension AMSMB2 {
     
     private func initContext(_ context: SMB2Context) {
         context.securityMode = [.enabled]
+        context.authentication = .ntlmSsp
+        
         context.domain = _domain
         context.workstation = _workstation
         context.user = _user
@@ -794,11 +808,14 @@ extension AMSMB2 {
             dic[.fileResourceTypeKey] = URLFileResourceType.directory
         case SMB2_TYPE_FILE:
             dic[.fileResourceTypeKey] = URLFileResourceType.regular
+        case SMB2_TYPE_LINK:
+            dic[.fileResourceTypeKey] = URLFileResourceType.symbolicLink
         default:
             dic[.fileResourceTypeKey] = URLFileResourceType.unknown
         }
         dic[.isDirectoryKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_DIRECTORY)
         dic[.isRegularFileKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_FILE)
+        dic[.isSymbolicLinkKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_LINK)
         
         dic[.contentModificationDateKey] = Date(timespec(tv_sec: Int(stat.smb2_mtime), tv_nsec: Int(stat.smb2_mtime_nsec)))
         dic[.attributeModificationDateKey] = Date(timespec(tv_sec: Int(stat.smb2_ctime), tv_nsec: Int(stat.smb2_ctime_nsec)))
@@ -948,7 +965,6 @@ extension AMSMB2 {
     
     fileprivate func write(from stream: InputStream, toPath: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler) throws {
         let context = try self.tryContext()
-        
         if (try? context.stat(toPath)) != nil {
             throw POSIXError(POSIXError.EEXIST, description: "File already exists.")
         }

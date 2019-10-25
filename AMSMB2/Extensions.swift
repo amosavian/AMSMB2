@@ -76,7 +76,6 @@ extension Array where Element == [URLResourceKey: Any] {
     }
 }
 
-
 extension Array where Element == (name: String, props: ShareProperties, comment: String) {
     func map(enumerateHidden: Bool) -> [(name: String, comment: String)] {
         var shares = self

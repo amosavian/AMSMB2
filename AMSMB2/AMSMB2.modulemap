@@ -1,5 +1,0 @@
-module AMSMB2 {
-    link "smb2"
-    export *
-    module * { export * }
-}

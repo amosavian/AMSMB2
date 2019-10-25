@@ -45,6 +45,7 @@ typedef void (*smb2_command_cb)(struct smb2_context *smb2, int status,
 /* Stat structure */
 #define SMB2_TYPE_FILE      0x00000000
 #define SMB2_TYPE_DIRECTORY 0x00000001
+#define SMB2_TYPE_LINK      0x00000002
 struct smb2_stat_64 {
         uint32_t smb2_type;
         uint32_t smb2_nlink;
@@ -89,8 +90,8 @@ typedef int t_socket;
 /*
  * Create an SMB2 context.
  * Function returns
- *  NULL : Failed to create a context.
- *  *nfs : A pointer to an smb2 context.
+ *  NULL  : Failed to create a context.
+ *  *smb2 : A pointer to an smb2 context.
  */
 struct smb2_context *smb2_init_context(void);
 
@@ -136,6 +137,21 @@ int smb2_service(struct smb2_context *smb2, int revents);
  * Default is 0.
  */
 void smb2_set_security_mode(struct smb2_context *smb2, uint16_t security_mode);
+
+/*
+ * Set whether smb3 encryption should be used or not.
+ * 0  : disable encryption. This is the default.
+ * !0 : enable encryption.
+ */
+void smb2_set_seal(struct smb2_context *smb2, int val);
+
+/*
+ * Set authentication method.
+ * SMB2_SEC_UNDEFINED (use KRB if available or NTLM if not)
+ * SMB2_SEC_NTLMSSP
+ * SMB2_SEC_KRB5
+ */
+void smb2_set_authentication(struct smb2_context *smb2, int val);
 
 /*
  * Set the username that we will try to authenticate as.
@@ -290,7 +306,7 @@ struct smb2_pdu;
  * ...
  * *, smb2_queue_pdu(smb2, pdu);
  *
- * See libnfs.c and smb2-raw-stat-async.c for examples on how to use
+ * See libsmb2.c and smb2-raw-stat-async.c for examples on how to use
  * this interface.
  */
 void smb2_add_compound_pdu(struct smb2_context *smb2,
@@ -800,6 +816,29 @@ int smb2_ftruncate_async(struct smb2_context *smb2, struct smb2fh *fh,
 int smb2_ftruncate(struct smb2_context *smb2, struct smb2fh *fh,
                    uint64_t length);
 
+
+/*
+ * READLINK
+ */
+/*
+ * Async readlink()
+ *
+ * Returns
+ *  0     : The operation was initiated. The link content will be
+ *          reported through the callback function.
+ * -errno : There was an error. The callback function will not be invoked.
+ *
+ * When the callback is invoked, status indicates the result:
+ *      0 : Success. Command_data is the link content.
+ * -errno : An error occured.
+ */
+int smb2_readlink_async(struct smb2_context *smb2, const char *path,
+                        smb2_command_cb cb, void *cb_data);
+
+/*
+ * Sync readlink()
+ */
+int smb2_readlink(struct smb2_context *smb2, const char *path, char *buf, uint32_t bufsiz);
 
 /*
  * Async echo()

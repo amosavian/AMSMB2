@@ -8,7 +8,9 @@
 
 import Foundation
 import SMB2
+#if !SWIFT_PACKAGE
 import SMB2.Raw
+#endif
 
 /// Provides synchronous operation on SMB2
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
@@ -20,6 +22,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     }
     
     typealias Version = smb2_negotiate_version
+    typealias Security = smb2_sec
     
     var context: UnsafeMutablePointer<smb2_context>?
     private var _context_lock = NSLock()
@@ -63,12 +66,13 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     
     public var customMirror: Mirror {
         var c: [(label: String?, value: Any)] = []
-        if let context = self.context {
-            c.append((label: "server", value: String(cString: context.pointee.server)))
+        if self.context != nil {
+            c.append((label: "server", value: server!))
             c.append((label: "securityMode", value: securityMode))
+            c.append((label: "authentication", value: authentication))
             if let clientGuid = clientGuid { c.append((label: "clientGuid", value: clientGuid)) }
             if let user = user { c.append((label: "user", value: user)) }
-            c.append((label: "versuin", value: version))
+            c.append((label: "version", value: version))
         }
         c.append((label: "isConnected", value: isConnected))
         c.append((label: "timeout", value: timeout))
@@ -135,12 +139,42 @@ extension SMB2Context {
         }
     }
     
+    var seal: Bool {
+        get {
+            return self.context?.pointee.seal ?? 0 != 0
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_seal(context, newValue ? -1 : 0)
+            }
+        }
+    }
+    
+    var authentication: Security {
+        get {
+            return self.context?.pointee.sec ?? SMB2_SEC_UNDEFINED
+        }
+        set {
+            try? withThreadSafeContext { (context) in
+                smb2_set_authentication(context, Int32(bitPattern: newValue.rawValue))
+            }
+        }
+    }
+    
     var clientGuid: UUID? {
         guard let guid = smb2_get_client_guid(context) else {
             return nil
         }
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
         return UUID(uuid: uuid)
+    }
+    
+    var server: String? {
+        return context?.pointee.server.map(String.init(cString:))
+    }
+    
+    var share: String? {
+        return context?.pointee.share.map(String.init(cString:))
     }
     
     var version: Version {
@@ -231,11 +265,11 @@ extension SMB2Context {
         return parseShareEnum(ctr1: rep.pointee.ctr.pointee.ctr1)
     }
     
-    func shareEnumSwift(serverName: String) throws -> [(name: String, props: ShareProperties, comment: String)]
+    func shareEnumSwift() throws -> [(name: String, props: ShareProperties, comment: String)]
     {
         // Connection to server service.
         let srvsvc = try SMB2FileHandle(forPipe: "srvsvc", on: self)
-        
+        let serverName = String(cString: context!.pointee.server)
         // Bind command
         _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
         let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
@@ -297,6 +331,21 @@ extension SMB2Context {
         try async_await(defaultError: .ENOENT) { (context, cbPtr) -> Int32 in
             smb2_rename_async(context, path, newPath, SMB2Context.generic_handler, cbPtr)
         }
+    }
+    
+    func readlink(_ path: String) throws -> String {
+        var resultData = Data(count: Int(PATH_MAX * 2))
+        let result = resultData.withUnsafeMutableBytes { (ptr: UnsafeMutableRawBufferPointer) -> Int32 in
+            smb2_readlink(context, path, ptr.bindMemory(to: Int8.self).baseAddress, UInt32(PATH_MAX * 2))
+        }
+        try POSIXError.throwIfError(result, description: error, default: .ENOLINK)
+        /*_ = try resultData.withUnsafeMutableBytes { (ptr: UnsafeMutableRawBufferPointer) in
+            try async_await(defaultError: .ENOLINK) { (context, cbPtr) -> Int32 in
+                cbPtr.assumingMemoryBound(to: CBData.self).pointee.data = ptr.baseAddress
+                return smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
+            }
+        }*/
+        return String(decoding: resultData.prefix(while: { $0 != 0 }), as: UTF8.self)
     }
 }
 
@@ -408,7 +457,8 @@ extension SMB2Context {
         let status = cb.status
         if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(status)
-            try POSIXError.throwIfError(-errorNo, description: nil, default: defaultError)
+            let description = nterror_to_str(status).map(String.init(cString:))
+            try POSIXError.throwIfError(-errorNo, description: description, default: defaultError)
         }
         let data = cb.data
         return (status, data)
@@ -465,6 +515,16 @@ extension smb2_negotiate_version {
         default:
             return false
         }
+    }
+}
+
+extension smb2_sec {
+    static let undefined = SMB2_SEC_UNDEFINED
+    static let ntlmSsp = SMB2_SEC_NTLMSSP
+    static let kerberos5 = SMB2_SEC_KRB5
+    
+    static func == (lhs: smb2_sec, rhs: smb2_sec) -> Bool {
+        return lhs.rawValue == rhs.rawValue
     }
 }
 
