@@ -195,21 +195,27 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     
     /**
      Connects to a share.
+     
+     - Parameters:
+       - gracefully: share name to connect.
+       - encrypted: uses SMB3 encryption if `true`, it fails with error in case server does not support encryption.
+       - completionHandler: closure will be run after enumerating is completed.
+     
      */
-    @objc(connectShareWithName:completionHandler:)
-    open func connectShare(name: String, completionHandler: @escaping (_ error: Error?) -> Void) {
+    @objc(connectShareWithName:encrypted:completionHandler:)
+    open func connectShare(name: String, encrypted: Bool = false, completionHandler: @escaping (_ error: Error?) -> Void) {
         with(completionHandler: completionHandler) {
             self.connectLock.lock()
             defer { self.connectLock.unlock() }
             if self.context == nil || self.context?.fileDescriptor == -1 || self.context?.share != name {
-                self.context = try self.connnect(shareName: name)
+                self.context = try self.connnect(shareName: name, encrypted: encrypted)
             }
             
             // Workaround disgraceful disconnect issue (e.g. server timeout)
             do {
                 try self.context!.echo()
             } catch {
-                self.context = try self.connnect(shareName: name)
+                self.context = try self.connnect(shareName: name, encrypted: encrypted)
             }
         }
     }
@@ -263,7 +269,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     open func listShares(enumerateHidden: Bool = false,
                          completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void) {
         // Connecting to Interprocess Communication share
-        with(shareName: "IPC$", completionHandler: completionHandler) { context in
+        with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
             return try context.shareEnum().map(enumerateHidden: enumerateHidden)
         }
     }
@@ -271,7 +277,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     /// Only for test case coverage
     func _swift_listShares(enumerateHidden: Bool = false,
                          completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void) {
-        with(shareName: "IPC$", completionHandler: completionHandler) { context in
+        with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
             return try context.shareEnumSwift().map(enumerateHidden: enumerateHidden)
         }
     }
@@ -720,9 +726,10 @@ extension AMSMB2 {
         }
     }
     
-    private func initContext(_ context: SMB2Context) {
+    private func initContext(_ context: SMB2Context, encrypted: Bool) {
         context.securityMode = [.enabled]
         context.authentication = .ntlmSsp
+        context.seal = encrypted
         
         context.domain = _domain
         context.workstation = _workstation
@@ -731,10 +738,10 @@ extension AMSMB2 {
         context.timeout = _timeout
     }
     
-    fileprivate func connnect(shareName: String) throws -> SMB2Context {
+    fileprivate func connnect(shareName: String, encrypted: Bool) throws -> SMB2Context {
         let context = try SMB2Context(timeout: self._timeout)
         self.context = context
-        self.initContext(context)
+        self.initContext(context, encrypted: encrypted)
         let server = url.host! + (url.port.map { ":\($0)" } ?? "")
         try context.connect(server: server, share: shareName, user: self._user)
         return context
@@ -782,11 +789,11 @@ extension AMSMB2 {
     }
     
     
-    fileprivate func with<T>(shareName: String, completionHandler: @escaping (Result<T, Error>) -> Void,
+    fileprivate func with<T>(shareName: String, encrypted: Bool, completionHandler: @escaping (Result<T, Error>) -> Void,
                              handler: @escaping (_ context: SMB2Context) throws -> T) {
         queue {
             do {
-                let context = try self.connnect(shareName: shareName)
+                let context = try self.connnect(shareName: shareName, encrypted: encrypted)
                 defer { try? context.disconnect() }
                 
                 let result = try handler(context)

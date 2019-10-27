@@ -10,10 +10,26 @@ import Foundation
 
 extension AMSMB2 {
     /**
+     Connects to a share.
+     
+     - Parameters:
+       - gracefully: share name to connect.
+       - encrypted: uses SMB3 encryption if `true`, it fails with error in case server does not support encryption.
+       - completionHandler: closure will be run after enumerating is completed.
+     
+     */
+    @available(swift, obsoleted: 1.0)
+    @objc(connectShareWithName:completionHandler:)
+    open func __connectShare(name: String, completionHandler: @escaping (_ error: Error?) -> Void) {
+        self.connectShare(name: name, completionHandler: completionHandler)
+    }
+    
+    /**
      Disconnects from a share.
      
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
      */
+    @available(swift, obsoleted: 1.0)
     @objc(disconnectShare)
     open func __disconnectShare() {
         self.disconnectShare()
@@ -27,6 +43,7 @@ extension AMSMB2 {
      
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
      */
+    @available(swift, obsoleted: 1.0)
     @objc(disconnectShareWithCompletionHandler:)
     open func __disconnectShare(completionHandler: SimpleCompletionHandler) {
         self.disconnectShare(completionHandler: completionHandler)

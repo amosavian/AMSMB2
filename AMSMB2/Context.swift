@@ -145,7 +145,7 @@ extension SMB2Context {
         }
         set {
             try? withThreadSafeContext { (context) in
-                smb2_set_seal(context, newValue ? -1 : 0)
+                smb2_set_seal(context, newValue ? 1 : 0)
             }
         }
     }
