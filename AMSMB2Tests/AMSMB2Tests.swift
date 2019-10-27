@@ -14,6 +14,8 @@ class AMSMB2Tests: XCTestCase {
     override func setUp() {
         super.setUp()
         // Put setup code here. This method is called before the invocation of each test method in the class.
+        setenv("SMBServer", "smb://192.168.1.5/", 0)
+        setenv("SMBShare", "Files", 0)
     }
     
     override func tearDown() {
@@ -74,10 +76,10 @@ class AMSMB2Tests: XCTestCase {
     
     // Change server address and testing share
     lazy var server: URL = {
-        return URL(string: ProcessInfo.processInfo.environment["SMBServer"] ?? "smb://192.168.1.5:445/")!
+        return URL(string: ProcessInfo.processInfo.environment["SMBServer"]!)!
     }()
     lazy var share: String = {
-        return ProcessInfo.processInfo.environment["SMBShare"] ?? "Files"
+        return ProcessInfo.processInfo.environment["SMBShare"]!
     }()
     lazy var credential: URLCredential? = {
         if let user = ProcessInfo.processInfo.environment["SMBUser"],
