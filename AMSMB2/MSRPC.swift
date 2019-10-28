@@ -9,11 +9,11 @@
 import Foundation
 
 class MSRPC {
-    static func parseNetShareEnumAllLevel1(data: Data) throws
+    static func parseNetShareEnumAllLevel1<DataType: DataProtocol>(data: DataType) throws
         -> [(name: String, props: ShareProperties, comment: String)]
     {
         var shares = [(name: String, props: ShareProperties, comment: String)]()
-        
+        let data = Data(data)
         /*
          Data Layout :
          

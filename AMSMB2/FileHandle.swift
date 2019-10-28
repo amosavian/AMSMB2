@@ -45,18 +45,26 @@ final class SMB2FileHandle {
         try self.init(path, flags: O_RDWR | O_APPEND, on: context)
     }
     
-    convenience init(forPipe path: String, on context: SMB2Context) throws {
+    convenience init(path: String,
+                     opLock: Int32 = SMB2_OPLOCK_LEVEL_NONE,
+                     impersonation: Int32 = SMB2_IMPERSONATION_IMPERSONATION,
+                     desiredAccess: Int32 = SMB2_FILE_READ_DATA | SMB2_FILE_WRITE_DATA | SMB2_FILE_APPEND_DATA | SMB2_FILE_READ_EA |
+        SMB2_FILE_READ_ATTRIBUTES | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES | SMB2_READ_CONTROL | SMB2_SYNCHRONIZE,
+                     fileAttributes: Int32 = 0,
+                     shareAccess: Int32 = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE,
+                     createDisposition: Int32 = SMB2_FILE_OPEN,
+                     createOptions: Int32 = 0, on context: SMB2Context) throws {
         // smb2_open() sets overwrite flag, which is incompatible with pipe in mac's smbx
         let (_, cmddata) = try context.async_await_pdu(defaultError: .ENOENT) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
             return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
                 var req = smb2_create_request()
-                req.requested_oplock_level = UInt8(SMB2_OPLOCK_LEVEL_NONE)
-                req.impersonation_level = UInt32(SMB2_IMPERSONATION_IMPERSONATION)
-                req.desired_access = UInt32(SMB2_FILE_READ_DATA | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES |
-                    SMB2_FILE_WRITE_DATA | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES)
-                req.share_access = UInt32(SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE)
-                req.create_disposition = UInt32(SMB2_FILE_OPEN)
-                req.create_options = UInt32(SMB2_FILE_NON_DIRECTORY_FILE)
+                req.requested_oplock_level = UInt8(opLock)
+                req.impersonation_level = UInt32(impersonation)
+                req.desired_access = UInt32(desiredAccess)
+                req.file_attributes = UInt32(fileAttributes)
+                req.share_access = UInt32(shareAccess)
+                req.create_disposition = UInt32(createDisposition)
+                req.create_options = UInt32(createOptions)
                 req.name = path
                 return smb2_cmd_create_async(context, &req, SMB2Context.generic_handler, cbPtr)
             }
@@ -176,7 +184,7 @@ final class SMB2FileHandle {
         return min(maxWriteSize, 1048576)
     }
     
-    func write(data: Data) throws -> Int {
+    func write<DataType: DataProtocol>(data: DataType) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
         let handle = try self.handle()
@@ -188,7 +196,7 @@ final class SMB2FileHandle {
         return Int(result)
     }
     
-    func pwrite(data: Data, offset: UInt64) throws -> Int {
+    func pwrite<DataType: DataProtocol>(data: DataType, offset: UInt64) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
         let handle = try self.handle()
@@ -207,56 +215,46 @@ final class SMB2FileHandle {
         }
     }
     
+    private static func fsctlOutput(_ context: UnsafeMutablePointer<smb2_context>?, _ dataPtr: UnsafeMutableRawPointer?)
+        throws -> Data {
+            guard let reply = dataPtr?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1).pointee else {
+                throw POSIXError(.EBADMSG, description: "Bad reply from ioctl command.")
+            }
+            
+            guard reply.output_count > 0, let output = reply.output else {
+                return Data()
+            }
+            defer { smb2_free_data(context, output) }
+            return Data(bytes: output, count: Int(reply.output_count))
+    }
+    
     @discardableResult
-    func fcntl(command: IOCtl.Command, data: Data, needsReply: Bool = true) throws -> Data {
+    func fcntl<DataType: DataProtocol>(command: IOCtl.Command, data: DataType, needsReply: Bool = true) throws -> Data {
         var buffer = [UInt8](data)
         var req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buffer.count),
                                  input: &buffer, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
         
-        let (_, response) = try context.async_await_pdu(defaultError: .EBADRPC) {
+        return try context.async_await_pdu(defaultError: .EBADRPC, dataHandler: Self.fsctlOutput) {
             (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
             smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
-        }
-        
-        guard let reply = response?.bindMemory(to: smb2_ioctl_reply.self, capacity: 1).pointee else {
-            throw POSIXError(.EBADMSG, description: "Bad reply from ioctl command.")
-        }
-        
-        guard reply.output_count > 0, let output = reply.output else {
-            return Data()
-        }
-        
-        if needsReply {
-            if reply.output_count > command.maxResponseSize {
-                throw POSIXError(.EBADMSG, description: "Bad reply from ioctl command.")
-            }
-            defer {
-                smb2_free_data(context.context, output)
-            }
-            return Data(bytes: output, count: Int(reply.output_count))
-        } else {
-            if reply.output_count <= command.maxResponseSize {
-                smb2_free_data(context.context, output)
-            }
-            return Data()
-        }
+        }.data
     }
     
     func fcntl(command: IOCtl.Command) throws -> Void {
-        try fcntl(command: command, data: Data(), needsReply: false)
+        try fcntl(command: command, data: [], needsReply: false)
     }
     
-    func fcntl<T: DataProtocol>(command: IOCtl.Command, args: T) throws -> Void where T.Regions == CollectionOfOne<Data> {
-        try fcntl(command: command, data: args.regions[0], needsReply: false)
+    func fcntl<DataType: DataProtocol>(command: IOCtl.Command, args: DataType) throws -> Void {
+        try fcntl(command: command, data: args, needsReply: false)
     }
     
     func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {
-        let result = try fcntl(command: command, data: Data())
+        let result = try fcntl(command: command, data: [])
         return try R(data: result)
     }
     
-    func fcntl<T: DataProtocol, R: DataInitializable>(command: IOCtl.Command, args: T) throws -> R where T.Regions == CollectionOfOne<Data> {
-        let result = try fcntl(command: command, data: args.regions[0])
+    func fcntl<DataType: DataProtocol, R: DataInitializable>(command: IOCtl.Command, args: DataType) throws -> R {
+        let result = try fcntl(command: command, data: args)
         return try R(data: result)
     }
 }

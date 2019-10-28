@@ -13,6 +13,32 @@ protocol DataInitializable {
     init(data: Data) throws
 }
 
+protocol FcntlDataProtocol: DataProtocol { }
+
+extension FcntlDataProtocol {
+    var startIndex: Int {
+        return 0
+    }
+    
+    var endIndex: Int {
+        return regions.first!.endIndex as! Int
+    }
+    
+    subscript(index: Int) -> UInt8 {
+        get {
+            let regionOne = regions.first!
+            return regionOne[regionOne.index(regionOne.startIndex, offsetBy: index)]
+        }
+    }
+    func index(after i: Int) -> Int {
+        return i + 1
+    }
+    
+    func withContiguousStorageIfAvailable<R>(_ body: (UnsafeBufferPointer<UInt8>) throws -> R) rethrows -> R? {
+        return try (regions.first! as! Data).withContiguousStorageIfAvailable(body)
+    }
+}
+
 struct IOCtl {
     
     struct Command: RawRepresentable, Equatable, Hashable {
@@ -29,8 +55,8 @@ struct IOCtl {
         static let srvReadHash = Command(rawValue: UInt32(SMB2_FSCTL_SRV_READ_HASH))
         static let lmrRequestResilency = Command(rawValue: UInt32(SMB2_FSCTL_LMR_REQUEST_RESILIENCY))
         static let queryNetworkInterfaceInfo = Command(rawValue: UInt32(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO))
+        static let getReparsePoint = Command(rawValue: UInt32(SMB2_FSCTL_GET_REPARSE_POINT))
         static let setReparsePoint = Command(rawValue: UInt32(SMB2_FSCTL_SET_REPARSE_POINT))
-        static let getReparsePoint = Command(rawValue: 0x000900A8)
         static let deleteReparsePoint = Command(rawValue: 0x000900AC)
         static let fileLevelTrim = Command(rawValue: UInt32(SMB2_FSCTL_FILE_LEVEL_TRIM))
         static let validateNegotiateInfo = Command(rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO))
@@ -51,7 +77,7 @@ struct IOCtl {
         }
     }
     
-    struct SrvCopyChunk: DataProtocol {
+    struct SrvCopyChunk: FcntlDataProtocol {
         let sourceOffset: UInt64
         let targetOffset: UInt64
         let length: UInt32
@@ -64,14 +90,9 @@ struct IOCtl {
             data.append(value: 0 as UInt32)
             return CollectionOfOne(data)
         }
-        
-        var startIndex: Int { return 0 }
-        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
-        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
-        func index(after i: Int) -> Int { return i + 1 }
     }
     
-    struct SrvCopyChunkCopy: DataProtocol {
+    struct SrvCopyChunkCopy: FcntlDataProtocol {
         let sourceKey: Data
         let chunks: [SrvCopyChunk]
         
@@ -83,11 +104,6 @@ struct IOCtl {
             chunks.forEach { data.append($0.regions[0]) }
             return CollectionOfOne(data)
         }
-        
-        var startIndex: Int { return 0 }
-        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
-        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
-        func index(after i: Int) -> Int { return i + 1 }
     }
     
     struct RequestResumeKey: DataInitializable {
@@ -100,9 +116,9 @@ struct IOCtl {
             self.resumeKey = data.prefix(24)
         }
     }
-    /*
-    struct SymbolicLinkReparse: DataInitializable, DataProtocol {
-        static private let headerLength = 16
+    
+    struct SymbolicLinkReparse: DataInitializable, FcntlDataProtocol {
+        static private let headerLength = 20
         private let reparseTag: UInt32 = 0xA000000C
         let substituteName: String
         let printName: String
@@ -110,6 +126,9 @@ struct IOCtl {
         
         init(data: Data) throws {
             guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
+                throw POSIXError(.EINVAL)
+            }
+            guard let count = data.scanValue(offset: 4, as: UInt16.self), Int(count) + 8 == data.count else {
                 throw POSIXError(.EINVAL)
             }
             
@@ -151,14 +170,9 @@ struct IOCtl {
             data.append(substituteData)
             return CollectionOfOne(data)
         }
-        
-        var startIndex: Int { return 0 }
-        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
-        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
-        func index(after i: Int) -> Int { return i + 1 }
     }
-    
-    struct MountPointReparse: DataInitializable, DataProtocol {
+    /*
+    struct MountPointReparse: DataInitializable, FcntlDataProtocol {
         static private let headerLength = 16
         private let reparseTag: UInt32 = 0xA0000003
         let substituteName: String
@@ -204,10 +218,5 @@ struct IOCtl {
             data.append(substituteData)
             return CollectionOfOne(data)
         }
-        
-        var startIndex: Int { return 0 }
-        var endIndex: Int { return MemoryLayout.size(ofValue: self) }
-        subscript(index: Int) -> UInt8 { get { return regions[0][index] } }
-        func index(after i: Int) -> Int { return i + 1 }
     }*/
 }

@@ -212,7 +212,7 @@ extension AMSMB2 {
     @objc(writeData:toPath:progress:completionHandler:)
     open func __write(data: Data, toPath path: String, progress: SMB2WriteProgressHandler,
                       completionHandler: SimpleCompletionHandler) {
-        write(data: Data(data), toPath: path, progress: progress, completionHandler: completionHandler)
+        write(data: data, toPath: path, progress: progress, completionHandler: completionHandler)
     }
 }
 
