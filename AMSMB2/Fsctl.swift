@@ -11,6 +11,17 @@ import SMB2
 
 protocol DataInitializable {
     init(data: Data) throws
+    static func empty() throws -> Self
+}
+
+extension Data: DataInitializable {
+    init(data: Data) throws {
+        self = data
+    }
+    
+    static func empty() throws -> Self {
+        return .init()
+    }
 }
 
 protocol FcntlDataProtocol: DataProtocol { }
@@ -60,21 +71,6 @@ struct IOCtl {
         static let deleteReparsePoint = Command(rawValue: 0x000900AC)
         static let fileLevelTrim = Command(rawValue: UInt32(SMB2_FSCTL_FILE_LEVEL_TRIM))
         static let validateNegotiateInfo = Command(rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO))
-        
-        var maxResponseSize: Int {
-            switch self {
-            case .pipeWait, .lmrRequestResilency:
-                return 0
-            case .srvCopyChunk, .srvCopyChunkWrite:
-                return 12
-            case .srvRequestResumeKey:
-                return 32
-            case .queryNetworkInterfaceInfo:
-                return 152
-            default:
-                return Int.max
-            }
-        }
     }
     
     struct SrvCopyChunk: FcntlDataProtocol {
@@ -114,6 +110,10 @@ struct IOCtl {
                 throw POSIXError(.ENODATA)
             }
             self.resumeKey = data.prefix(24)
+        }
+        
+        static func empty() throws -> Self {
+            throw POSIXError(.ENODATA, description: "Invalid Resume Key")
         }
     }
     
@@ -169,6 +169,16 @@ struct IOCtl {
             data.append(printData)
             data.append(substituteData)
             return CollectionOfOne(data)
+        }
+        
+        private init() {
+            self.substituteName = ""
+            self.printName = ""
+            self.isRelative = false
+        }
+        
+        static func empty() throws -> Self {
+            throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
         }
     }
     /*

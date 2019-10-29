@@ -13,8 +13,7 @@ extension AMSMB2 {
      Connects to a share.
      
      - Parameters:
-       - gracefully: share name to connect.
-       - encrypted: uses SMB3 encryption if `true`, it fails with error in case server does not support encryption.
+       - name: share name to connect.
        - completionHandler: closure will be run after enumerating is completed.
      
      */

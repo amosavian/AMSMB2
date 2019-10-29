@@ -9,10 +9,9 @@
 import Foundation
 
 class MSRPC {
-    static func parseNetShareEnumAllLevel1<DataType: DataProtocol>(data: DataType) throws
-        -> [(name: String, props: ShareProperties, comment: String)]
+    static func parseNetShareEnumAllLevel1<DataType: DataProtocol>(data: DataType) throws -> [SMB2Share]
     {
-        var shares = [(name: String, props: ShareProperties, comment: String)]()
+        var shares = [SMB2Share]()
         let data = Data(data)
         /*
          Data Layout :
@@ -95,7 +94,7 @@ class MSRPC {
                 offset += 2
             }
             
-            shares.append((name: nameString, props: ShareProperties(rawValue: type), comment: commentString))
+            shares.append(.init(name: nameString, props: ShareProperties(rawValue: type), comment: commentString))
             
             if offset > data.count {
                 break

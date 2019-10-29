@@ -199,7 +199,7 @@ class AMSMB2Tests: XCTestCase {
                         smb.destinationOfSymbolicLink(atPath: symlink.filePath!) { result in
                             switch result {
                             case .success(let value):
-                                print(value)
+                                XCTAssert(!value.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).isEmpty)
                             case .failure(let error):
                                 XCTAssert(false, error.localizedDescription)
                             }

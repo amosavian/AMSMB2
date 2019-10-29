@@ -247,25 +247,21 @@ extension SMB2Context {
     }
 }
 
+struct SMB2Share {
+    let name: String
+    let props: ShareProperties
+    let comment: String
+}
+
 // MARK: DCE-RPC
 extension SMB2Context {
-    private static func loadShares(_ context: UnsafeMutablePointer<smb2_context>?, _ dataPtr: UnsafeMutableRawPointer?)
-        throws -> [(name: String, props: ShareProperties, comment: String)] {
-        guard let dataPtr = dataPtr else {
-            throw POSIXError(.ENOENT)
-        }
-        defer { smb2_free_data(context, dataPtr) }
-        let result = dataPtr.load(as: srvsvc_netshareenumall_rep.self)
-        return Self.parseShareEnum(ctr1: result.ctr.pointee.ctr1)
-    }
-    
-    func shareEnum() throws -> [(name: String, props: ShareProperties, comment: String)] {
-        return try async_await(defaultError: .ENOLINK, dataHandler: Self.loadShares) { (context, cbPtr) -> Int32 in
+    func shareEnum() throws -> [SMB2Share] {
+        return try async_await(defaultError: .ENOLINK, dataHandler: Parser.toSMB2Shares) { (context, cbPtr) -> Int32 in
             smb2_share_enum_async(context, Self.generic_handler, cbPtr)
         }.data
     }
     
-    func shareEnumSwift() throws -> [(name: String, props: ShareProperties, comment: String)]
+    func shareEnumSwift() throws -> [SMB2Share]
     {
         // Connection to server service.
         let srvsvc = try SMB2FileHandle(path: "srvsvc", on: self)
@@ -333,25 +329,9 @@ extension SMB2Context {
     }
     
     func readlink(_ path: String) throws -> String {
-        /*let stringify: DataHandler<String> = { context, dataPtr in
-             guard let resultPtr = dataPtr?.assumingMemoryBound(to: Int8.self) else {
-                 throw POSIXError(.ENOENT)
-             }
-            return String(cString: resultPtr)
-        }
-        
-        return try async_await(defaultError: .ENOENT, dataHandler: stringify) { (context, cbPtr) -> Int32 in
+        return try async_await(defaultError: .ENOENT, dataHandler: Parser.toString) { (context, cbPtr) -> Int32 in
             smb2_readlink_async(context, path, Self.generic_handler, cbPtr)
         }.data
-        */
-        
-        var resultData = [UInt8](repeating: 0, count: Int(PATH_MAX * 2))
-        return try resultData.withUnsafeMutableBytes { ptr in
-            let resultPtr = ptr.bindMemory(to: Int8.self).baseAddress!
-            let result = smb2_readlink(context, path, resultPtr, UInt32(PATH_MAX * 2))
-            try POSIXError.throwIfError(result, description: error, default: .ENOENT)
-            return String(cString: resultPtr)
-        }
     }
     
     func readlinkSwift(_ path: String) throws -> String {
@@ -367,7 +347,7 @@ extension SMB2Context {
     private class CBData {
         var result: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
-        var data: UnsafeMutableRawPointer? = nil
+        var dataHandler: ((UnsafeMutableRawPointer?) -> Void)? = nil
         var status: UInt32 {
             return UInt32(bitPattern: result)
         }
@@ -406,7 +386,7 @@ extension SMB2Context {
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
-                cbdata.data = command_data
+                cbdata.dataHandler?(command_data)
                 cbdata.isFinished = true
             }
         case (true, false):
@@ -415,7 +395,7 @@ extension SMB2Context {
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
-                cbdata.data = command_data
+                cbdata.dataHandler?(command_data)
             }
         case (false, true):
             return { smb2, status, command_data, cbdata in
@@ -423,7 +403,7 @@ extension SMB2Context {
                 if status != SMB2_STATUS_SUCCESS {
                     cbdata.result = status
                 }
-                cbdata.isFinished = true
+                cbdata.dataHandler?(command_data)
             }
         case (false, false):
             return { smb2, status, command_data, cbdata in
@@ -439,7 +419,7 @@ extension SMB2Context {
     typealias DataHandler<T> = (_ context: UnsafeMutablePointer<smb2_context>?, _ dataPtr: UnsafeMutableRawPointer?) throws -> T
     
     @discardableResult
-    func async_await(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<Int32>) throws -> (result: Int32, data: UnsafeMutableRawPointer?)
+    func async_await(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<Int32>) throws -> Int32
     {
         var cb = CBData()
         
@@ -450,29 +430,40 @@ extension SMB2Context {
         try wait_for_reply(&cb)
         let cbResult = cb.result
         try POSIXError.throwIfError(cbResult, description: error, default: defaultError)
-        return (cbResult, cb.data)
+        return cbResult
     }
     
     @discardableResult
-    func async_await<T>(defaultError: POSIXError.Code, dataHandler: DataHandler<T>, execute handler: AsyncAwaitHandler<Int32>)
-        throws -> (result: Int32, data: T)
+    func async_await<T>(defaultError: POSIXError.Code, dataHandler: @escaping DataHandler<T>,
+                        execute handler: AsyncAwaitHandler<Int32>) throws -> (result: Int32, data: T)
     {
         var cb = CBData()
+        var resultData: T?
+        var dataHandlerError: Error?
         
         let result = try withThreadSafeContext { (context) -> Int32 in
+            cb.dataHandler = { ptr in
+                do {
+                    resultData = try dataHandler(context, ptr)
+                } catch {
+                    dataHandlerError = error
+                }
+            }
             return handler(context, &cb)
         }
         try POSIXError.throwIfError(result, description: error, default: .ECONNRESET)
         try wait_for_reply(&cb)
-        let data = try dataHandler(context, cb.data)
         let cbResult = cb.result
+        
         try POSIXError.throwIfError(cbResult, description: error, default: defaultError)
+        if let error = dataHandlerError { throw error }
+        guard let data = resultData else { throw POSIXError(.EFAULT, description: "No data returned")}
         return (cbResult, data)
     }
     
     @discardableResult
     func async_await_pdu(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<UnsafeMutablePointer<smb2_pdu>?>)
-        throws -> (status: UInt32, data: UnsafeMutableRawPointer?)
+        throws -> UInt32
     {
         var cb = CBData()
         
@@ -489,20 +480,28 @@ extension SMB2Context {
             let description = nterror_to_str(status).map(String.init(cString:))
             try POSIXError.throwIfError(-errorNo, description: description, default: defaultError)
         }
-        let data = cb.data
-        return (status, data)
+        return status
     }
     
     @discardableResult
-    func async_await_pdu<T>(defaultError: POSIXError.Code, dataHandler: DataHandler<T>,
+    func async_await_pdu<T>(defaultError: POSIXError.Code, dataHandler: @escaping DataHandler<T>,
                             execute handler: AsyncAwaitHandler<UnsafeMutablePointer<smb2_pdu>?>)
         throws -> (status: UInt32, data: T)
     {
         var cb = CBData()
+        var resultData: T?
+        var dataHandlerError: Error?
         
         try withThreadSafeContext { (context) -> Void in
             guard let pdu = handler(context, &cb) else {
                 throw POSIXError(.ENOMEM)
+            }
+            cb.dataHandler = { ptr in
+                do {
+                    resultData = try dataHandler(context, ptr)
+                } catch {
+                    dataHandlerError = error
+                }
             }
             smb2_queue_pdu(context, pdu)
         }
@@ -513,24 +512,14 @@ extension SMB2Context {
             let description = nterror_to_str(status).map(String.init(cString:))
             try POSIXError.throwIfError(-errorNo, description: description, default: defaultError)
         }
-        let data = try dataHandler(context, cb.data)
+        if let error = dataHandlerError { throw error }
+        guard let data = resultData else { throw POSIXError(.EFAULT, description: "No data returned")}
         return (status, data)
     }
 }
 
-fileprivate extension SMB2Context {
-    static func parseShareEnum(ctr1: srvsvc_netsharectr1) -> [(name: String, props: ShareProperties, comment: String)] {
-        var result = [(name: String, props: ShareProperties, comment: String)]()
-        let array = Array(UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count)))
-        for item in array {
-            let name = String(cString: item.name)
-            let type = ShareProperties(rawValue: item.type)
-            let comment = String(cString: item.comment)
-            result.append((name: name, props: type, comment: comment))
-        }
-        return result
-    }
-    
+
+extension SMB2Context {
     func validateBindData<DataType: DataProtocol>(_ recvBindData: DataType) throws {
         // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
         if recvBindData.count < 68 {

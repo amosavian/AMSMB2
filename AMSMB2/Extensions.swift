@@ -76,7 +76,7 @@ extension Array where Element == [URLResourceKey: Any] {
     }
 }
 
-extension Array where Element == (name: String, props: ShareProperties, comment: String) {
+extension Array where Element == SMB2Share {
     func map(enumerateHidden: Bool) -> [(name: String, comment: String)] {
         var shares = self
         if enumerateHidden {

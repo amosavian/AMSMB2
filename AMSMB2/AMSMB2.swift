@@ -74,7 +74,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      
      - Note: For now, only user/password credential on NTLM servers are supported.
      
-     - Important: A connection to a share must be established by connectShare(name:completionHandler:) before any operation.
+     - Important: A connection to a share must be established by `connectShare(name:completionHandler:)` before any operation.
      */
     @objc
     public init?(url: URL, domain: String = "", credential: URLCredential?) {
@@ -197,8 +197,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      Connects to a share.
      
      - Parameters:
-       - gracefully: share name to connect.
-       - encrypted: uses SMB3 encryption if `true`, it fails with error in case server does not support encryption.
+       - name: share name to connect.
+       - encrypted: enables SMB3 encryption if `true`, it fails with error in case server does not support encryption.
        - completionHandler: closure will be run after enumerating is completed.
      
      */
@@ -224,7 +224,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      Disconnects from a share.
      
      - Parameters:
-       - gracefully: waits until all queued operations are done before disconnecting from server. Default value is false.
+       - gracefully: waits until all queued operations are done before disconnecting from server. Default value is `false`.
        - completionHandler: closure will be run after enumerating is completed.
      
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
@@ -247,7 +247,9 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     }
     
     /**
-     Send echo to server. Use it to prevent timeout or check connectivity.
+     Sends echo to server. Use it to prevent timeout or check connectivity.
+     
+     - Parameter completionHandler: closure will be run after echoing server is completed.
      */
     @objc(echoWithCompletionHandler:)
     open func echo(completionHandler: SimpleCompletionHandler) {
