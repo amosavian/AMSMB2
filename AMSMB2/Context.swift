@@ -247,12 +247,6 @@ extension SMB2Context {
     }
 }
 
-struct SMB2Share {
-    let name: String
-    let props: ShareProperties
-    let comment: String
-}
-
 // MARK: DCE-RPC
 extension SMB2Context {
     func shareEnum() throws -> [SMB2Share] {
@@ -268,7 +262,7 @@ extension SMB2Context {
         // Bind command
         _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
         let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
-        try validateBindData(recvBindData)
+        try MSRPC.validateBindData(recvBindData)
         
         // NetShareEnum reqeust, Level 1 mean we need share name and remark.
         _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: server!), offset: 0)
@@ -332,13 +326,6 @@ extension SMB2Context {
         return try async_await(defaultError: .ENOENT, dataHandler: Parser.toString) { (context, cbPtr) -> Int32 in
             smb2_readlink_async(context, path, Self.generic_handler, cbPtr)
         }.data
-    }
-    
-    func readlinkSwift(_ path: String) throws -> String {
-        let handle = try SMB2FileHandle(path: path, desiredAccess: SMB2_FILE_READ_ATTRIBUTES,
-                                    createOptions: SMB2_FILE_OPEN_REPARSE_POINT, on: self)
-        let result: IOCtl.SymbolicLinkReparse = try handle.fcntl(command: .getReparsePoint)
-        return result.substituteName
     }
 }
 
@@ -416,7 +403,7 @@ extension SMB2Context {
     }
     
     typealias AsyncAwaitHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ cbPtr: UnsafeMutableRawPointer) -> R
-    typealias DataHandler<T> = (_ context: UnsafeMutablePointer<smb2_context>?, _ dataPtr: UnsafeMutableRawPointer?) throws -> T
+    typealias DataHandler<T> = (_ context: UnsafeMutablePointer<smb2_context>?, _ dataPtr: UnsafeMutableRawPointer) throws -> T
     
     @discardableResult
     func async_await(defaultError: POSIXError.Code, execute handler: AsyncAwaitHandler<Int32>) throws -> Int32
@@ -444,6 +431,9 @@ extension SMB2Context {
         let result = try withThreadSafeContext { (context) -> Int32 in
             cb.dataHandler = { ptr in
                 do {
+                    guard let ptr = ptr else {
+                        throw POSIXError(.ENODATA, description: "Invalid/Empty response.")
+                    }
                     resultData = try dataHandler(context, ptr)
                 } catch {
                     dataHandlerError = error
@@ -457,7 +447,7 @@ extension SMB2Context {
         
         try POSIXError.throwIfError(cbResult, description: error, default: defaultError)
         if let error = dataHandlerError { throw error }
-        guard let data = resultData else { throw POSIXError(.EFAULT, description: "No data returned")}
+        guard let data = resultData else { throw  POSIXError(.ENODATA, description: "Invalid/Empty response.") }
         return (cbResult, data)
     }
     
@@ -498,6 +488,9 @@ extension SMB2Context {
             }
             cb.dataHandler = { ptr in
                 do {
+                    guard let ptr = ptr else {
+                        throw POSIXError(.ENODATA, description: "Invalid/Empty response.")
+                    }
                     resultData = try dataHandler(context, ptr)
                 } catch {
                     dataHandlerError = error
@@ -513,28 +506,8 @@ extension SMB2Context {
             try POSIXError.throwIfError(-errorNo, description: description, default: defaultError)
         }
         if let error = dataHandlerError { throw error }
-        guard let data = resultData else { throw POSIXError(.EFAULT, description: "No data returned")}
+        guard let data = resultData else { throw POSIXError(.ENODATA, description: "Invalid/Empty response.") }
         return (status, data)
-    }
-}
-
-
-extension SMB2Context {
-    func validateBindData<DataType: DataProtocol>(_ recvBindData: DataType) throws {
-        // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
-        if recvBindData.count < 68 {
-            throw POSIXError(.EBADMSG, description:  "Binding failure: Invalid size")
-        }
-        
-        // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
-        let byte44 = recvBindData[recvBindData.index(recvBindData.startIndex, offsetBy: 44)]
-        let byte45 = recvBindData[recvBindData.index(recvBindData.startIndex, offsetBy: 45)]
-        if byte44 > 0 || byte45 > 0 {
-            // Ack result is not acceptance (0x0000)
-            let errorCode = byte44 + (byte45 << 8)
-            let errorCodeString = String(errorCode, radix: 16, uppercase: false)
-            throw POSIXError(.EBADMSG, description:  "Binding failure: \(errorCodeString)")
-        }
     }
 }
 
@@ -570,6 +543,12 @@ extension smb2_sec {
     static func == (lhs: smb2_sec, rhs: smb2_sec) -> Bool {
         return lhs.rawValue == rhs.rawValue
     }
+}
+
+struct SMB2Share {
+    let name: String
+    let props: ShareProperties
+    let comment: String
 }
 
 struct ShareProperties: RawRepresentable {

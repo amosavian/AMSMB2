@@ -210,4 +210,21 @@ class MSRPC {
         setDCELength(&reqData)
         return reqData
     }
+    
+    static func validateBindData<DataType: DataProtocol>(_ recvBindData: DataType) throws {
+        // Bind command result is exactly 68 bytes here. 54 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+        if recvBindData.count < 68 {
+            throw POSIXError(.EBADMSG, description:  "Binding failure: Invalid size")
+        }
+        
+        // These bytes contains Ack result, 30 + ("\PIPE\srvsvc" ascii length + 1 byte padding).
+        let byte44 = recvBindData[recvBindData.index(recvBindData.startIndex, offsetBy: 44)]
+        let byte45 = recvBindData[recvBindData.index(recvBindData.startIndex, offsetBy: 45)]
+        if byte44 > 0 || byte45 > 0 {
+            // Ack result is not acceptance (0x0000)
+            let errorCode = byte44 + (byte45 << 8)
+            let errorCodeString = String(errorCode, radix: 16, uppercase: false)
+            throw POSIXError(.EBADMSG, description:  "Binding failure: \(errorCodeString)")
+        }
+    }
 }

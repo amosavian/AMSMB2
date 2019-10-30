@@ -229,7 +229,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
      */
-    @objc(disconnectShareGraceFully:completionHandler:)
+    @objc(disconnectShareGracefully:completionHandler:)
     open func disconnectShare(gracefully: Bool = false, completionHandler: SimpleCompletionHandler = nil) {
         with(completionHandler: completionHandler) {
             self.connectLock.lock()

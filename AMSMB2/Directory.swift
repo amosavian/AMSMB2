@@ -13,9 +13,6 @@ typealias smb2dir = OpaquePointer
 
 /// NO THREAD-SAFE
 final class SMB2Directory: Collection {
-    
-    typealias Index = Int
-    
     private var context: SMB2Context
     private var handle: smb2dir
     
