@@ -16,6 +16,7 @@ class AMSMB2Tests: XCTestCase {
         // Put setup code here. This method is called before the invocation of each test method in the class.
         setenv("SMBServer", "smb://192.168.1.5/", 0)
         setenv("SMBShare", "Files", 0)
+        setenv("SMBEncrypted", "0", 0)
     }
     
     override func tearDown() {
@@ -89,6 +90,9 @@ class AMSMB2Tests: XCTestCase {
             return nil
         }
     }()
+    lazy var encrypted: Bool = {
+        return ProcessInfo.processInfo.environment["SMBEncrypted"] == "1"
+    }()
     
     func testShareEnum() {
         let expectation = self.expectation(description: #function)
@@ -138,7 +142,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.attributesOfFileSystem(forPath: "/") { result in
@@ -162,7 +166,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.contentsOfDirectory(atPath: "/") { result in
@@ -189,7 +193,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         
         let smb = AMSMB2(url: server, credential: credential)!
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.contentsOfDirectory(atPath: "/") { result in
@@ -224,7 +228,7 @@ class AMSMB2Tests: XCTestCase {
         
         let smb = AMSMB2(url: server, credential: credential)!
         smb.timeout = 20
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.createDirectory(atPath: "testEmpty") { (error) in
@@ -292,7 +296,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: "writetest.dat", completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.write(data: data, toPath: "writetest.dat", progress: { (progress) -> Bool in
@@ -361,7 +365,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: file, completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.write(data: data, toPath: file, progress: nil) { (error) in
@@ -400,7 +404,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: "uploadtest.dat", completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.uploadItem(at: url, toPath: "uploadtest.dat", progress: { (progress) -> Bool in
@@ -449,7 +453,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: file, completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.write(stream: inputStream, toPath: file, progress: { (progress) -> Bool in
@@ -492,7 +496,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: file, completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.uploadItem(at: url, toPath: file, progress: nil) { (error) in
@@ -537,7 +541,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: "copyTestDest.dat", completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.write(data: data, toPath: "copyTest.dat", progress: nil) { (error) in
@@ -575,7 +579,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeFile(atPath: "moveTest", completionHandler: nil)
             smb.removeFile(atPath: "moveTestDest", completionHandler: nil)
         }
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.createDirectory(atPath: "moveTest") { (error) in
@@ -603,7 +607,7 @@ class AMSMB2Tests: XCTestCase {
             smb.removeDirectory(atPath: rootCopy, recursive: true, completionHandler: nil)
         }
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
 
             smb.createDirectory(atPath: root) { (error) in
@@ -642,7 +646,7 @@ class AMSMB2Tests: XCTestCase {
         
         let smb = AMSMB2(url: server, credential: credential)!
         
-        smb.connectShare(name: share) { (error) in
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
             smb.removeDirectory(atPath: "removeTest", recursive: true, completionHandler: nil)

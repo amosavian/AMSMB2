@@ -367,6 +367,7 @@ extension SMB2Context {
     }
     
     static let generic_handler: smb2_command_cb = { smb2, status, command_data, cbdata in
+        guard let smb2 = smb2, smb2.pointee.fd >= 0 else { return }
         guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
         if status != SMB2_STATUS_SUCCESS {
             cbdata.result = status
