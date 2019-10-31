@@ -20,7 +20,7 @@ extension AMSMB2 {
     @available(swift, obsoleted: 1.0)
     @objc(connectShareWithName:completionHandler:)
     open func __connectShare(name: String, completionHandler: @escaping (_ error: Error?) -> Void) {
-        self.connectShare(name: name, completionHandler: completionHandler)
+        connectShare(name: name, completionHandler: completionHandler)
     }
     
     /**
@@ -31,7 +31,7 @@ extension AMSMB2 {
     @available(swift, obsoleted: 1.0)
     @objc(disconnectShare)
     open func __disconnectShare() {
-        self.disconnectShare()
+        disconnectShare()
     }
     
     /**
@@ -45,7 +45,7 @@ extension AMSMB2 {
     @available(swift, obsoleted: 1.0)
     @objc(disconnectShareWithCompletionHandler:)
     open func __disconnectShare(completionHandler: SimpleCompletionHandler) {
-        self.disconnectShare(completionHandler: completionHandler)
+        disconnectShare(completionHandler: completionHandler)
     }
     
     /**

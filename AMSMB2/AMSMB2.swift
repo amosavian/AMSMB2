@@ -57,7 +57,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     public var customMirror: Mirror {
         var c: [(label: String?, value: Any)] = []
         
-        c.append((label: "url", value: self.url))
+        c.append((label: "url", value: url))
         c.append((label: "isConnected", value: (context?.isConnected ?? false)))
         c.append((label: "timeout", value: _timeout))
         if _domain.isEmpty { c.append((label: "domain", value: _domain)) }
@@ -566,8 +566,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     open func write<DataType: DataProtocol>(data: DataType, toPath path: String, progress: SMB2WriteProgressHandler,
                                             completionHandler: SimpleCompletionHandler) {
-        self.write(stream: InputStream(data: Data(data)), toPath: path,
-                   progress: progress, completionHandler: completionHandler)
+        write(stream: InputStream(data: Data(data)), toPath: path,
+              progress: progress, completionHandler: completionHandler)
     }
     
     /**
@@ -741,11 +741,11 @@ extension AMSMB2 {
     }
     
     fileprivate func connnect(shareName: String, encrypted: Bool) throws -> SMB2Context {
-        let context = try SMB2Context(timeout: self._timeout)
+        let context = try SMB2Context(timeout: _timeout)
         self.context = context
-        self.initContext(context, encrypted: encrypted)
+        initContext(context, encrypted: encrypted)
         let server = url.host! + (url.port.map { ":\($0)" } ?? "")
-        try context.connect(server: server, share: shareName, user: self._user)
+        try context.connect(server: server, share: shareName, user: _user)
         return context
     }
     
@@ -835,7 +835,7 @@ extension AMSMB2 {
 
 extension AMSMB2 {
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
-        let context = try self.tryContext()
+        let context = try tryContext()
         var contents = [[URLResourceKey: Any]]()
         let dir = try SMB2Directory(path.canonical, on: context)
         for ent in dir {
@@ -844,7 +844,7 @@ extension AMSMB2 {
             var result = [URLResourceKey: Any]()
             result[.nameKey] = name
             result[.pathKey] = (path as NSString).appendingPathComponent(name)
-            self.populateResourceValue(&result, stat: ent.st)
+            populateResourceValue(&result, stat: ent.st)
             contents.append(result)
         }
         
@@ -862,12 +862,12 @@ extension AMSMB2 {
     
     fileprivate func recursiveCopyIterator(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
                                            handle: (_ path: String, _ toPath: String, _ progress: CopyProgressHandler) throws -> Bool) throws {
-        let context = try self.tryContext()
+        let context = try tryContext()
         let stat = try context.stat(path)
         if stat.smb2_type == SMB2_TYPE_DIRECTORY {
             try context.mkdir(toPath)
             
-            let list = try self.listDirectory(path: path, recursive: recursive).sortedByName(.orderedAscending)
+            let list = try listDirectory(path: path, recursive: recursive).sortedByName(.orderedAscending)
             let overallSize = list.overallSize
             
             var totalCopied: Int64 = 0
@@ -923,7 +923,7 @@ extension AMSMB2 {
     }
     
     fileprivate func copyContentsOfFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
-        let context = try self.tryContext()
+        let context = try tryContext()
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
         let fileWrite = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: context)
@@ -942,7 +942,7 @@ extension AMSMB2 {
     
     fileprivate func read(path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
                       progress: SMB2ReadProgressHandler) throws {
-        let context = try self.tryContext()
+        let context = try tryContext()
         let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let filesize = try Int64(file.fstat().smb2_size)
         let length = range.upperBound - range.lowerBound
@@ -973,7 +973,7 @@ extension AMSMB2 {
     }
     
     fileprivate func write(from stream: InputStream, toPath: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler) throws {
-        let context = try self.tryContext()
+        let context = try tryContext()
         if (try? context.stat(toPath)) != nil {
             throw POSIXError(POSIXError.EEXIST, description: "File already exists.")
         }

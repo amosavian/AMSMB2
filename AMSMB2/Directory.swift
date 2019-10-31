@@ -34,7 +34,7 @@ final class SMB2Directory: Collection {
     func makeIterator() -> AnyIterator<smb2dirent> {
         smb2_rewinddir(context.context, handle)
         return AnyIterator {
-            return smb2_readdir(self.context.context, self.handle)?.move()
+            return smb2_readdir(self.context.context, self.handle)?.pointee
         }
     }
     
@@ -43,7 +43,7 @@ final class SMB2Directory: Collection {
     }
     
     var endIndex: Int {
-        return self.count
+        return count
     }
     
     var count: Int {

@@ -113,7 +113,7 @@ final class SMB2FileHandle {
     }
     
     func fstat() throws -> smb2_stat_64 {
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         var st = smb2_stat_64()
         try context.async_await { (context, cbPtr) -> Int32 in
             smb2_fstat_async(context, handle, &st, SMB2Context.generic_handler, cbPtr)
@@ -122,14 +122,14 @@ final class SMB2FileHandle {
     }
     
     func ftruncate(toLength: UInt64) throws {
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         try context.async_await { (context, cbPtr) -> Int32 in
             smb2_ftruncate_async(context, handle, toLength, SMB2Context.generic_handler, cbPtr)
         }
     }
     
     var maxReadSize: Int {
-        return Int(smb2_get_max_read_size(context.context))
+        return (try? Int(context.withThreadSafeContext(smb2_get_max_read_size))) ?? -1
     }
     
     /// This value allows softer streaming
@@ -139,7 +139,7 @@ final class SMB2FileHandle {
     
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         let result = smb2_lseek(context.context, handle, offset, whence.rawValue, nil)
         if result < 0 {
             try POSIXError.throwIfError(Int32(result), description: context.error, default: .ESPIPE)
@@ -150,7 +150,7 @@ final class SMB2FileHandle {
     func read(length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         let count = length > 0 ? length : optimizedReadSize
         var buffer = [UInt8](repeating: 0, count: count)
         let result = try context.async_await { (context, cbPtr) -> Int32 in
@@ -162,7 +162,7 @@ final class SMB2FileHandle {
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
         precondition(length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
         
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         let count = length > 0 ? length : optimizedReadSize
         var buffer = [UInt8](repeating: 0, count: count)
         let result = try context.async_await { (context, cbPtr) -> Int32 in
@@ -172,7 +172,7 @@ final class SMB2FileHandle {
     }
     
     var maxWriteSize: Int {
-        return Int(smb2_get_max_write_size(context.context))
+        return (try? Int(context.withThreadSafeContext(smb2_get_max_write_size))) ?? -1
     }
     
     var optimizedWriteSize: Int {
@@ -182,7 +182,7 @@ final class SMB2FileHandle {
     func write<DataType: DataProtocol>(data: DataType) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         var buffer = Array(data)
         let result = try context.async_await { (context, cbPtr) -> Int32 in
             smb2_write_async(context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr)
@@ -194,7 +194,7 @@ final class SMB2FileHandle {
     func pwrite<DataType: DataProtocol>(data: DataType, offset: UInt64) throws -> Int {
         precondition(data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
         
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         var buffer = Array(data)
         let result = try context.async_await { (context, cbPtr) -> Int32 in
             smb2_pwrite_async(context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler, cbPtr)
@@ -204,7 +204,7 @@ final class SMB2FileHandle {
     }
     
     func fsync() throws {
-        let handle = try self.getHandle()
+        let handle = try getHandle()
         try context.async_await { (context, cbPtr) -> Int32 in
             smb2_fsync_async(context, handle, SMB2Context.generic_handler, cbPtr)
         }
