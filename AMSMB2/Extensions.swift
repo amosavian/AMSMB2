@@ -9,28 +9,51 @@
 import Foundation
 import SMB2
 
+extension Optional {
+    func unwrap() throws -> Wrapped {
+        guard let self = self else {
+            throw POSIXError(.ENODATA, description: "Invalid/Empty data.")
+        }
+        return self
+    }
+}
+
+extension Optional where Wrapped: SMB2Context {
+     func unwrap() throws -> SMB2Context {
+        guard let self = self, self.fileDescriptor >= 0 else {
+            throw POSIXError(.ENOTCONN, description: "SMB2 server not connected.")
+        }
+        return self
+    }
+}
+
 extension POSIXError {
-    static func throwIfError(_ result: Int32, description: String?, default: POSIXError.Code) throws {
+    static func throwIfError(_ result: Int32, description: String?) throws {
         guard result < 0 else {
             return
         }
         let errno = -result
-        let code = POSIXErrorCode(rawValue: errno) ?? `default`
         let errorDesc = description.map { "Error code \(errno): \($0)" }
-        throw POSIXError(code, description: errorDesc)
+        throw POSIXError(.init(errno), description: errorDesc)
     }
     
     static func throwIfErrorStatus(_ status: UInt32) throws {
         if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(status)
             let description = nterror_to_str(status).map(String.init(cString:))
-            try POSIXError.throwIfError(-errorNo, description: description, default: .ECANCELED)
+            try POSIXError.throwIfError(-errorNo, description: description)
         }
     }
     
     init(_ code: POSIXError.Code, description: String?) {
         let userInfo: [String: Any] = description.map({ [NSLocalizedFailureReasonErrorKey: $0] }) ?? [:]
         self = POSIXError(code, userInfo: userInfo)
+    }
+}
+
+extension POSIXErrorCode {
+    init(_ code: Int32) {
+        self = POSIXErrorCode(rawValue: code) ?? .ECANCELED
     }
 }
 

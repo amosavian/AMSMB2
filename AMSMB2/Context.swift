@@ -29,9 +29,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     var timeout: TimeInterval
     
     init(timeout: TimeInterval) throws {
-        guard let _context = smb2_init_context() else {
-            throw POSIXError(.ENOMEM)
-        }
+        let _context = try smb2_init_context().unwrap()
         self.context = _context
         self.timeout = timeout
     }
@@ -46,14 +44,11 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     }
     
     func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) throws -> R {
-        guard let context = self.context else {
-            throw POSIXError(.ECONNABORTED, description: "No valid smb2 context is available.")
-        }
         _context_lock.lock()
         defer {
             _context_lock.unlock()
         }
-        return try handler(context)
+        return try handler(context.unwrap())
     }
     
     public var debugDescription: String {
@@ -162,7 +157,7 @@ extension SMB2Context {
     }
     
     var clientGuid: UUID? {
-        guard let guid = smb2_get_client_guid(context) else {
+        guard let guid = try? smb2_get_client_guid(context.unwrap()) else {
             return nil
         }
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
@@ -192,16 +187,16 @@ extension SMB2Context {
     }
     
     var fileDescriptor: Int32 {
-        return smb2_get_fd(context)
+        return (try? smb2_get_fd(context.unwrap())) ?? -1
     }
     
     var error: String? {
         let errorStr = smb2_get_error(context)
-        return errorStr.flatMap(String.init(utf8String:))
+        return errorStr.map(String.init(cString:))
     }
     
-    func whichEvents() -> Int32 {
-        return smb2_which_events(context)
+    func whichEvents() throws -> Int16 {
+        return try Int16(truncatingIfNeeded: smb2_which_events(context.unwrap()))
     }
     
     func service(revents: Int32) throws {
@@ -214,7 +209,7 @@ extension SMB2Context {
             context = nil
             _context_lock.unlock()
         }
-        try POSIXError.throwIfError(result, description: error, default: .EINVAL)
+        try POSIXError.throwIfError(result, description: error)
     }
 }
 
@@ -259,7 +254,7 @@ extension SMB2Context {
         let srvsvc = try SMB2FileHandle(path: "srvsvc", on: self)
         // Bind command
         _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
-        let recvBindData = try srvsvc.pread(offset: 0, length: 8192)
+        let recvBindData = try srvsvc.pread(offset: 0, length: Int(Int16.max))
         try MSRPC.validateBindData(recvBindData)
         
         // NetShareEnum reqeust, Level 1 mean we need share name and remark.
@@ -343,16 +338,10 @@ extension SMB2Context {
         while !cb.isFinished {
             var pfd = pollfd()
             pfd.fd = fileDescriptor
-            pfd.events = Int16(whichEvents())
+            pfd.events = try whichEvents()
             
-            if poll(&pfd, 1, 1000) < 0, errno != EAGAIN {
-                let code = POSIXErrorCode(rawValue: errno) ?? .EINVAL
-                throw POSIXError(code, description: error)
-            }
-            
-            if pfd.fd < 0 {
-                let code = POSIXErrorCode(rawValue: errno) ?? .EINVAL
-                throw POSIXError(code, description: error)
+            if pfd.fd < 0 || (poll(&pfd, 1, 1000) < 0 && errno != EAGAIN) {
+                throw POSIXError(.init(errno), description: error)
             }
             
             if pfd.revents == 0 {
@@ -367,13 +356,15 @@ extension SMB2Context {
     }
     
     static let generic_handler: smb2_command_cb = { smb2, status, command_data, cbdata in
-        guard let smb2 = smb2, smb2.pointee.fd >= 0 else { return }
-        guard let cbdata = cbdata?.bindMemory(to: CBData.self, capacity: 1).pointee else { return }
-        if status != SMB2_STATUS_SUCCESS {
-            cbdata.result = status
-        }
-        cbdata.dataHandler?(command_data)
-        cbdata.isFinished = true
+        do {
+            guard try smb2.unwrap().pointee.fd >= 0 else { return }
+            let cbdata = try cbdata.unwrap().bindMemory(to: CBData.self, capacity: 1).pointee
+            if status != SMB2_STATUS_SUCCESS {
+                cbdata.result = status
+            }
+            cbdata.dataHandler?(command_data)
+            cbdata.isFinished = true
+        } catch { }
     }
     
     typealias ContextHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ ptr: UnsafeMutableRawPointer) throws -> R
@@ -386,10 +377,10 @@ extension SMB2Context {
         let result = try withThreadSafeContext { (context) -> Int32 in
             return try handler(context, &cb)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ECANCELED)
+        try POSIXError.throwIfError(result, description: error)
         try wait_for_reply(&cb)
         let cbResult = cb.result
-        try POSIXError.throwIfError(cbResult, description: error, default: .ECANCELED)
+        try POSIXError.throwIfError(cbResult, description: error)
         return cbResult
     }
     
@@ -404,24 +395,20 @@ extension SMB2Context {
         let result = try withThreadSafeContext { (context) -> Int32 in
             cb.dataHandler = { ptr in
                 do {
-                    guard let ptr = ptr else {
-                        throw POSIXError(.ENODATA, description: "Invalid/Empty response.")
-                    }
-                    resultData = try dataHandler(context, ptr)
+                    resultData = try dataHandler(context, ptr.unwrap())
                 } catch {
                     dataHandlerError = error
                 }
             }
             return try handler(context, &cb)
         }
-        try POSIXError.throwIfError(result, description: error, default: .ECANCELED)
+        try POSIXError.throwIfError(result, description: error)
         try wait_for_reply(&cb)
         let cbResult = cb.result
         
-        try POSIXError.throwIfError(cbResult, description: error, default: .ECANCELED)
+        try POSIXError.throwIfError(cbResult, description: error)
         if let error = dataHandlerError { throw error }
-        guard let data = resultData else { throw  POSIXError(.ENODATA, description: "Invalid/Empty response.") }
-        return (cbResult, data)
+        return try (cbResult, resultData.unwrap())
     }
     
     @discardableResult
@@ -430,9 +417,7 @@ extension SMB2Context {
         var cb = CBData()
         
         try withThreadSafeContext { (context) -> Void in
-            guard let pdu = try handler(context, &cb) else {
-                throw POSIXError(.ENOMEM)
-            }
+            let pdu = try handler(context, &cb).unwrap()
             smb2_queue_pdu(context, pdu)
         }
         try wait_for_reply(&cb)
@@ -450,15 +435,10 @@ extension SMB2Context {
         var dataHandlerError: Error?
         
         try withThreadSafeContext { (context) -> Void in
-            guard let pdu = try handler(context, &cb) else {
-                throw POSIXError(.ENOMEM)
-            }
+            let pdu = try handler(context, &cb).unwrap()
             cb.dataHandler = { ptr in
                 do {
-                    guard let ptr = ptr else {
-                        throw POSIXError(.ENODATA, description: "Invalid/Empty response.")
-                    }
-                    resultData = try dataHandler(context, ptr)
+                    resultData = try dataHandler(context, ptr.unwrap())
                 } catch {
                     dataHandlerError = error
                 }
@@ -469,8 +449,7 @@ extension SMB2Context {
         let status = cb.status
         try POSIXError.throwIfErrorStatus(status)
         if let error = dataHandlerError { throw error }
-        guard let data = resultData else { throw POSIXError(.ENODATA, description: "Invalid/Empty response.") }
-        return (status, data)
+        return try (status, resultData.unwrap())
     }
 }
 

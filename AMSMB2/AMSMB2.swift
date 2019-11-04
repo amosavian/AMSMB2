@@ -399,7 +399,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                 let list = try self.listDirectory(path: path, recursive: true).sortedByName(.orderedDescending)
                 
                 for item in list {
-                    guard let itemPath = item.filePath else { continue }
+                    let itemPath = try item.filePath.unwrap()
                     if item.fileType == URLFileResourceType.directory {
                         try context.rmdir(itemPath)
                     } else {
@@ -509,10 +509,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             
             let stream = OutputStream.toMemory()
             try self.read(path: path, range: int64Range, to: stream, progress: progress)
-            guard let data = stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data else {
-                throw POSIXError(.ENOMEM, description: "Data missed from stream")
-            }
-            return data
+            return try (stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data).unwrap()
         }
     }
     
@@ -749,13 +746,6 @@ extension AMSMB2 {
         return context
     }
     
-    private func tryContext() throws -> SMB2Context {
-        guard let context = self.context else {
-            throw POSIXError.init(.ENOTCONN, description: "SMB2 server not connected.")
-        }
-        return context
-    }
-    
     fileprivate func with(completionHandler: SimpleCompletionHandler, handler: @escaping () throws -> Void) {
         queue {
             do {
@@ -771,8 +761,7 @@ extension AMSMB2 {
                           handler: @escaping (_ context: SMB2Context) throws -> Void) {
         queue {
             do {
-                let context = try self.tryContext()
-                try handler(context)
+                try handler(self.context.unwrap())
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -784,8 +773,7 @@ extension AMSMB2 {
                              handler: @escaping (_ context: SMB2Context) throws -> T) {
         queue {
             completionHandler(.init(catching: { () -> T in
-                let context = try self.tryContext()
-                return try handler(context)
+                return try handler(self.context.unwrap())
             }))
         }
     }
@@ -808,6 +796,7 @@ extension AMSMB2 {
     
     
     fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
+        dic.reserveCapacity(11)
         dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
         dic[.linkCountKey] = NSNumber(value: stat.smb2_nlink)
         dic[.documentIdentifierKey] = NSNumber(value: stat.smb2_ino)
@@ -835,11 +824,10 @@ extension AMSMB2 {
 
 extension AMSMB2 {
     fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
-        let context = try tryContext()
         var contents = [[URLResourceKey: Any]]()
-        let dir = try SMB2Directory(path.canonical, on: context)
+        let dir = try SMB2Directory(path.canonical, on: context.unwrap())
         for ent in dir {
-            guard let name = String(utf8String: ent.name) else { continue }
+            let name = String(cString: ent.name)
             if [".", ".."].contains(name) { continue }
             var result = [URLResourceKey: Any]()
             result[.nameKey] = name
@@ -852,8 +840,7 @@ extension AMSMB2 {
             let subDirectories = contents.filter { $0.fileType == .directory }
             
             for subDir in subDirectories {
-                guard let path = subDir.filePath else { continue }
-                contents.append(contentsOf: try listDirectory(path: path, recursive: true))
+                contents.append(contentsOf: try listDirectory(path: subDir.filePath.unwrap(), recursive: true))
             }
         }
         
@@ -862,7 +849,7 @@ extension AMSMB2 {
     
     fileprivate func recursiveCopyIterator(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
                                            handle: (_ path: String, _ toPath: String, _ progress: CopyProgressHandler) throws -> Bool) throws {
-        let context = try tryContext()
+        let context = try self.context.unwrap()
         let stat = try context.stat(path)
         if stat.smb2_type == SMB2_TYPE_DIRECTORY {
             try context.mkdir(toPath)
@@ -872,7 +859,7 @@ extension AMSMB2 {
             
             var totalCopied: Int64 = 0
             for item in list {
-                guard let itemPath = item.filePath else { continue }
+                let itemPath = try item.filePath.unwrap()
                 let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
                 if item.fileType == URLFileResourceType.directory {
                     try context.mkdir(destPath)
@@ -895,7 +882,7 @@ extension AMSMB2 {
     }
     
     fileprivate func copyFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
-        let context = try tryContext()
+        let context = try self.context.unwrap()
         let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileSource.fstat().smb2_size)
         let sourceKey: IOCtl.RequestResumeKey = try fileSource.fcntl(command: .srvRequestResumeKey)
@@ -904,12 +891,7 @@ extension AMSMB2 {
         let chunkArray = stride(from: 0, to: UInt64(size), by: chunkSize).map {
             IOCtl.SrvCopyChunk(sourceOffset: $0, targetOffset: $0, length: min(UInt32(UInt64(size) - $0), UInt32(chunkSize)))
         }
-        if (try? context.stat(toPath)) != nil {
-            throw POSIXError(POSIXError.EEXIST, description: "File already exists.")
-        }
-        let fileCreate = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
-        fileCreate.close()
-        let fileDest = try SMB2FileHandle(forUpdatingAtPath: toPath, on: context)
+        let fileDest = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         var shouldContinue = true
         for chunk in chunkArray {
             let chunkCopy = IOCtl.SrvCopyChunkCopy(sourceKey: sourceKey.resumeKey, chunks: [chunk])
@@ -923,10 +905,10 @@ extension AMSMB2 {
     }
     
     fileprivate func copyContentsOfFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
-        let context = try tryContext()
+        let context = try self.context.unwrap()
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
-        let fileWrite = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: context)
+        let fileWrite = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         var shouldContinue = true
         while shouldContinue {
             let data = try fileRead.read()
@@ -942,8 +924,7 @@ extension AMSMB2 {
     
     fileprivate func read(path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
                       progress: SMB2ReadProgressHandler) throws {
-        let context = try tryContext()
-        let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let file = try SMB2FileHandle(forReadingAtPath: path, on: context.unwrap())
         let filesize = try Int64(file.fstat().smb2_size)
         let length = range.upperBound - range.lowerBound
         let size = min(length, filesize - range.lowerBound)
@@ -973,11 +954,8 @@ extension AMSMB2 {
     }
     
     fileprivate func write(from stream: InputStream, toPath: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler) throws {
-        let context = try tryContext()
-        if (try? context.stat(toPath)) != nil {
-            throw POSIXError(POSIXError.EEXIST, description: "File already exists.")
-        }
-        let file = try SMB2FileHandle(forCreatingAndWritingAtPath: toPath, on: context)
+        let context = try self.context.unwrap()
+        let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
         var totalWritten: UInt64 = 0
         

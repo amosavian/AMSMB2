@@ -116,7 +116,7 @@ struct IOCtl {
             throw POSIXError(.ENODATA, description: "Invalid Resume Key")
         }
     }
-    
+    /*
     struct SymbolicLinkReparse: DataInitializable, FcntlDataProtocol {
         static private let headerLength = 20
         private let reparseTag: UInt32 = 0xA000000C
@@ -128,24 +128,19 @@ struct IOCtl {
             guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
                 throw POSIXError(.EINVAL)
             }
-            guard let count = data.scanValue(offset: 4, as: UInt16.self), Int(count) + 8 == data.count else {
-                throw POSIXError(.EINVAL)
-            }
+            let count = try data.scanValue(offset: 4, as: UInt16.self).unwrap()
+            guard Int(count) + 8 == data.count else { throw POSIXError(.EINVAL) }
             
-            guard let substituteOffset = data.scanInt(offset: 8, as: UInt16.self),
-                let substituteLen = data.scanInt(offset: 10, as: UInt16.self),
-                let printOffset = data.scanInt(offset: 12, as: UInt16.self),
-                let printLen = data.scanInt(offset: 14, as: UInt16.self),
-                let flag = data.scanValue(offset: 16, as: UInt32.self) else {
-                throw POSIXError(.EINVAL)
-            }
+            let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()
+            let substituteLen = try data.scanInt(offset: 10, as: UInt16.self).unwrap()
+            let printOffset = try data.scanInt(offset: 12, as: UInt16.self).unwrap()
+            let printLen = try data.scanInt(offset: 14, as: UInt16.self).unwrap()
+            let flag = try data.scanValue(offset: 16, as: UInt32.self).unwrap()
             
             let substituteData = data.dropFirst(Int(SymbolicLinkReparse.headerLength + substituteOffset)).prefix(substituteLen)
             let printData = data.dropFirst(Int(SymbolicLinkReparse.headerLength + printOffset)).prefix(printLen)
-            guard let substituteName = String(data: substituteData, encoding: .utf16LittleEndian),
-                let printName = String(data: printData, encoding: .utf16LittleEndian) else {
-                throw POSIXError(.EBADMSG)
-            }
+            let substituteName = try String(data: substituteData, encoding: .utf16LittleEndian).unwrap()
+            let printName = try String(data: printData, encoding: .utf16LittleEndian).unwrap()
             
             self.substituteName = substituteName
             self.printName = printName
@@ -181,7 +176,7 @@ struct IOCtl {
             throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
         }
     }
-    /*
+    
     struct MountPointReparse: DataInitializable, FcntlDataProtocol {
         static private let headerLength = 16
         private let reparseTag: UInt32 = 0xA0000003
@@ -193,22 +188,22 @@ struct IOCtl {
                 throw POSIXError(.EINVAL)
             }
             
-            guard let substituteOffset = data.scanInt(offset: 8, as: UInt16.self),
-                let substituteLen = data.scanInt(offset: 10, as: UInt16.self),
-                let printOffset = data.scanInt(offset: 12, as: UInt16.self),
-                let printLen = data.scanInt(offset: 14, as: UInt16.self) else {
-                    throw POSIXError(.EINVAL)
-            }
+            let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()
+            let substituteLen = try data.scanInt(offset: 10, as: UInt16.self).unwrap()
+            let printOffset = try data.scanInt(offset: 12, as: UInt16.self).unwrap()
+            let printLen = try data.scanInt(offset: 14, as: UInt16.self).unwrap()
             
             let substituteData = data.dropFirst(Int(MountPointReparse.headerLength + substituteOffset)).prefix(substituteLen)
             let printData = data.dropFirst(Int(MountPointReparse.headerLength + printOffset)).prefix(printLen)
-            guard let substituteName = String(data: substituteData, encoding: .utf16LittleEndian),
-                let printName = String(data: printData, encoding: .utf16LittleEndian) else {
-                    throw POSIXError(.EBADMSG)
-            }
+            let substituteName = try String(data: substituteData, encoding: .utf16LittleEndian).unwrap()
+            let printName = try String(data: printData, encoding: .utf16LittleEndian).unwrap()
             
             self.substituteName = substituteName
             self.printName = printName
+        }
+        
+        static func empty() throws -> IOCtl.MountPointReparse {
+            throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
         }
         
         var regions: CollectionOfOne<Data> {
