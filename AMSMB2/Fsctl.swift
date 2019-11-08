@@ -19,7 +19,7 @@ extension Data: DataInitializable {
         self = data
     }
     
-    static func empty() throws -> Self {
+    static func empty() throws -> Data {
         return .init()
     }
 }
@@ -112,7 +112,7 @@ struct IOCtl {
             self.resumeKey = data.prefix(24)
         }
         
-        static func empty() throws -> Self {
+        static func empty() throws -> RequestResumeKey {
             throw POSIXError(.ENODATA, description: "Invalid Resume Key")
         }
     }
@@ -128,8 +128,8 @@ struct IOCtl {
             guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
                 throw POSIXError(.EINVAL)
             }
-            let count = try data.scanValue(offset: 4, as: UInt16.self).unwrap()
-            guard Int(count) + 8 == data.count else { throw POSIXError(.EINVAL) }
+            let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
+            guard count + 8 == data.count else { throw POSIXError(.EINVAL) }
             
             let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()
             let substituteLen = try data.scanInt(offset: 10, as: UInt16.self).unwrap()
@@ -172,7 +172,7 @@ struct IOCtl {
             self.isRelative = false
         }
         
-        static func empty() throws -> Self {
+        static func empty() throws -> SymbolicLinkReparse {
             throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
         }
     }

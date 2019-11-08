@@ -94,6 +94,26 @@ class AMSMB2Tests: XCTestCase {
         return ProcessInfo.processInfo.environment["SMBEncrypted"] == "1"
     }()
     
+    func testConnectDisconnect() {
+        let expectation = self.expectation(description: #function)
+        
+        let smb = AMSMB2(url: server, credential: credential)!
+        smb.connectShare(name: share, encrypted: encrypted) { (error) in
+            XCTAssertNil(error)
+            
+            smb.disconnectShare(gracefully: false) { (error) in
+                XCTAssertNil(error)
+                
+                smb.connectShare(name: self.share, encrypted: self.encrypted) { (error) in
+                    XCTAssertNil(error)
+                    expectation.fulfill()
+                }
+            }
+        }
+        
+        wait(for: [expectation], timeout: 20)
+    }
+    
     func testShareEnum() {
         let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 3
@@ -390,7 +410,7 @@ class AMSMB2Tests: XCTestCase {
     
     func testUploadDownload() {
         let expectation = self.expectation(description: #function)
-        expectation.expectedFulfillmentCount = 2
+        expectation.expectedFulfillmentCount = 3
         
         let smb = AMSMB2(url: server, credential: credential)!
         let size: Int = random(max: 0xF00000)
@@ -414,6 +434,13 @@ class AMSMB2Tests: XCTestCase {
             }) { (error) in
                 XCTAssertNil(error)
                 expectation.fulfill()
+                
+                smb.uploadItem(at: url, toPath: "uploadtest.dat", progress: nil) { (error) in
+                    let error = error as? POSIXError
+                    XCTAssertNotNil(error)
+                    XCTAssertEqual(error?.code, POSIXErrorCode.EEXIST)
+                    expectation.fulfill()
+                }
                 
                 smb.downloadItem(atPath: "uploadtest.dat", to: dlURL, progress: { (progress, total) -> Bool in
                     XCTAssertGreaterThan(progress, 0)

@@ -182,7 +182,7 @@ extension AMSMB2 {
      */
     @available(swift, obsoleted: 1.0)
     @objc(contentsAtPath:fromOffset:toLength:progress:completionHandler:)
-    open func __contents(atPath path: String, offset: Int64 = 0, length: Int = -1, progress: SMB2ReadProgressHandler,
+    open func __contents(atPath path: String, offset: Int64 = 0, length: Int = -1, progress: ReadProgressHandler,
                        completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void) {
         guard offset >= 0 else {
             let error = POSIXError(.EINVAL, description: "Invalid content offset.")
@@ -209,7 +209,7 @@ extension AMSMB2 {
      */
     @available(swift, obsoleted: 1.0)
     @objc(writeData:toPath:progress:completionHandler:)
-    open func __write(data: Data, toPath path: String, progress: SMB2WriteProgressHandler,
+    open func __write(data: Data, toPath path: String, progress: WriteProgressHandler,
                       completionHandler: SimpleCompletionHandler) {
         write(data: data, toPath: path, progress: progress, completionHandler: completionHandler)
     }

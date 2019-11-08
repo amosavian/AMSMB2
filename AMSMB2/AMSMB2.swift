@@ -9,14 +9,15 @@
 import Foundation
 import SMB2
 
-public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
-public typealias SMB2ReadProgressHandler = ((_ bytes: Int64, _ total: Int64) -> Bool)?
-public typealias SMB2WriteProgressHandler = ((_ bytes: Int64) -> Bool)?
-private typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?
-
 /// Implements SMB2 File operations.
 @objc @objcMembers
 public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable {
+    
+    public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
+    public typealias ReadProgressHandler = ((_ bytes: Int64, _ total: Int64) -> Bool)?
+    public typealias WriteProgressHandler = ((_ bytes: Int64) -> Bool)?
+    fileprivate typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?
+    
     fileprivate var context: SMB2Context?
     
     public let url: URL
@@ -296,7 +297,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     open func contentsOfDirectory(atPath path: String, recursive: Bool = false,
                                   completionHandler: @escaping (_ result: Result<[[URLResourceKey: Any]], Error>) -> Void) {
         with(completionHandler: completionHandler) { context in
-            return try self.listDirectory(path: path, recursive: recursive)
+            return try self.listDirectory(context: context, path: path, recursive: recursive)
         }
     }
     
@@ -390,25 +391,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     @objc(removeDirectoryAtPath:recursive:completionHandler:)
     open func removeDirectory(atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
-            if recursive {
-                // To delete directory recursively, first we list directory contents recursively,
-                // Then sort path descending which will put child files before containing directory,
-                // Then we will unlink/rmdir every entry.
-                //
-                // This block will only delete children of directory, the path itself will removed after if block.
-                let list = try self.listDirectory(path: path, recursive: true).sortedByName(.orderedDescending)
-                
-                for item in list {
-                    let itemPath = try item.filePath.unwrap()
-                    if item.fileType == URLFileResourceType.directory {
-                        try context.rmdir(itemPath)
-                    } else {
-                        try context.unlink(itemPath)
-                    }
-                }
-            }
-            
-            try context.rmdir(path)
+            try self.removeDirectory(context: context, path: path, recursive: recursive)
         }
     }
     
@@ -423,6 +406,27 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     open func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
             try context.unlink(path)
+        }
+    }
+    
+    /**
+        Removes an existing file or directory at given path.
+        
+        - Parameters:
+          - atPath: path of file or directory to be removed.
+          - completionHandler: closure will be run after operation is completed.
+        */
+    @objc(removeItemAtPath:completionHandler:)
+    open func removeItem(atPath path: String, completionHandler: SimpleCompletionHandler) {
+        with(completionHandler: completionHandler) { context in
+            switch try Int32(context.stat(path).smb2_type) {
+            case SMB2_TYPE_DIRECTORY:
+                try self.removeDirectory(context: context, path: path, recursive: true)
+            case SMB2_TYPE_FILE, SMB2_TYPE_LINK:
+                try context.unlink(path)
+            default:
+                break
+            }
         }
     }
     
@@ -471,8 +475,8 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after reading data is completed.
        - result: a `Data` object which contains file contents.
      */
-    open func contents(atPath path: String, progress: SMB2ReadProgressHandler,
-                                           completionHandler: @escaping (_ result: Result<Data, Error>) -> Void) {
+    open func contents(atPath path: String, progress: ReadProgressHandler,
+                       completionHandler: @escaping (_ result: Result<Data, Error>) -> Void) {
         contents(atPath: path, range: 0..<Int64.max, progress: progress, completionHandler: completionHandler)
     }
     
@@ -493,7 +497,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after reading data is completed.
        - result: a `Data` object which contains file contents.
      */
-    open func contents<R: RangeExpression>(atPath path: String, range: R? = nil, progress: SMB2ReadProgressHandler,
+    open func contents<R: RangeExpression>(atPath path: String, range: R? = nil, progress: ReadProgressHandler,
                                            completionHandler: @escaping (_ result: Result<Data, Error>) -> Void)
         where R.Bound: FixedWidthInteger
     {
@@ -508,7 +512,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             }
             
             let stream = OutputStream.toMemory()
-            try self.read(path: path, range: int64Range, to: stream, progress: progress)
+            try self.read(context: context, path: path, range: int64Range, to: stream, progress: progress)
             return try (stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data).unwrap()
         }
     }
@@ -561,10 +565,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - bytes: written bytes count.
        - completionHandler: closure will be run after writing is completed.
      */
-    open func write<DataType: DataProtocol>(data: DataType, toPath path: String, progress: SMB2WriteProgressHandler,
+    open func write<DataType: DataProtocol>(data: DataType, toPath path: String, progress: WriteProgressHandler,
                                             completionHandler: SimpleCompletionHandler) {
-        write(stream: InputStream(data: Data(data)), toPath: path,
-              progress: progress, completionHandler: completionHandler)
+        with(completionHandler: completionHandler) { context in
+            try self.write(context: context, from: InputStream(data: Data(data)), toPath: path, progress: progress)
+        }
     }
     
     /**
@@ -584,10 +589,10 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after writing is completed.
      */
     @objc(writeStream:toPath:chunkSize:progress:completionHandler:)
-    open func write(stream: InputStream, toPath path: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler,
+    open func write(stream: InputStream, toPath path: String, chunkSize: Int = 0, progress: WriteProgressHandler,
                     completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) {
-            try self.write(from: stream, toPath: path, chunkSize: chunkSize, progress: progress)
+        with(completionHandler: completionHandler) { context in
+            try self.write(context: context, from: stream, toPath: path, chunkSize: chunkSize, progress: progress)
         }
     }
     
@@ -609,10 +614,10 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
                renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)")
     @objc(copyContentsOfItemAtPath:toPath:recursiveprogress::completionHandler:)
     open func copyContentsOfItem(atPath path: String, toPath: String, recursive: Bool,
-                                 progress: SMB2ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) {
-            try self.recursiveCopyIterator(atPath: path, toPath: toPath, recursive: recursive, progress: progress,
-                                           handle: self.copyContentsOfFile(atPath:toPath:progress:))
+                                 progress: ReadProgressHandler, completionHandler: SimpleCompletionHandler) {
+        with(completionHandler: completionHandler) { context in
+            try self.recursiveCopyIterator(context: context, fromPath: path, toPath: toPath, recursive: recursive, progress: progress,
+                                           handle: self.copyContentsOfFile(context:fromPath:toPath:progress:))
         }
     }
     
@@ -629,11 +634,11 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after copying is completed.
      */
     @objc(copyItemAtPath:toPath:recursive:progress:completionHandler:)
-    open func copyItem(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
+    open func copyItem(atPath path: String, toPath: String, recursive: Bool, progress: ReadProgressHandler,
                        completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) {
-            try self.recursiveCopyIterator(atPath: path, toPath: toPath, recursive: recursive, progress: progress,
-                                           handle: self.copyFile(atPath:toPath:progress:))
+        with(completionHandler: completionHandler) { context in
+            try self.recursiveCopyIterator(context: context, fromPath: path, toPath: toPath, recursive: recursive, progress: progress,
+                                           handle: self.copyFile(context:fromPath:toPath:progress:))
         }
     }
     
@@ -650,14 +655,14 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after uploading is completed.
      */
     @objc(uploadItemAtURL:toPath:progress:completionHandler:)
-    open func uploadItem(at url: URL, toPath: String, progress: SMB2WriteProgressHandler,
+    open func uploadItem(at url: URL, toPath: String, progress: WriteProgressHandler,
                          completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) {
+        with(completionHandler: completionHandler) { context in
             guard try url.checkResourceIsReachable(), url.isFileURL, let stream = InputStream(url: url) else {
                 throw POSIXError(.EIO, description: "Could not create Stream from given URL, or given URL is not a local file.")
             }
             
-            try self.write(from: stream, toPath: toPath, progress: progress)
+            try self.write(context: context, from: stream, toPath: toPath, progress: progress)
         }
     }
     
@@ -676,13 +681,13 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after uploading is completed.
      */
     @objc(downloadItemAtPath:toURL:progress:completionHandler:)
-    open func downloadItem(atPath path: String, to url: URL, progress: SMB2ReadProgressHandler,
+    open func downloadItem(atPath path: String, to url: URL, progress: ReadProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) {
+        with(completionHandler: completionHandler) { context in
             guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
                 throw POSIXError(.EIO, description: "Could not create Stream from given URL, or given URL is not a local file.")
             }
-            try self.read(path: path, to: stream, progress: progress)
+            try self.read(context: context, path: path, to: stream, progress: progress)
         }
     }
     
@@ -703,10 +708,10 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
        - completionHandler: closure will be run after uploading is completed.
      */
     @objc(downloadItemAtPath:toStream:progress:completionHandler:)
-    open func downloadItem(atPath path: String, to stream: OutputStream, progress: SMB2ReadProgressHandler,
+    open func downloadItem(atPath path: String, to stream: OutputStream, progress: ReadProgressHandler,
                            completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) {
-            try self.read(path: path, to: stream, progress: progress)
+        with(completionHandler: completionHandler) { context in
+            try self.read(context: context, path: path, to: stream, progress: progress)
         }
     }
 }
@@ -823,9 +828,9 @@ extension AMSMB2 {
 }
 
 extension AMSMB2 {
-    fileprivate func listDirectory(path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
+    fileprivate func listDirectory(context: SMB2Context, path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
         var contents = [[URLResourceKey: Any]]()
-        let dir = try SMB2Directory(path.canonical, on: context.unwrap())
+        let dir = try SMB2Directory(path.canonical, on: context)
         for ent in dir {
             let name = String(cString: ent.name)
             if [".", ".."].contains(name) { continue }
@@ -840,21 +845,20 @@ extension AMSMB2 {
             let subDirectories = contents.filter { $0.fileType == .directory }
             
             for subDir in subDirectories {
-                contents.append(contentsOf: try listDirectory(path: subDir.filePath.unwrap(), recursive: true))
+                contents.append(contentsOf: try listDirectory(context: context, path: subDir.filePath.unwrap(), recursive: true))
             }
         }
         
         return contents
     }
     
-    fileprivate func recursiveCopyIterator(atPath path: String, toPath: String, recursive: Bool, progress: SMB2ReadProgressHandler,
-                                           handle: (_ path: String, _ toPath: String, _ progress: CopyProgressHandler) throws -> Bool) throws {
-        let context = try self.context.unwrap()
+    fileprivate func recursiveCopyIterator(context: SMB2Context, fromPath path: String, toPath: String, recursive: Bool, progress: ReadProgressHandler,
+                                           handle: (_ context: SMB2Context, _ path: String, _ toPath: String, _ progress: CopyProgressHandler) throws -> Bool) throws {
         let stat = try context.stat(path)
         if stat.smb2_type == SMB2_TYPE_DIRECTORY {
             try context.mkdir(toPath)
             
-            let list = try listDirectory(path: path, recursive: recursive).sortedByName(.orderedAscending)
+            let list = try listDirectory(context: context, path: path, recursive: recursive).sortedByName(.orderedAscending)
             let overallSize = list.overallSize
             
             var totalCopied: Int64 = 0
@@ -864,7 +868,7 @@ extension AMSMB2 {
                 if item.fileType == URLFileResourceType.directory {
                     try context.mkdir(destPath)
                 } else {
-                    let shouldContinue = try handle(itemPath, destPath, {
+                    let shouldContinue = try handle(context, itemPath, destPath, {
                         (bytes, _, _) -> Bool in
                         totalCopied += bytes
                         return progress?(totalCopied, overallSize) ?? true
@@ -875,14 +879,13 @@ extension AMSMB2 {
                 }
             }
         } else {
-            _ = try handle(path, toPath, { (_, soFar, total) -> Bool in
+            _ = try handle(context, path, toPath, { (_, soFar, total) -> Bool in
                 progress?(soFar, total) ?? true
             })
         }
     }
     
-    fileprivate func copyFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
-        let context = try self.context.unwrap()
+    fileprivate func copyFile(context: SMB2Context, fromPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
         let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileSource.fstat().smb2_size)
         let sourceKey: IOCtl.RequestResumeKey = try fileSource.fcntl(command: .srvRequestResumeKey)
@@ -904,8 +907,7 @@ extension AMSMB2 {
         return shouldContinue
     }
     
-    fileprivate func copyContentsOfFile(atPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
-        let context = try self.context.unwrap()
+    fileprivate func copyContentsOfFile(context: SMB2Context, fromPath path: String, toPath: String, progress: CopyProgressHandler) throws -> Bool {
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
         let fileWrite = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
@@ -922,9 +924,31 @@ extension AMSMB2 {
         return shouldContinue
     }
     
-    fileprivate func read(path: String, range: Range<Int64> = 0..<Int64.max, to stream: OutputStream,
-                      progress: SMB2ReadProgressHandler) throws {
-        let file = try SMB2FileHandle(forReadingAtPath: path, on: context.unwrap())
+    fileprivate func removeDirectory(context: SMB2Context, path: String, recursive: Bool) throws {
+        if recursive {
+            // To delete directory recursively, first we list directory contents recursively,
+            // Then sort path descending which will put child files before containing directory,
+            // Then we will unlink/rmdir every entry.
+            //
+            // This block will only delete children of directory, the path itself will removed after if block.
+            let list = try self.listDirectory(context: context, path: path, recursive: true).sortedByName(.orderedDescending)
+            
+            for item in list {
+                let itemPath = try item.filePath.unwrap()
+                if item.fileType == URLFileResourceType.directory {
+                    try context.rmdir(itemPath)
+                } else {
+                    try context.unlink(itemPath)
+                }
+            }
+        }
+        
+        try context.rmdir(path)
+    }
+    
+    fileprivate func read(context: SMB2Context, path: String, range: Range<Int64> = 0..<Int64.max,
+                          to stream: OutputStream, progress: ReadProgressHandler) throws {
+        let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let filesize = try Int64(file.fstat().smb2_size)
         let length = range.upperBound - range.lowerBound
         let size = min(length, filesize - range.lowerBound)
@@ -953,8 +977,8 @@ extension AMSMB2 {
         }
     }
     
-    fileprivate func write(from stream: InputStream, toPath: String, chunkSize: Int = 0, progress: SMB2WriteProgressHandler) throws {
-        let context = try self.context.unwrap()
+    fileprivate func write(context: SMB2Context, from stream: InputStream, toPath: String,
+                           chunkSize: Int = 0, progress: WriteProgressHandler) throws {
         let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
         var totalWritten: UInt64 = 0
@@ -968,8 +992,8 @@ extension AMSMB2 {
                     }
                     totalWritten += UInt64(segment.count)
                     // For last part, we make it size equal with other chunks in order to prevent POLLHUP on some servers
-                    if segment.count < file.optimizedWriteSize {
-                        segment.count = file.optimizedWriteSize
+                    if segment.count < chunkSize {
+                        segment.count = chunkSize
                     }
                     let written = try file.write(data: segment)
                     if written != segment.count {
