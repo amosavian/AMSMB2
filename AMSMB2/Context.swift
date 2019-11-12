@@ -15,7 +15,7 @@ import SMB2.Raw
 /// Provides synchronous operation on SMB2
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     var context: UnsafeMutablePointer<smb2_context>?
-    private var _context_lock = NSLock()
+    private var _context_lock = NSRecursiveLock()
     var timeout: TimeInterval
     
     init(timeout: TimeInterval) throws {
@@ -53,7 +53,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
             c.append((label: "securityMode", value: securityMode))
             c.append((label: "authentication", value: authentication))
             clientGuid.map { c.append((label: "clientGuid", value: $0)) }
-            user.map { c.append((label: "user", value: $0)) }
+            c.append((label: "user", value: user))
             c.append((label: "version", value: version))
         }
         c.append((label: "isConnected", value: isConnected))
@@ -187,16 +187,14 @@ extension SMB2Context {
     }
     
     func service(revents: Int32) throws {
-        let result = try withThreadSafeContext { (context) in
-            return smb2_service(context, revents)
+        try withThreadSafeContext { (context) in
+            let result = smb2_service(context, revents)
+            if result < 0 {
+                self.context = nil
+                smb2_destroy_context(context)
+            }
+            try POSIXError.throwIfError(result, description: error)
         }
-        if result < 0 {
-            _context_lock.lock()
-            smb2_destroy_context(context)
-            context = nil
-            _context_lock.unlock()
-        }
-        try POSIXError.throwIfError(result, description: error)
     }
 }
 
@@ -359,16 +357,15 @@ extension SMB2Context {
     @discardableResult
     func async_await(execute handler: ContextHandler<Int32>) throws -> Int32
     {
-        var cb = CBData()
-        
-        let result = try withThreadSafeContext { (context) -> Int32 in
-            return try handler(context, &cb)
+        return try withThreadSafeContext { (context) -> Int32 in
+            var cb = CBData()
+            let result = try handler(context, &cb)
+            try POSIXError.throwIfError(result, description: error)
+            try wait_for_reply(&cb)
+            let cbResult = cb.result
+            try POSIXError.throwIfError(cbResult, description: error)
+            return cbResult
         }
-        try POSIXError.throwIfError(result, description: error)
-        try wait_for_reply(&cb)
-        let cbResult = cb.result
-        try POSIXError.throwIfError(cbResult, description: error)
-        return cbResult
     }
     
     @discardableResult

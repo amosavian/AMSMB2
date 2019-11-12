@@ -676,7 +676,6 @@ class AMSMB2Tests: XCTestCase {
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
-            smb.removeDirectory(atPath: "removeTest", recursive: true, completionHandler: nil)
             smb.createDirectory(atPath: "removeTest") { (error) in
                 XCTAssertNil(error)
                 

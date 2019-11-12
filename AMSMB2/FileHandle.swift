@@ -91,9 +91,12 @@ final class SMB2FileHandle {
     }
     
     deinit {
-        _ = try? context.withThreadSafeContext { (context) in
-            try smb2_close(context, handle.unwrap())
-        }
+        do {
+            let handle = try self.handle.unwrap()
+            try context.async_await { (context, cbPtr) -> Int32 in
+                smb2_close_async(context, handle, SMB2Context.generic_handler, cbPtr)
+            }
+        } catch { }
     }
     
     var fileId: smb2_file_id {

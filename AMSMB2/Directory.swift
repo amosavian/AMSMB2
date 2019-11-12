@@ -26,15 +26,18 @@ final class SMB2Directory: Collection {
     }
     
     deinit {
+        let handle = self.handle
         try? context.withThreadSafeContext { (context) in
             smb2_closedir(context, handle)
         }
     }
     
     func makeIterator() -> AnyIterator<smb2dirent> {
-        smb2_rewinddir(context.context, handle)
+        let context = self.context.context
+        let handle = self.handle
+        smb2_rewinddir(context, handle)
         return AnyIterator {
-            return smb2_readdir(self.context.context, self.handle)?.pointee
+            return smb2_readdir(context, self.handle)?.pointee
         }
     }
     
@@ -47,26 +50,30 @@ final class SMB2Directory: Collection {
     }
     
     var count: Int {
-        let currentPos = smb2_telldir(context.context, handle)
+        let context = self.context.context
+        let handle = self.handle
+        let currentPos = smb2_telldir(context, handle)
         defer {
-            smb2_seekdir(context.context, handle, currentPos)
+            smb2_seekdir(context, handle, currentPos)
         }
         
-        smb2_rewinddir(context.context, handle)
+        smb2_rewinddir(context, handle)
         var i = 0
-        while smb2_readdir(context.context, handle) != nil {
+        while smb2_readdir(context, handle) != nil {
             i += 1
         }
         return i
     }
     
     subscript(position: Int) -> smb2dirent {
-        let currentPos = smb2_telldir(context.context, handle)
-        smb2_seekdir(context.context, handle, 0)
+        let context = self.context.context
+        let handle = self.handle
+        let currentPos = smb2_telldir(context, handle)
+        smb2_seekdir(context, handle, 0)
         defer {
-            smb2_seekdir(context.context, handle, currentPos)
+            smb2_seekdir(context, handle, currentPos)
         }
-        return smb2_readdir(context.context, handle).move()
+        return smb2_readdir(context, handle).move()
     }
     
     func index(after i: Int) -> Int {
