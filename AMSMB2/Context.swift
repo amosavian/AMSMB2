@@ -249,7 +249,7 @@ extension SMB2Context {
     }
 }
 
-// MARK: File manipulation
+// MARK: File information
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
         var st = smb2_stat_64()
@@ -267,10 +267,10 @@ extension SMB2Context {
         return st
     }
     
-    func truncate(_ path: String, toLength: UInt64) throws {
-        try async_await { (context, cbPtr) -> Int32 in
-            smb2_truncate_async(context, path, toLength, SMB2Context.generic_handler, cbPtr)
-        }
+    func readlink(_ path: String) throws -> String {
+        return try async_await(dataHandler: Parser.toString) { (context, cbPtr) -> Int32 in
+            smb2_readlink_async(context, path, SMB2Context.generic_handler, cbPtr)
+        }.data
     }
 }
 
@@ -300,10 +300,10 @@ extension SMB2Context {
         }
     }
     
-    func readlink(_ path: String) throws -> String {
-        return try async_await(dataHandler: Parser.toString) { (context, cbPtr) -> Int32 in
-            smb2_readlink_async(context, path, SMB2Context.generic_handler, cbPtr)
-        }.data
+    func truncate(_ path: String, toLength: UInt64) throws {
+        try async_await { (context, cbPtr) -> Int32 in
+            smb2_truncate_async(context, path, toLength, SMB2Context.generic_handler, cbPtr)
+        }
     }
 }
 

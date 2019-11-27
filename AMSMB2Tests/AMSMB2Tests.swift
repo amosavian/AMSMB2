@@ -195,10 +195,10 @@ class AMSMB2Tests: XCTestCase {
                     XCTAssertFalse(value.isEmpty)
                     XCTAssertNotNil(value.first)
                     guard let file = value.first else { break }
-                    XCTAssertNotNil(file.fileName)
-                    XCTAssertNotNil(file.fileModificationDate)
-                    XCTAssertNotNil(file.fileCreationDate)
-                    XCTAssertGreaterThanOrEqual(file.fileModificationDate!, file.fileCreationDate!)
+                    XCTAssertNotNil(file.name)
+                    XCTAssertNotNil(file.contentModificationDate)
+                    XCTAssertNotNil(file.creationDate)
+                    XCTAssertGreaterThanOrEqual(file.contentModificationDate!, file.creationDate!)
                 case .failure(let error):
                     XCTAssert(false, error.localizedDescription)
                 }
@@ -219,8 +219,8 @@ class AMSMB2Tests: XCTestCase {
             smb.contentsOfDirectory(atPath: "/") { result in
                 switch result {
                 case .success(let value):
-                    if let symlink = value.first(where: { $0.fileType == .symbolicLink }) {
-                        smb.destinationOfSymbolicLink(atPath: symlink.filePath!) { result in
+                    if let symlink = value.first(where: { $0.isSymbolicLink }) {
+                        smb.destinationOfSymbolicLink(atPath: symlink.path!) { result in
                             switch result {
                             case .success(let value):
                                 XCTAssert(!value.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).isEmpty)

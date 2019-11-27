@@ -842,10 +842,10 @@ extension AMSMB2 {
         }
         
         if recursive {
-            let subDirectories = contents.filter { $0.fileType == .directory }
+            let subDirectories = contents.filter { $0.isDirectory }
             
             for subDir in subDirectories {
-                contents.append(contentsOf: try listDirectory(context: context, path: subDir.filePath.unwrap(), recursive: true))
+                contents.append(contentsOf: try listDirectory(context: context, path: subDir.path.unwrap(), recursive: true))
             }
         }
         
@@ -863,9 +863,9 @@ extension AMSMB2 {
             
             var totalCopied: Int64 = 0
             for item in list {
-                let itemPath = try item.filePath.unwrap()
+                let itemPath = try item.path.unwrap()
                 let destPath = itemPath.replacingOccurrences(of: path, with: toPath, options: .anchored)
-                if item.fileType == URLFileResourceType.directory {
+                if item.isDirectory {
                     try context.mkdir(destPath)
                 } else {
                     let shouldContinue = try handle(context, itemPath, destPath, {
@@ -934,8 +934,8 @@ extension AMSMB2 {
             let list = try self.listDirectory(context: context, path: path, recursive: true).sortedByName(.orderedDescending)
             
             for item in list {
-                let itemPath = try item.filePath.unwrap()
-                if item.fileType == URLFileResourceType.directory {
+                let itemPath = try item.path.unwrap()
+                if item.isDirectory {
                     try context.rmdir(itemPath)
                 } else {
                     try context.unlink(itemPath)

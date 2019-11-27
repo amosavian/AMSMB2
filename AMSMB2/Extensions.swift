@@ -58,31 +58,47 @@ extension POSIXErrorCode {
 }
 
 extension Dictionary where Key == URLResourceKey, Value == Any {
-    var fileName: String? {
+    public var name: String? {
         return self[.nameKey] as? String
     }
     
-    var filePath: String? {
+    public var path: String? {
         return self[.pathKey] as? String
     }
     
-    var fileType: URLFileResourceType? {
+    public var fileResourceType: URLFileResourceType? {
         return self[.fileResourceTypeKey] as? URLFileResourceType
     }
     
-    var fileSize: Int64? {
+    public var isDirectory: Bool {
+        return self[.isDirectoryKey] as? Bool ?? false
+    }
+    
+    public var isRegularFile: Bool {
+        return self[.isRegularFileKey] as? Bool ?? false
+    }
+    
+    public var isSymbolicLink: Bool {
+        return self[.isSymbolicLinkKey] as? Bool ?? false
+    }
+    
+    public var fileSize: Int64? {
         return self[.fileSizeKey] as? Int64
     }
     
-    var fileModificationDate: Date? {
+    public var attributeModificationDate: Date? {
+        return self[.attributeModificationDateKey] as? Date
+    }
+    
+    public var contentModificationDate: Date? {
         return self[.contentModificationDateKey] as? Date
     }
     
-    var fileAccessDate: Date? {
+    public var contentAccessDate: Date? {
         return self[.contentAccessDateKey] as? Date
     }
     
-    var fileCreationDate: Date? {
+    public var creationDate: Date? {
         return self[.creationDateKey] as? Date
     }
 }
@@ -90,7 +106,7 @@ extension Dictionary where Key == URLResourceKey, Value == Any {
 extension Array where Element == [URLResourceKey: Any] {
     func sortedByName(_ comparison: ComparisonResult) -> [[URLResourceKey: Any]] {
         return sorted {
-            guard let firstPath = $0.filePath, let secPath = $1.filePath else {
+            guard let firstPath = $0.path, let secPath = $1.path else {
                 return false
             }
             return firstPath.localizedStandardCompare(secPath) == comparison
@@ -99,7 +115,7 @@ extension Array where Element == [URLResourceKey: Any] {
     
     var overallSize: Int64 {
         return reduce(0, { (result, value) -> Int64 in
-            if value.fileType  == URLFileResourceType.regular {
+            if value.isRegularFile {
                 return result + (value.fileSize ?? 0)
             } else {
                 return result
