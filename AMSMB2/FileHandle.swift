@@ -54,8 +54,6 @@ final class SMB2FileHandle {
                      shareAccess: Int32 = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE,
                      createDisposition: Int32 = SMB2_FILE_OPEN,
                      createOptions: Int32 = 0, on context: SMB2Context) throws {
-        // smb2_open() sets overwrite flag, which is incompatible with pipe in mac's smbx
-        
         let (_, file_id) = try context.async_await_pdu(dataHandler: Parser.toFileId) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
             return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
                 var req = smb2_create_request()

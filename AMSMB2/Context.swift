@@ -352,88 +352,70 @@ extension SMB2Context {
         } catch { }
     }
     
-    typealias ContextHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ ptr: UnsafeMutableRawPointer) throws -> R
+    typealias ContextHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ ptr: UnsafeMutableRawPointer?) throws -> R
     
     @discardableResult
     func async_await(execute handler: ContextHandler<Int32>) throws -> Int32
     {
-        return try withThreadSafeContext { (context) -> Int32 in
-            var cb = CBData()
-            let result = try handler(context, &cb)
-            try POSIXError.throwIfError(result, description: error)
-            try wait_for_reply(&cb)
-            let cbResult = cb.result
-            try POSIXError.throwIfError(cbResult, description: error)
-            return cbResult
-        }
+        return try async_await(dataHandler: Parser.toVoid, execute: handler).result
     }
     
     @discardableResult
-    func async_await<T>(dataHandler: @escaping ContextHandler<T>, execute handler: ContextHandler<Int32>)
-        throws -> (result: Int32, data: T)
+    func async_await<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: ContextHandler<Int32>)
+        throws -> (result: Int32, data: DataType)
     {
-        var cb = CBData()
-        var resultData: T?
-        var dataHandlerError: Error?
-        
-        let result = try withThreadSafeContext { (context) -> Int32 in
+        return try withThreadSafeContext { (context) -> (Int32, DataType) in
+            var cb = CBData()
+            var resultData: DataType?
+            var dataHandlerError: Error?
             cb.dataHandler = { ptr in
                 do {
-                    resultData = try dataHandler(context, ptr.unwrap())
+                    resultData = try dataHandler(context, ptr)
                 } catch {
                     dataHandlerError = error
                 }
             }
-            return try handler(context, &cb)
+            let result = try handler(context, &cb)
+            try POSIXError.throwIfError(result, description: error)
+            try wait_for_reply(&cb)
+            let cbResult = cb.result
+            
+            try POSIXError.throwIfError(cbResult, description: error)
+            if let error = dataHandlerError { throw error }
+            return try (cbResult, resultData.unwrap())
         }
-        try POSIXError.throwIfError(result, description: error)
-        try wait_for_reply(&cb)
-        let cbResult = cb.result
-        
-        try POSIXError.throwIfError(cbResult, description: error)
-        if let error = dataHandlerError { throw error }
-        return try (cbResult, resultData.unwrap())
     }
     
     @discardableResult
     func async_await_pdu(execute handler: ContextHandler<UnsafeMutablePointer<smb2_pdu>?>) throws -> UInt32
     {
-        var cb = CBData()
-        
-        try withThreadSafeContext { (context) -> Void in
-            let pdu = try handler(context, &cb).unwrap()
-            smb2_queue_pdu(context, pdu)
-        }
-        try wait_for_reply(&cb)
-        let status = cb.status
-        try POSIXError.throwIfErrorStatus(status)
-        return status
+        return try async_await_pdu(dataHandler: Parser.toVoid, execute: handler).status
     }
     
     @discardableResult
-    func async_await_pdu<T>(dataHandler: @escaping ContextHandler<T>, execute handler: ContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
-        throws -> (status: UInt32, data: T)
+    func async_await_pdu<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: ContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
+        throws -> (status: UInt32, data: DataType)
     {
-        var cb = CBData()
-        var resultData: T?
-        var dataHandlerError: Error?
-        
-        try withThreadSafeContext { (context) -> Void in
-            let pdu = try handler(context, &cb).unwrap()
+        return try withThreadSafeContext { (context) -> (UInt32, DataType) in
+            var cb = CBData()
+            var resultData: DataType?
+            var dataHandlerError: Error?
             cb.dataHandler = { ptr in
                 do {
-                    resultData = try dataHandler(context, ptr.unwrap())
+                    resultData = try dataHandler(context, ptr)
                 } catch {
                     dataHandlerError = error
                 }
             }
+            let pdu = try handler(context, &cb).unwrap()
             smb2_queue_pdu(context, pdu)
+            try wait_for_reply(&cb)
+            let status = cb.status
+            
+            try POSIXError.throwIfErrorStatus(status)
+            if let error = dataHandlerError { throw error }
+            return try (status, resultData.unwrap())
         }
-        try wait_for_reply(&cb)
-        let status = cb.status
-        try POSIXError.throwIfErrorStatus(status)
-        if let error = dataHandlerError { throw error }
-        return try (status, resultData.unwrap())
     }
 }
 

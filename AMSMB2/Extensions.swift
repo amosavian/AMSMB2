@@ -29,9 +29,7 @@ extension Optional where Wrapped: SMB2Context {
 
 extension POSIXError {
     static func throwIfError(_ result: Int32, description: String?) throws {
-        guard result < 0 else {
-            return
-        }
+        guard result < 0 else { return }
         let errno = -result
         let errorDesc = description.map { "Error code \(errno): \($0)" }
         throw POSIXError(.init(errno), description: errorDesc)
@@ -104,7 +102,7 @@ extension Dictionary where Key == URLResourceKey, Value == Any {
 }
 
 extension Array where Element == [URLResourceKey: Any] {
-    func sortedByName(_ comparison: ComparisonResult) -> [[URLResourceKey: Any]] {
+    func sortedByPath(_ comparison: ComparisonResult) -> [[URLResourceKey: Any]] {
         return sorted {
             guard let firstPath = $0.path, let secPath = $1.path else {
                 return false
@@ -115,11 +113,8 @@ extension Array where Element == [URLResourceKey: Any] {
     
     var overallSize: Int64 {
         return reduce(0, { (result, value) -> Int64 in
-            if value.isRegularFile {
-                return result + (value.fileSize ?? 0)
-            } else {
-                return result
-            }
+            guard value.isRegularFile else { return result }
+            return result + (value.fileSize ?? 0)
         })
     }
 }

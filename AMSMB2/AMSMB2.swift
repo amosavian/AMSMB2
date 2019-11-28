@@ -858,7 +858,7 @@ extension AMSMB2 {
         if stat.smb2_type == SMB2_TYPE_DIRECTORY {
             try context.mkdir(toPath)
             
-            let list = try listDirectory(context: context, path: path, recursive: recursive).sortedByName(.orderedAscending)
+            let list = try listDirectory(context: context, path: path, recursive: recursive).sortedByPath(.orderedAscending)
             let overallSize = list.overallSize
             
             var totalCopied: Int64 = 0
@@ -931,7 +931,7 @@ extension AMSMB2 {
             // Then we will unlink/rmdir every entry.
             //
             // This block will only delete children of directory, the path itself will removed after if block.
-            let list = try self.listDirectory(context: context, path: path, recursive: true).sortedByName(.orderedDescending)
+            let list = try self.listDirectory(context: context, path: path, recursive: true).sortedByPath(.orderedDescending)
             
             for item in list {
                 let itemPath = try item.path.unwrap()
