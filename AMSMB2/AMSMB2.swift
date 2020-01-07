@@ -1000,9 +1000,14 @@ extension AMSMB2 {
                     if segment.count < chunkSize {
                         segment.count = chunkSize
                     }
-                    let written = try file.write(data: segment)
-                    if written != segment.count {
-                        throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
+                    var written = try file.write(data: segment)
+
+                    while written < segment.count {
+                        let partialWritten = try file.write(data: segment.suffix(segment.count - written))
+                        if partialWritten <= 0 {
+                            throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
+                        }
+                        written += partialWritten
                     }
                     
                     var offset = try file.lseek(offset: 0, whence: .current)
