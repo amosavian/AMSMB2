@@ -331,6 +331,10 @@ extension SMB2Context {
             
             if pfd.revents == 0 {
                 if timeout > 0, Date().timeIntervalSince(startDate) > timeout {
+                    try? withThreadSafeContext { (context) in
+                        self.context = nil
+                        smb2_destroy_context(context)
+                    }
                     throw POSIXError(.ETIMEDOUT)
                 }
                 continue

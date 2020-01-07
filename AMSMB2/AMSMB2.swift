@@ -232,18 +232,23 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
      */
     @objc(disconnectShareGracefully:completionHandler:)
     open func disconnectShare(gracefully: Bool = false, completionHandler: SimpleCompletionHandler = nil) {
-        with(completionHandler: completionHandler) {
-            self.connectLock.lock()
-            defer { self.connectLock.unlock() }
-            if gracefully {
-                self.operationLock.lock()
-                while self.operationCount > 0 {
-                    self.operationLock.wait()
+        q.async {
+            do {
+                self.connectLock.lock()
+                defer { self.connectLock.unlock() }
+                if gracefully {
+                    self.operationLock.lock()
+                    while self.operationCount > 0 {
+                        self.operationLock.wait()
+                    }
+                    self.operationLock.unlock()
                 }
-                self.operationLock.unlock()
+                try self.context?.disconnect()
+                self.context = nil
+                completionHandler?(nil)
+            } catch {
+                completionHandler?(error)
             }
-            try self.context?.disconnect()
-            self.context = nil
         }
     }
     
