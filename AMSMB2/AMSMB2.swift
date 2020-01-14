@@ -1002,8 +1002,8 @@ extension AMSMB2 {
                     }
                     let written = try file.write(data: segment)
                     if written != segment.count {
-                            throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
-                        }
+                        throw POSIXError(.EIO, description: "Inconsitency in writing to SMB file handle.")
+                    }
                     
                     var offset = try file.lseek(offset: 0, whence: .current)
                     if offset > totalWritten {
