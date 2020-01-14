@@ -326,6 +326,10 @@ extension SMB2Context {
             pfd.events = try whichEvents()
             
             if pfd.fd < 0 || (poll(&pfd, 1, 1000) < 0 && errno != EAGAIN) {
+                try? withThreadSafeContext { (context) in
+                    self.context = nil
+                    smb2_destroy_context(context)
+                }
                 throw POSIXError(.init(errno), description: error)
             }
             
