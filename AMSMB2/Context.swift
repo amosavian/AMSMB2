@@ -190,10 +190,11 @@ extension SMB2Context {
         try withThreadSafeContext { (context) in
             let result = smb2_service(context, revents)
             if result < 0 {
+                let errorForThrow = error
                 self.context = nil
                 smb2_destroy_context(context)
+                try POSIXError.throwIfError(result, description: errorForThrow)
             }
-            try POSIXError.throwIfError(result, description: error)
         }
     }
 }
