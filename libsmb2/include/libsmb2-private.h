@@ -200,6 +200,11 @@ struct smb2_context {
         struct smb2fh *fhs;
         /* Open dirhandles */
         struct smb2dir *dirs;
+
+        /* callbacks for the eventsystem */
+        int events;
+        smb2_change_fd_cb change_fd;
+        smb2_change_events_cb change_events;
 };
 
 #define SMB2_MAX_PDU_SIZE 16*1024*1024
@@ -403,6 +408,17 @@ void smb2_free_all_fhs(struct smb2_context *smb2);
 void smb2_free_all_dirs(struct smb2_context *smb2);
 
 int smb2_read_from_buf(struct smb2_context *smb2);
+void smb2_change_events(struct smb2_context *smb2, int fd, int events);
+
+struct dcerpc_context;
+int dcerpc_set_uint8(struct dcerpc_context *ctx, struct smb2_iovec *iov,
+                     int offset, uint8_t value);
+int dcerpc_set_uint16(struct dcerpc_context *ctx, struct smb2_iovec *iov,
+                      int offset, uint16_t value);
+int dcerpc_set_uint32(struct dcerpc_context *ctx, struct smb2_iovec *iov,
+                      int offset, uint32_t value);
+int dcerpc_set_uint64(struct dcerpc_context *ctx, struct smb2_iovec *iov,
+                      int offset, uint64_t value);
 
 #ifdef __cplusplus
 }

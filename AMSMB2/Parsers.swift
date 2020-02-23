@@ -11,7 +11,7 @@ import SMB2
 
 struct Parser {
     static func toVoid(_ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> Void {
-        return ()
+        return
     }
     
     static func toString(_ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> String {

@@ -23,6 +23,14 @@
 extern "C" {
 #endif
 
+/* Data representation */
+/* Integer */
+#define DCERPC_DR_BIG_ENDIAN                    0x00
+#define DCERPC_DR_LITTLE_ENDIAN                 0x10
+/* Character */
+#define DCERPC_DR_ASCII                         0x00
+#define DCERPC_DR_EBCDIC                        0x01
+
 struct dcerpc_context;
 struct dcerpc_pdu;
 
@@ -99,8 +107,8 @@ int dcerpc_process_deferred_pointers(struct dcerpc_context *ctx,
 void dcerpc_add_deferred_pointer(struct dcerpc_context *ctx,
                                  struct dcerpc_pdu *pdu,
                                  dcerpc_coder coder, void *ptr);
-
-
-
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* !_LIBSMB2_DCERPC_H_ */
