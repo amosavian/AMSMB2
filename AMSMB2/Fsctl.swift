@@ -41,6 +41,7 @@ extension FcntlDataProtocol {
             return regionOne[regionOne.index(regionOne.startIndex, offsetBy: index)]
         }
     }
+    
     func index(after i: Int) -> Int {
         return i + 1
     }
@@ -74,6 +75,9 @@ struct IOCtl {
     }
     
     struct SrvCopyChunk: FcntlDataProtocol {
+        
+        typealias Element = UInt8
+        
         let sourceOffset: UInt64
         let targetOffset: UInt64
         let length: UInt32
@@ -89,6 +93,9 @@ struct IOCtl {
     }
     
     struct SrvCopyChunkCopy: FcntlDataProtocol {
+        
+        typealias Element = UInt8
+        
         let sourceKey: Data
         let chunks: [SrvCopyChunk]
         

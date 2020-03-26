@@ -209,14 +209,16 @@ final class SMB2FileHandle {
     
     @discardableResult
     func fcntl<DataType: DataProtocol, R: DataInitializable>(command: IOCtl.Command, data: DataType, needsReply: Bool = true) throws -> R {
-        var inputBUffer = [UInt8](data)
-        var req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(inputBUffer.count),
-                                     input: &inputBUffer, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
-        let outputHandler = Parser.ioctlOutputConverter(as: R.self)
-        return try context.async_await_pdu(dataHandler: outputHandler) {
-            (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
-            smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
-        }.data
+        var inputBuffer = [UInt8](data)
+        return try inputBuffer.withUnsafeMutableBytes { (buf) in
+            var req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buf.count),
+                                         input: buf.baseAddress, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
+            let outputHandler = Parser.ioctlOutputConverter(as: R.self)
+            return try context.async_await_pdu(dataHandler: outputHandler) {
+                (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+                smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
+            }.data
+        }
     }
     
     func fcntl(command: IOCtl.Command) throws -> Void {
