@@ -16,7 +16,7 @@ Pod::Spec.new do |s|
   #
 
   s.name         = "AMSMB2"
-  s.version      = "2.6.0"
+  s.version      = "2.7.1"
   s.summary      = "Swift framework to connect SMB2/3 shares"
 
   # This description is used to generate tags and improve search results.

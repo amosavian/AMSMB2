@@ -410,7 +410,7 @@
 					"@loader_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/libsmb2/lib";
-				MARKETING_VERSION = 2.6.0;
+				MARKETING_VERSION = 2.7.1;
 				OTHER_LDFLAGS = "";
 				"OTHER_LDFLAGS[sdk=appletvos*]" = "-lsmb2-tvos";
 				"OTHER_LDFLAGS[sdk=appletvsimulator*]" = "-lsmb2-tvos";
@@ -446,7 +446,7 @@
 					"@loader_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/libsmb2/lib";
-				MARKETING_VERSION = 2.6.0;
+				MARKETING_VERSION = 2.7.1;
 				"OTHER_LDFLAGS[sdk=appletvos*]" = "-lsmb2-tvos";
 				"OTHER_LDFLAGS[sdk=appletvsimulator*]" = "-lsmb2-tvos";
 				"OTHER_LDFLAGS[sdk=iphoneos*]" = "-lsmb2-ios";
