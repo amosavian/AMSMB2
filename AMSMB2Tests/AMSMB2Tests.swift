@@ -116,7 +116,7 @@ class AMSMB2Tests: XCTestCase {
     
     func testShareEnum() {
         let expectation = self.expectation(description: #function)
-        expectation.expectedFulfillmentCount = 3
+        expectation.expectedFulfillmentCount = 2
         
         let smb = AMSMB2(url: server, credential: credential)!
         smb.listShares { result in
@@ -144,6 +144,7 @@ class AMSMB2Tests: XCTestCase {
             }
         }
         
+        expectation.expectedFulfillmentCount += 1
         smb._swift_listShares { result in
             switch result {
             case .success(let value):

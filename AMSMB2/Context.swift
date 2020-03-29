@@ -14,13 +14,13 @@ import SMB2.Raw
 
 /// Provides synchronous operation on SMB2
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
-    var context: UnsafeMutablePointer<smb2_context>?
+    var unsafe: UnsafeMutablePointer<smb2_context>?
     private var _context_lock = NSRecursiveLock()
     var timeout: TimeInterval
     
     init(timeout: TimeInterval) throws {
         let _context = try smb2_init_context().unwrap()
-        self.context = _context
+        self.unsafe = _context
         self.timeout = timeout
     }
     
@@ -29,7 +29,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
             try? self.disconnect()
         }
         try? withThreadSafeContext { (context) in
-            self.context = nil
+            self.unsafe = nil
             smb2_destroy_context(context)
         }
     }
@@ -39,7 +39,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
         defer {
             _context_lock.unlock()
         }
-        return try handler(context.unwrap())
+        return try handler(unsafe.unwrap())
     }
 
     public var debugDescription: String {
@@ -48,7 +48,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     
     public var customMirror: Mirror {
         var c: [(label: String?, value: Any)] = []
-        if self.context != nil {
+        if self.unsafe != nil {
             c.append((label: "server", value: server!))
             c.append((label: "securityMode", value: securityMode))
             c.append((label: "authentication", value: authentication))
@@ -68,7 +68,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
 extension SMB2Context {
     var workstation: String {
         get {
-            return (context?.pointee.workstation).map(String.init(cString:)) ?? ""
+            return (unsafe?.pointee.workstation).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -79,7 +79,7 @@ extension SMB2Context {
     
     var domain: String {
         get {
-            return (context?.pointee.domain).map(String.init(cString:)) ?? ""
+            return (unsafe?.pointee.domain).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -90,7 +90,7 @@ extension SMB2Context {
     
     var user: String {
         get {
-            return (context?.pointee.user).map(String.init(cString:)) ?? ""
+            return (unsafe?.pointee.user).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -101,7 +101,7 @@ extension SMB2Context {
     
     var password: String {
         get {
-            return (context?.pointee.password).map(String.init(cString:)) ?? ""
+            return (unsafe?.pointee.password).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -112,7 +112,7 @@ extension SMB2Context {
     
     var securityMode: NegotiateSigning {
         get {
-            return (context?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
+            return (unsafe?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -123,7 +123,7 @@ extension SMB2Context {
     
     var seal: Bool {
         get {
-            return context?.pointee.seal ?? 0 != 0
+            return unsafe?.pointee.seal ?? 0 != 0
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -134,7 +134,7 @@ extension SMB2Context {
     
     var authentication: Security {
         get {
-            return context?.pointee.sec ?? SMB2_SEC_UNDEFINED
+            return unsafe?.pointee.sec ?? SMB2_SEC_UNDEFINED
         }
         set {
             try? withThreadSafeContext { (context) in
@@ -144,7 +144,7 @@ extension SMB2Context {
     }
     
     var clientGuid: UUID? {
-        guard let guid = try? smb2_get_client_guid(context.unwrap()) else {
+        guard let guid = try? smb2_get_client_guid(unsafe.unwrap()) else {
             return nil
         }
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
@@ -152,15 +152,15 @@ extension SMB2Context {
     }
     
     var server: String? {
-        return context?.pointee.server.map(String.init(cString:))
+        return unsafe?.pointee.server.map(String.init(cString:))
     }
     
     var share: String? {
-        return context?.pointee.share.map(String.init(cString:))
+        return unsafe?.pointee.share.map(String.init(cString:))
     }
     
     var version: Version {
-        return (context?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
+        return (unsafe?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
     }
     
     var isConnected: Bool {
@@ -174,27 +174,25 @@ extension SMB2Context {
     }
     
     var fileDescriptor: Int32 {
-        return (try? smb2_get_fd(context.unwrap())) ?? -1
+        return (try? smb2_get_fd(unsafe.unwrap())) ?? -1
     }
     
     var error: String? {
-        let errorStr = smb2_get_error(context)
+        let errorStr = smb2_get_error(unsafe)
         return errorStr.map(String.init(cString:))
     }
     
     func whichEvents() throws -> Int16 {
-        return try Int16(truncatingIfNeeded: smb2_which_events(context.unwrap()))
+        return try Int16(truncatingIfNeeded: smb2_which_events(unsafe.unwrap()))
     }
     
     func service(revents: Int32) throws {
-        try withThreadSafeContext { (context) in
-            let result = smb2_service(context, revents)
-            if result < 0 {
-                self.context = nil
-                smb2_destroy_context(context)
-            }
-            try POSIXError.throwIfError(result, description: error)
+        let result = smb2_service(unsafe, revents)
+        if result < 0 {
+            self.unsafe = nil
+            smb2_destroy_context(unsafe)
         }
+        try POSIXError.throwIfError(result, description: error)
     }
 }
 
@@ -228,7 +226,7 @@ extension SMB2Context {
 // MARK: DCE-RPC
 extension SMB2Context {
     func shareEnum() throws -> [SMB2Share] {
-        return try async_await(dataHandler: Parser.toSMB2Shares) { (context, cbPtr) -> Int32 in
+        return try async_await(dataHandler: [SMB2Share].init) { (context, cbPtr) -> Int32 in
             smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
         }.data
     }
@@ -236,7 +234,7 @@ extension SMB2Context {
     func shareEnumSwift() throws -> [SMB2Share]
     {
         // Connection to server service.
-        let srvsvc = try SMB2FileHandle(path: "srvsvc", on: self)
+        let srvsvc = try SMB2FileHandle.using(path: "srvsvc", on: self)
         // Bind command
         _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
         let recvBindData = try srvsvc.pread(offset: 0, length: Int(Int16.max))
@@ -268,7 +266,7 @@ extension SMB2Context {
     }
     
     func readlink(_ path: String) throws -> String {
-        return try async_await(dataHandler: Parser.toString) { (context, cbPtr) -> Int32 in
+        return try async_await(dataHandler: String.init) { (context, cbPtr) -> Int32 in
             smb2_readlink_async(context, path, SMB2Context.generic_handler, cbPtr)
         }.data
     }
@@ -352,16 +350,17 @@ extension SMB2Context {
         } catch { }
     }
     
-    typealias ContextHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ ptr: UnsafeMutableRawPointer?) throws -> R
+    typealias ContextHandler<R> = (_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws -> R
+    typealias UnsafeContextHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> R
     
     @discardableResult
-    func async_await(execute handler: ContextHandler<Int32>) throws -> Int32
+    func async_await(execute handler: UnsafeContextHandler<Int32>) throws -> Int32
     {
-        return try async_await(dataHandler: Parser.toVoid, execute: handler).result
+        return try async_await(dataHandler: { _, _ in }, execute: handler).result
     }
     
     @discardableResult
-    func async_await<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: ContextHandler<Int32>)
+    func async_await<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: UnsafeContextHandler<Int32>)
         throws -> (result: Int32, data: DataType)
     {
         return try withThreadSafeContext { (context) -> (Int32, DataType) in
@@ -370,7 +369,7 @@ extension SMB2Context {
             var dataHandlerError: Error?
             cb.dataHandler = { ptr in
                 do {
-                    resultData = try dataHandler(context, ptr)
+                    resultData = try dataHandler(self, ptr)
                 } catch {
                     dataHandlerError = error
                 }
@@ -387,13 +386,13 @@ extension SMB2Context {
     }
     
     @discardableResult
-    func async_await_pdu(execute handler: ContextHandler<UnsafeMutablePointer<smb2_pdu>?>) throws -> UInt32
+    func async_await_pdu(execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>) throws -> UInt32
     {
-        return try async_await_pdu(dataHandler: Parser.toVoid, execute: handler).status
+        return try async_await_pdu(dataHandler: { _, _ in }, execute: handler).status
     }
     
     @discardableResult
-    func async_await_pdu<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: ContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
+    func async_await_pdu<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
         throws -> (status: UInt32, data: DataType)
     {
         return try withThreadSafeContext { (context) -> (UInt32, DataType) in
@@ -402,7 +401,7 @@ extension SMB2Context {
             var dataHandlerError: Error?
             cb.dataHandler = { ptr in
                 do {
-                    resultData = try dataHandler(context, ptr)
+                    resultData = try dataHandler(self, ptr)
                 } catch {
                     dataHandlerError = error
                 }

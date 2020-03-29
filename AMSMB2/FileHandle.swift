@@ -45,16 +45,16 @@ final class SMB2FileHandle {
         try self.init(path, flags: O_RDWR | O_APPEND, on: context)
     }
     
-    convenience init(path: String,
-                     opLock: Int32 = SMB2_OPLOCK_LEVEL_NONE,
-                     impersonation: Int32 = SMB2_IMPERSONATION_IMPERSONATION,
-                     desiredAccess: Int32 = SMB2_FILE_READ_DATA | SMB2_FILE_WRITE_DATA | SMB2_FILE_APPEND_DATA | SMB2_FILE_READ_EA |
+    static func using(path: String,
+         opLock: Int32 = SMB2_OPLOCK_LEVEL_NONE,
+         impersonation: Int32 = SMB2_IMPERSONATION_IMPERSONATION,
+         desiredAccess: Int32 = SMB2_FILE_READ_DATA | SMB2_FILE_WRITE_DATA | SMB2_FILE_APPEND_DATA | SMB2_FILE_READ_EA |
         SMB2_FILE_READ_ATTRIBUTES | SMB2_FILE_WRITE_EA | SMB2_FILE_WRITE_ATTRIBUTES | SMB2_READ_CONTROL | SMB2_SYNCHRONIZE,
-                     fileAttributes: Int32 = 0,
-                     shareAccess: Int32 = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE,
-                     createDisposition: Int32 = SMB2_FILE_OPEN,
-                     createOptions: Int32 = 0, on context: SMB2Context) throws {
-        let (_, file_id) = try context.async_await_pdu(dataHandler: Parser.toFileId) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+         fileAttributes: Int32 = 0,
+         shareAccess: Int32 = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE,
+         createDisposition: Int32 = SMB2_FILE_OPEN,
+         createOptions: Int32 = 0, on context: SMB2Context) throws -> SMB2FileHandle {
+        let (_, result) = try context.async_await_pdu(dataHandler: SMB2FileHandle.init) { (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
             return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
                 var req = smb2_create_request()
                 req.requested_oplock_level = UInt8(opLock)
@@ -69,19 +69,17 @@ final class SMB2FileHandle {
             }
         }
         
-        try self.init(fileDescriptor: file_id, on: context)
+        return result
     }
     
     init(fileDescriptor: smb2_file_id, on context: SMB2Context) throws {
         self.context = context
         var fileDescriptor = fileDescriptor
-        self.handle = try context.withThreadSafeContext { context in
-            smb2_fh_from_file_id(context, &fileDescriptor)
-        }
+        self.handle = smb2_fh_from_file_id(context.unsafe, &fileDescriptor)
     }
     
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
-        let (_, handle) = try context.async_await(dataHandler: Parser.toOpaquePointer) { (context, cbPtr) -> Int32 in
+        let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) { (context, cbPtr) -> Int32 in
             smb2_open_async(context, path, flags, SMB2Context.generic_handler, cbPtr)
         }
         self.context = context
@@ -137,10 +135,8 @@ final class SMB2FileHandle {
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
         let handle = try self.handle.unwrap()
-        let result = smb2_lseek(context.context, handle, offset, whence.rawValue, nil)
-        if result < 0 {
-            try POSIXError.throwIfError(Int32(result), description: context.error)
-        }
+        let result = smb2_lseek(context.unsafe, handle, offset, whence.rawValue, nil)
+        try POSIXError.throwIfError(Int32(result), description: context.error)
         return result
     }
     
@@ -213,8 +209,7 @@ final class SMB2FileHandle {
         return try inputBuffer.withUnsafeMutableBytes { (buf) in
             var req = smb2_ioctl_request(ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buf.count),
                                          input: buf.baseAddress, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
-            let outputHandler = Parser.ioctlOutputConverter(as: R.self)
-            return try context.async_await_pdu(dataHandler: outputHandler) {
+            return try context.async_await_pdu(dataHandler: R.init) {
                 (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
                 smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
             }.data

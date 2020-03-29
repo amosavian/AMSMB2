@@ -28,9 +28,9 @@ extension Optional where Wrapped: SMB2Context {
 }
 
 extension POSIXError {
-    static func throwIfError(_ result: Int32, description: String?) throws {
+    static func throwIfError<Number: SignedInteger>(_ result: Number, description: String?) throws {
         guard result < 0 else { return }
-        let errno = -result
+        let errno = Int32(-result)
         let errorDesc = description.map { "Error code \(errno): \($0)" }
         throw POSIXError(.init(errno), description: errorDesc)
     }

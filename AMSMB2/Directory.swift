@@ -17,7 +17,7 @@ final class SMB2Directory: Collection {
     private var handle: smb2dir
     
     init(_ path: String, on context: SMB2Context) throws {
-        let (_, handle) = try context.async_await(dataHandler: Parser.toOpaquePointer) { (context, cbPtr) -> Int32 in
+        let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) { (context, cbPtr) -> Int32 in
             smb2_opendir_async(context, path, SMB2Context.generic_handler, cbPtr)
         }
         
@@ -33,7 +33,7 @@ final class SMB2Directory: Collection {
     }
     
     func makeIterator() -> AnyIterator<smb2dirent> {
-        let context = self.context.context
+        let context = self.context.unsafe
         let handle = self.handle
         smb2_rewinddir(context, handle)
         return AnyIterator {
@@ -50,7 +50,7 @@ final class SMB2Directory: Collection {
     }
     
     var count: Int {
-        let context = self.context.context
+        let context = self.context.unsafe
         let handle = self.handle
         let currentPos = smb2_telldir(context, handle)
         defer {
@@ -66,7 +66,7 @@ final class SMB2Directory: Collection {
     }
     
     subscript(position: Int) -> smb2dirent {
-        let context = self.context.context
+        let context = self.context.unsafe
         let handle = self.handle
         let currentPos = smb2_telldir(context, handle)
         smb2_seekdir(context, handle, 0)
