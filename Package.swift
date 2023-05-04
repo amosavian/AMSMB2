@@ -1,4 +1,4 @@
-// swift-tools-version:5.0
+// swift-tools-version:5.6
 import PackageDescription
 
 let package = Package(
@@ -13,19 +13,15 @@ let package = Package(
                  targets: ["AMSMB2"])
     ],
     targets: [
-        .target(
-            name: "SMB2",
-            path: "libsmb2",
-            publicHeadersPath: "libsmb2/include",
-            linkerSettings: [
-                .linkedLibrary("smb2-macos", .when(platforms: [.macOS])),
-                .linkedLibrary("smb2-ios", .when(platforms: [.iOS])),
-                .linkedLibrary("smb2-tvos", .when(platforms: [.tvOS])),
-            ]
+        .binaryTarget(
+            name: "libsmb2",
+            path: "./libsmb2.xcframework"
         ),
         .target(
             name: "AMSMB2",
-            dependencies: ["SMB2"],
+            dependencies: [
+                "libsmb2"
+            ],
             path: "AMSMB2"
         ),
         .testTarget(
