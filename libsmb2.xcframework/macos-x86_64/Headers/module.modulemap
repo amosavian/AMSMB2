@@ -1,0 +1,18 @@
+module SMB2 [extern_c] {
+    module LibSMB2 {
+        header "smb2/libsmb2.h"
+        header "smb2/smb2.h"
+        header "smb2/libsmb2-dcerpc-srvsvc.h"
+        header "smb2/smb2-errors.h"
+    }
+    
+    module SMB2Internal {
+        header "libsmb2-private.h"
+    }
+    
+    explicit module Raw {
+        header "smb2/libsmb2-raw.h"
+    }
+    
+    export SMB2
+}
