@@ -14,9 +14,6 @@ class SMB2ManagerTests: XCTestCase {
     override func setUp() {
         super.setUp()
         // Put setup code here. This method is called before the invocation of each test method in the class.
-        setenv("SMBServer", "smb://127.0.0.1/", 0)
-        setenv("SMBShare", "Files", 0)
-        setenv("SMBEncrypted", "0", 0)
     }
     
     override func tearDown() {
@@ -77,21 +74,21 @@ class SMB2ManagerTests: XCTestCase {
     
     // Change server address and testing share
     lazy var server: URL = {
-        return URL(string: ProcessInfo.processInfo.environment["SMBServer"]!)!
+        return URL(string: ProcessInfo.processInfo.environment["SMB_SERVER"]!)!
     }()
     lazy var share: String = {
-        return ProcessInfo.processInfo.environment["SMBShare"]!
+        return ProcessInfo.processInfo.environment["SMB_SHARE"]!
     }()
     lazy var credential: URLCredential? = {
-        if let user = ProcessInfo.processInfo.environment["SMBUser"],
-            let pass = ProcessInfo.processInfo.environment["SMBPassword"] {
+        if let user = ProcessInfo.processInfo.environment["SMB_USER"],
+            let pass = ProcessInfo.processInfo.environment["SMB_PASSWORD"] {
             return URLCredential(user: user, password: pass, persistence: .forSession)
         } else {
             return nil
         }
     }()
     lazy var encrypted: Bool = {
-        return ProcessInfo.processInfo.environment["SMBEncrypted"] == "1"
+        return ProcessInfo.processInfo.environment["SMB_ENCRYPTED"] == "1"
     }()
     
     func testConnectDisconnect() {
