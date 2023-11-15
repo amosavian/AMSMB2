@@ -19,7 +19,7 @@ extension Optional {
 }
 
 extension Optional where Wrapped: SMB2Context {
-     func unwrap() throws -> SMB2Context {
+    func unwrap() throws -> SMB2Context {
         guard let self = self, self.fileDescriptor >= 0 else {
             throw POSIXError(.ENOTCONN, description: "SMB2 server not connected.")
         }
@@ -34,7 +34,7 @@ extension POSIXError {
         let errorDesc = description.map { "Error code \(errno): \($0)" }
         throw POSIXError(.init(errno), description: errorDesc)
     }
-    
+
     static func throwIfErrorStatus(_ status: UInt32) throws {
         if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(status)
@@ -42,9 +42,10 @@ extension POSIXError {
             try POSIXError.throwIfError(-errorNo, description: description)
         }
     }
-    
+
     init(_ code: POSIXError.Code, description: String?) {
-        let userInfo: [String: Any] = description.map({ [NSLocalizedFailureReasonErrorKey: $0] }) ?? [:]
+        let userInfo: [String: Any] =
+            description.map({ [NSLocalizedFailureReasonErrorKey: $0] }) ?? [:]
         self = POSIXError(code, userInfo: userInfo)
     }
 }
@@ -59,43 +60,43 @@ extension Dictionary where Key == URLResourceKey, Value == Any {
     public var name: String? {
         return self[.nameKey] as? String
     }
-    
+
     public var path: String? {
         return self[.pathKey] as? String
     }
-    
+
     public var fileResourceType: URLFileResourceType? {
         return self[.fileResourceTypeKey] as? URLFileResourceType
     }
-    
+
     public var isDirectory: Bool {
         return self[.isDirectoryKey] as? Bool ?? false
     }
-    
+
     public var isRegularFile: Bool {
         return self[.isRegularFileKey] as? Bool ?? false
     }
-    
+
     public var isSymbolicLink: Bool {
         return self[.isSymbolicLinkKey] as? Bool ?? false
     }
-    
+
     public var fileSize: Int64? {
         return self[.fileSizeKey] as? Int64
     }
-    
+
     public var attributeModificationDate: Date? {
         return self[.attributeModificationDateKey] as? Date
     }
-    
+
     public var contentModificationDate: Date? {
         return self[.contentModificationDateKey] as? Date
     }
-    
+
     public var contentAccessDate: Date? {
         return self[.contentAccessDateKey] as? Date
     }
-    
+
     public var creationDate: Date? {
         return self[.creationDateKey] as? Date
     }
@@ -110,12 +111,14 @@ extension Array where Element == [URLResourceKey: Any] {
             return firstPath.localizedStandardCompare(secPath) == comparison
         }
     }
-    
+
     var overallSize: Int64 {
-        return reduce(0, { (result, value) -> Int64 in
-            guard value.isRegularFile else { return result }
-            return result + (value.fileSize ?? 0)
-        })
+        return reduce(
+            0,
+            { (result, value) -> Int64 in
+                guard value.isRegularFile else { return result }
+                return result + (value.fileSize ?? 0)
+            })
     }
 }
 
@@ -133,30 +136,34 @@ extension Array where Element == SMB2Share {
 
 extension Date {
     init(_ timespec: timespec) {
-        self.init(timeIntervalSince1970: TimeInterval(timespec.tv_sec) + TimeInterval(timespec.tv_nsec / 1000) / TimeInterval(USEC_PER_SEC))
+        self.init(
+            timeIntervalSince1970: TimeInterval(timespec.tv_sec) + TimeInterval(
+                timespec.tv_nsec / 1000) / TimeInterval(USEC_PER_SEC))
     }
 }
 
-extension Data {    
+extension Data {
     mutating func append<T: FixedWidthInteger>(value: T) {
         var value = value.littleEndian
         let bytes = Swift.withUnsafeBytes(of: &value) { Array($0) }
         append(contentsOf: bytes)
     }
-    
+
     mutating func append(value uuid: UUID) {
         // Microsoft GUID is mixed-endian
-        append(contentsOf: [uuid.uuid.3,  uuid.uuid.2,  uuid.uuid.1,  uuid.uuid.0,
-                            uuid.uuid.5,  uuid.uuid.4,  uuid.uuid.7,  uuid.uuid.6,
-                            uuid.uuid.8,  uuid.uuid.9,  uuid.uuid.10, uuid.uuid.11,
-                            uuid.uuid.12, uuid.uuid.13, uuid.uuid.14, uuid.uuid.15])
+        append(contentsOf: [
+            uuid.uuid.3, uuid.uuid.2, uuid.uuid.1, uuid.uuid.0,
+            uuid.uuid.5, uuid.uuid.4, uuid.uuid.7, uuid.uuid.6,
+            uuid.uuid.8, uuid.uuid.9, uuid.uuid.10, uuid.uuid.11,
+            uuid.uuid.12, uuid.uuid.13, uuid.uuid.14, uuid.uuid.15,
+        ])
     }
-    
+
     func scanValue<T: FixedWidthInteger>(offset: Int, as: T.Type) -> T? {
         guard count >= offset + MemoryLayout<T>.size else { return nil }
         return T(littleEndian: withUnsafeBytes { $0.load(fromByteOffset: offset, as: T.self) })
     }
-    
+
     func scanInt<T: FixedWidthInteger>(offset: Int, as: T.Type) -> Int? {
         return scanValue(offset: offset, as: T.self).map(Int.init)
     }

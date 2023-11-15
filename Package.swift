@@ -17,6 +17,9 @@ let package = Package(
             targets: ["AMSMB2"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-format.git", "509.0.0"..<"600.0.0"),
+    ],
     targets: [
         .target(
             name: "libsmb2",

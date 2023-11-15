@@ -14,13 +14,13 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     var unsafe: UnsafeMutablePointer<smb2_context>?
     private var _context_lock = NSRecursiveLock()
     var timeout: TimeInterval
-    
+
     init(timeout: TimeInterval) throws {
         let _context = try smb2_init_context().unwrap()
         self.unsafe = _context
         self.timeout = timeout
     }
-    
+
     deinit {
         if isConnected {
             try? self.disconnect()
@@ -30,8 +30,10 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
             smb2_destroy_context(context)
         }
     }
-    
-    func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R) throws -> R {
+
+    func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<smb2_context>) throws -> R)
+        throws -> R
+    {
         _context_lock.lock()
         defer {
             _context_lock.unlock()
@@ -42,7 +44,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     public var debugDescription: String {
         return String(reflecting: self)
     }
-    
+
     public var customMirror: Mirror {
         var c: [(label: String?, value: Any)] = []
         if self.unsafe != nil {
@@ -55,7 +57,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
         }
         c.append((label: "isConnected", value: isConnected))
         c.append((label: "timeout", value: timeout))
-        
+
         let m = Mirror(self, children: c, displayStyle: .class)
         return m
     }
@@ -73,7 +75,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var domain: String {
         get {
             return (unsafe?.pointee.domain).map(String.init(cString:)) ?? ""
@@ -84,7 +86,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var user: String {
         get {
             return (unsafe?.pointee.user).map(String.init(cString:)) ?? ""
@@ -95,7 +97,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var password: String {
         get {
             return (unsafe?.pointee.password).map(String.init(cString:)) ?? ""
@@ -106,7 +108,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var securityMode: NegotiateSigning {
         get {
             return (unsafe?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
@@ -117,7 +119,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var seal: Bool {
         get {
             return unsafe?.pointee.seal ?? 0 != 0
@@ -128,7 +130,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var authentication: Security {
         get {
             return unsafe?.pointee.sec ?? SMB2_SEC_UNDEFINED
@@ -139,7 +141,7 @@ extension SMB2Context {
             }
         }
     }
-    
+
     var clientGuid: UUID? {
         guard let guid = try? smb2_get_client_guid(unsafe.unwrap()) else {
             return nil
@@ -147,36 +149,36 @@ extension SMB2Context {
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
         return UUID(uuid: uuid)
     }
-    
+
     var server: String? {
         return unsafe?.pointee.server.map(String.init(cString:))
     }
-    
+
     var share: String? {
         return unsafe?.pointee.share.map(String.init(cString:))
     }
-    
+
     var version: Version {
         return (unsafe?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
     }
-    
+
     var isConnected: Bool {
         fileDescriptor != -1
     }
-    
+
     var fileDescriptor: Int32 {
         (try? smb2_get_fd(unsafe.unwrap())) ?? -1
     }
-    
+
     var error: String? {
         let errorStr = smb2_get_error(unsafe)
         return errorStr.map(String.init(cString:))
     }
-    
+
     func whichEvents() throws -> Int16 {
         try Int16(truncatingIfNeeded: smb2_which_events(unsafe.unwrap()))
     }
-    
+
     func service(revents: Int32) throws {
         let result = smb2_service(unsafe, revents)
         if result < 0 {
@@ -191,10 +193,11 @@ extension SMB2Context {
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_connect_share_async(context, server, share, user, SMB2Context.generic_handler, cbPtr)
+            smb2_connect_share_async(
+                context, server, share, user, SMB2Context.generic_handler, cbPtr)
         }
     }
-    
+
     func disconnect() throws {
         try async_await { (context, cbPtr) -> Int32 in
             smb2_free_all_dirs(context)
@@ -202,8 +205,8 @@ extension SMB2Context {
             return smb2_disconnect_share_async(context, SMB2Context.generic_handler, cbPtr)
         }
     }
-    
-    func echo() throws -> Void {
+
+    func echo() throws {
         if !isConnected {
             throw POSIXError(.ENOTCONN)
         }
@@ -220,16 +223,15 @@ extension SMB2Context {
             smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
         }.data
     }
-    
-    func shareEnumSwift() throws -> [SMB2Share]
-    {
+
+    func shareEnumSwift() throws -> [SMB2Share] {
         // Connection to server service.
         let srvsvc = try SMB2FileHandle.using(path: "srvsvc", on: self)
         // Bind command
         _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
         let recvBindData = try srvsvc.pread(offset: 0, length: Int(Int16.max))
         try MSRPC.validateBindData(recvBindData)
-        
+
         // NetShareEnum reqeust, Level 1 mean we need share name and remark.
         _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: server!), offset: 0)
         let recvData = try srvsvc.pread(offset: 0)
@@ -246,7 +248,7 @@ extension SMB2Context {
         }
         return st
     }
-    
+
     func statvfs(_ path: String) throws -> smb2_statvfs {
         var st = smb2_statvfs()
         try async_await { (context, cbPtr) -> Int32 in
@@ -254,7 +256,7 @@ extension SMB2Context {
         }
         return st
     }
-    
+
     func readlink(_ path: String) throws -> String {
         return try async_await(dataHandler: String.init) { (context, cbPtr) -> Int32 in
             smb2_readlink_async(context, path, SMB2Context.generic_handler, cbPtr)
@@ -269,25 +271,25 @@ extension SMB2Context {
             smb2_mkdir_async(context, path, SMB2Context.generic_handler, cbPtr)
         }
     }
-    
+
     func rmdir(_ path: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
             smb2_rmdir_async(context, path, SMB2Context.generic_handler, cbPtr)
         }
     }
-    
+
     func unlink(_ path: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
             smb2_unlink_async(context, path, SMB2Context.generic_handler, cbPtr)
         }
     }
-    
+
     func rename(_ path: String, to newPath: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
             smb2_rename_async(context, path, newPath, SMB2Context.generic_handler, cbPtr)
         }
     }
-    
+
     func truncate(_ path: String, toLength: UInt64) throws {
         try async_await { (context, cbPtr) -> Int32 in
             smb2_truncate_async(context, path, toLength, SMB2Context.generic_handler, cbPtr)
@@ -305,29 +307,29 @@ extension SMB2Context {
             return UInt32(bitPattern: result)
         }
     }
-    
+
     private func wait_for_reply(_ cb: inout CBData) throws {
         let startDate = Date()
         while !cb.isFinished {
             var pfd = pollfd()
             pfd.fd = fileDescriptor
             pfd.events = try whichEvents()
-            
+
             if pfd.fd < 0 || (poll(&pfd, 1, 1000) < 0 && errno != EAGAIN) {
                 throw POSIXError(.init(errno), description: error)
             }
-            
+
             if pfd.revents == 0 {
                 if timeout > 0, Date().timeIntervalSince(startDate) > timeout {
                     throw POSIXError(.ETIMEDOUT)
                 }
                 continue
             }
-            
+
             try service(revents: Int32(pfd.revents))
         }
     }
-    
+
     static let generic_handler: smb2_command_cb = { smb2, status, command_data, cbdata in
         do {
             guard try smb2.unwrap().pointee.fd >= 0 else { return }
@@ -337,20 +339,25 @@ extension SMB2Context {
             }
             cbdata.dataHandler?(command_data)
             cbdata.isFinished = true
-        } catch { }
+        } catch {}
     }
-    
-    typealias ContextHandler<R> = (_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws -> R
-    typealias UnsafeContextHandler<R> = (_ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> R
-    
+
+    typealias ContextHandler<R> = (_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?)
+        throws -> R
+    typealias UnsafeContextHandler<R> = (
+        _ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?
+    ) throws -> R
+
     @discardableResult
-    func async_await(execute handler: UnsafeContextHandler<Int32>) throws -> Int32
-    {
+    func async_await(execute handler: UnsafeContextHandler<Int32>) throws -> Int32 {
         return try async_await(dataHandler: { _, _ in }, execute: handler).result
     }
-    
+
     @discardableResult
-    func async_await<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: UnsafeContextHandler<Int32>)
+    func async_await<DataType>(
+        dataHandler: @escaping ContextHandler<DataType>,
+        execute handler: UnsafeContextHandler<Int32>
+    )
         throws -> (result: Int32, data: DataType)
     {
         return try withThreadSafeContext { (context) -> (Int32, DataType) in
@@ -370,21 +377,25 @@ extension SMB2Context {
             try POSIXError.throwIfError(result, description: error)
             try wait_for_reply(&cb)
             let cbResult = cb.result
-            
+
             try POSIXError.throwIfError(cbResult, description: error)
             if let error = dataHandlerError { throw error }
             return try (cbResult, resultData.unwrap())
         }
     }
-    
+
     @discardableResult
-    func async_await_pdu(execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>) throws -> UInt32
+    func async_await_pdu(execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
+        throws -> UInt32
     {
         return try async_await_pdu(dataHandler: { _, _ in }, execute: handler).status
     }
-    
+
     @discardableResult
-    func async_await_pdu<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
+    func async_await_pdu<DataType>(
+        dataHandler: @escaping ContextHandler<DataType>,
+        execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>
+    )
         throws -> (status: UInt32, data: DataType)
     {
         return try withThreadSafeContext { (context) -> (UInt32, DataType) in
@@ -404,7 +415,7 @@ extension SMB2Context {
             smb2_queue_pdu(context, pdu)
             try wait_for_reply(&cb)
             let status = cb.status
-            
+
             try POSIXError.throwIfErrorStatus(status)
             if let error = dataHandlerError { throw error }
             return try (status, resultData.unwrap())
@@ -415,11 +426,11 @@ extension SMB2Context {
 extension SMB2Context {
     struct NegotiateSigning: OptionSet {
         var rawValue: UInt16
-        
+
         static let enabled = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
         static let required = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
-    
+
     typealias Version = smb2_negotiate_version
     typealias Security = smb2_sec
 }
@@ -433,7 +444,7 @@ extension smb2_negotiate_version {
     static let v3_00 = SMB2_VERSION_0300
     static let v3_02 = SMB2_VERSION_0302
     static let v3_11 = SMB2_VERSION_0311
-    
+
     static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
         if lhs.rawValue == rhs.rawValue { return true }
         switch (lhs, rhs) {
@@ -453,7 +464,7 @@ extension smb2_sec {
     static let undefined = SMB2_SEC_UNDEFINED
     static let ntlmSsp = SMB2_SEC_NTLMSSP
     static let kerberos5 = SMB2_SEC_KRB5
-    
+
     static func == (lhs: smb2_sec, rhs: smb2_sec) -> Bool {
         return lhs.rawValue == rhs.rawValue
     }
@@ -472,17 +483,17 @@ struct ShareProperties: RawRepresentable {
         case device
         case ipc
     }
-    
+
     let rawValue: UInt32
-    
+
     var type: ShareType {
-        return ShareType(rawValue: rawValue & 0x0fffffff)!
+        return ShareType(rawValue: rawValue & 0x0fff_ffff)!
     }
-    
+
     var isTemporary: Bool {
         return rawValue & UInt32(bitPattern: SHARE_TYPE_TEMPORARY) != 0
     }
-    
+
     var isHidden: Bool {
         return rawValue & SHARE_TYPE_HIDDEN != 0
     }
