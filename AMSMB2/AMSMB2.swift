@@ -9,9 +9,12 @@
 import Foundation
 import SMB2
 
+@available(*, deprecated, renamed: "SMB2Manager")
+public typealias AMSMB2 = SMB2Manager
+
 /// Implements SMB2 File operations.
-@objc @objcMembers
-public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable {
+@objc(AMSMB2Manager)
+public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable {
     
     public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
     public typealias ReadProgressHandler = ((_ bytes: Int64, _ total: Int64) -> Bool)?
@@ -188,7 +191,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     }
     
     open func copy(with zone: NSZone? = nil) -> Any {
-        let new = AMSMB2(url: url, domain: _domain, credential: URLCredential(user: _user, password: _password, persistence: .forSession))!
+        let new = SMB2Manager(url: url, domain: _domain, credential: URLCredential(user: _user, password: _password, persistence: .forSession))!
         new._workstation = _workstation
         new.timeout = timeout
         return new
@@ -721,7 +724,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     }
 }
 
-extension AMSMB2 {
+extension SMB2Manager {
     private func queue(_ closure: @escaping () -> Void) {
         self.operationLock.lock()
         self.operationCount += 1
@@ -832,7 +835,7 @@ extension AMSMB2 {
     }
 }
 
-extension AMSMB2 {
+extension SMB2Manager {
     fileprivate func listDirectory(context: SMB2Context, path: String, recursive: Bool) throws -> [[URLResourceKey: Any]] {
         var contents = [[URLResourceKey: Any]]()
         let dir = try SMB2Directory(path.canonical, on: context)

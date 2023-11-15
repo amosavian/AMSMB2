@@ -9,46 +9,24 @@ This is small Swift library for iOS, macOS and tvOS which wraps [libsmb2](https:
 
 [![Build Status][travis-image]][travis-url]
 [![Release version][release-image]][release-url]
-[![CocoaPods version][pod-release-image]][cocoapods]
-[![Carthage compatible][carthage-image]](https://github.com/Carthage/Carthage)
 
-## Install
+## Getting Started
 
-### Cocoapods / Carthage
+To use AMSMB2, add the following dependency to your Package.swift:
 
-Add this line to your pods file:
-
-```ruby
-pod "AMSMB2"
+```swift
+dependencies: [
+    .package(url: "https://github.com/amosavian/AMSMB2", .upToNextMinor(from: "3.0.0"))
+]
 ```
 
-Or add this to Cartfile:
+You can then add the specific product dependency to your target:
 
+```swift
+dependencies: [
+    .product(name: "AMSMB2", package: "AMSMB2"),
+]
 ```
-github "amosavian/AMSMB2"
-```
-
-### Manually
-
-To have latest updates with ease, use this command on terminal to get a clone:
-
-```bash
-git clone https://github.com/amosavian/AMSMB2
-```
-
-You can update your library using this command in AMSMB2 folder:
-
-```bash
-git pull
-```
-
-if you have a git based project, use this command in your project's directory to add this project as a submodule to your project:
-
-```bash
-git submodule add https://github.com/amosavian/AMSMB2
-```
-
-Then drop `AMSMB2.xcodeproj` to you Xcode workspace and add the framework to your Embeded Binaries in target.
 
 ## Usage
 
@@ -141,7 +119,6 @@ While source code shipped with project is MIT licensed, but it has static link t
 
 You **must** link this library dynamically to your app if you intend to distribute your app on App Store.
 
-[cocoapods]: https://cocoapods.org/pods/AMSMB2
 [swift-image]: https://img.shields.io/badge/swift-5.0-orange.svg
 [swift-url]: https://swift.org/
 [platform-image]: https://img.shields.io/cocoapods/p/AMSMB2.svg
@@ -151,7 +128,3 @@ You **must** link this library dynamically to your app if you intend to distribu
 [travis-url]: https://travis-ci.com/amosavian/AMSMB2
 [release-url]: https://github.com/amosavian/AMSMB2/releases
 [release-image]: https://img.shields.io/github/release/amosavian/AMSMB2.svg
-[pod-release-image]: https://img.shields.io/cocoapods/v/AMSMB2.svg
-[carthage-image]: https://img.shields.io/badge/Carthage-compatible-4BC51D.svg
-[cocoapods-downloads]: https://img.shields.io/cocoapods/dt/AMSMB2.svg
-[cocoapods-apps]: https://img.shields.io/cocoapods/at/AMSMB2.svg

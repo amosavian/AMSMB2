@@ -8,7 +8,7 @@
 
 import Foundation
 
-extension AMSMB2 {
+extension SMB2Manager {
     /**
      Connects to a share.
      
@@ -215,7 +215,7 @@ extension AMSMB2 {
     }
 }
 
-extension AMSMB2 {
+extension SMB2Manager {
     fileprivate func convert<T>(_ resultCompletion: @escaping (T?, Error?) -> Void) -> ((Result<T, Error>) -> Void) {
         return { result in
             switch result {

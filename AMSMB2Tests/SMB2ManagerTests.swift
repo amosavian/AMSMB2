@@ -1,6 +1,6 @@
 //
-//  AMSMB2Tests.swift
-//  AMSMB2Tests
+//  SMB2ManagerTests.swift
+//  SMB2ManagerTests
 //
 //  Created by Amir Abbas on 2/27/1397 AP.
 //  Copyright © 1397 AP Mousavian. All rights reserved.
@@ -9,12 +9,12 @@
 import XCTest
 @testable import AMSMB2
 
-class AMSMB2Tests: XCTestCase {
+class SMB2ManagerTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
         // Put setup code here. This method is called before the invocation of each test method in the class.
-        setenv("SMBServer", "smb://192.168.1.5/", 0)
+        setenv("SMBServer", "smb://127.0.0.1/", 0)
         setenv("SMBShare", "Files", 0)
         setenv("SMBEncrypted", "0", 0)
     }
@@ -28,7 +28,7 @@ class AMSMB2Tests: XCTestCase {
     func testNSCodable() {
         let url = URL(string: "smb://192.168.1.1/share")!
         let credential = URLCredential(user: "user", password: "password", persistence: .forSession)
-        let smb = AMSMB2(url: url, credential: credential)
+        let smb = SMB2Manager(url: url, credential: credential)
         XCTAssertNotNil(smb)
         let archiver = NSKeyedArchiver(requiringSecureCoding: true)
         archiver.encode(smb, forKey: NSKeyedArchiveRootObjectKey)
@@ -39,7 +39,7 @@ class AMSMB2Tests: XCTestCase {
         let unarchiver = try! NSKeyedUnarchiver(forReadingFrom: data)
         unarchiver.decodingFailurePolicy = .setErrorAndReturn
         unarchiver.requiresSecureCoding = true
-        let decodedSMB = unarchiver.decodeObject(of: AMSMB2.self, forKey: NSKeyedArchiveRootObjectKey)
+        let decodedSMB = unarchiver.decodeObject(of: SMB2Manager.self, forKey: NSKeyedArchiveRootObjectKey)
         XCTAssertNotNil(decodedSMB)
         XCTAssertEqual(smb?.url, decodedSMB?.url)
         XCTAssertEqual(smb?.timeout, decodedSMB?.timeout)
@@ -49,19 +49,19 @@ class AMSMB2Tests: XCTestCase {
     func testCoding() {
         let url = URL(string: "smb://192.168.1.1/share")!
         let credential = URLCredential(user: "user", password: "password", persistence: .forSession)
-        let smb = AMSMB2(url: url, domain: "", credential: credential)
+        let smb = SMB2Manager(url: url, domain: "", credential: credential)
         XCTAssertNotNil(smb)
         do {
             let encoder = JSONEncoder()
             let json = try encoder.encode(smb!)
             XCTAssertFalse(json.isEmpty)
             let decoder = JSONDecoder()
-            let decodedSMB = try decoder.decode(AMSMB2.self, from: json)
+            let decodedSMB = try decoder.decode(SMB2Manager.self, from: json)
             XCTAssertEqual(smb!.url, decodedSMB.url)
             XCTAssertEqual(smb!.timeout, decodedSMB.timeout)
             
             let errorJson = String(data: json, encoding: .utf8)!.replacingOccurrences(of: "smb:", with: "smb2:").data(using: .utf8)!
-            XCTAssertThrowsError(try decoder.decode(AMSMB2.self, from: errorJson))
+            XCTAssertThrowsError(try decoder.decode(SMB2Manager.self, from: errorJson))
         } catch {
             XCTAssert(false, error.localizedDescription)
         }
@@ -70,8 +70,8 @@ class AMSMB2Tests: XCTestCase {
     func testNSCopy() {
         let url = URL(string: "smb://192.168.1.1/share")!
         let credential = URLCredential(user: "user", password: "password", persistence: .forSession)
-        let smb = AMSMB2(url: url, domain: "", credential: credential)!
-        let smbCopy = smb.copy() as! AMSMB2
+        let smb = SMB2Manager(url: url, domain: "", credential: credential)!
+        let smbCopy = smb.copy() as! SMB2Manager
         XCTAssertEqual(smb.url, smbCopy.url)
     }
     
@@ -97,7 +97,7 @@ class AMSMB2Tests: XCTestCase {
     func testConnectDisconnect() {
         let expectation = self.expectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
@@ -118,7 +118,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         smb.listShares { result in
             var resultCount = 0
             switch result {
@@ -162,7 +162,7 @@ class AMSMB2Tests: XCTestCase {
     func testFileSystemAttributes() {
         let expectation = self.expectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
@@ -186,7 +186,7 @@ class AMSMB2Tests: XCTestCase {
     func testListing() {
         let expectation = self.expectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
@@ -213,7 +213,7 @@ class AMSMB2Tests: XCTestCase {
     func testSymlink() {
         let expectation = self.expectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
             
@@ -247,7 +247,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 5
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         smb.timeout = 20
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
@@ -308,7 +308,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: function)
         expectation.expectedFulfillmentCount = 3
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         print(#function, "test size:", size)
         let data = randomData(size: size)
         let baseMemUsage = report_memory()
@@ -378,7 +378,7 @@ class AMSMB2Tests: XCTestCase {
         
         let file = "chunkedreadtest.dat"
         let size: Int = random(max: 0xF00000)
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         print(#function, "test size:", size)
         let data = randomData(size: size)
         
@@ -413,7 +413,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 3
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         let size: Int = random(max: 0xF00000)
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
@@ -467,7 +467,7 @@ class AMSMB2Tests: XCTestCase {
         expectation.expectedFulfillmentCount = 2
         
         let file = "uploadtest.dat"
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         let size: Int = random(max: 0xF00000)
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
@@ -514,7 +514,7 @@ class AMSMB2Tests: XCTestCase {
         let expectation = self.expectation(description: #function)
         expectation.expectedFulfillmentCount = 2
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         let size: Int = random(max: 0xF00000)
         let url = dummyFile(size: size)
         let file = "tructest.dat"
@@ -559,7 +559,7 @@ class AMSMB2Tests: XCTestCase {
         expectation.expectedFulfillmentCount = 2
         
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         let size: Int = random(max: 0x400000)
         print(#function, "test size:", size)
         let data = randomData(size: size)
@@ -602,7 +602,7 @@ class AMSMB2Tests: XCTestCase {
     func testMove() {
         let expectation = self.expectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         addTeardownBlock {
             smb.removeFile(atPath: "moveTest", completionHandler: nil)
             smb.removeFile(atPath: "moveTestDest", completionHandler: nil)
@@ -628,7 +628,7 @@ class AMSMB2Tests: XCTestCase {
         
         let root = "recCopyTest"
         let rootCopy = "recCopyTest Copy"
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         
         addTeardownBlock {
             smb.removeDirectory(atPath: root, recursive: true, completionHandler: nil)
@@ -672,7 +672,7 @@ class AMSMB2Tests: XCTestCase {
     func testRemove() {
         let expectation = self.expectation(description: #function)
         
-        let smb = AMSMB2(url: server, credential: credential)!
+        let smb = SMB2Manager(url: server, credential: credential)!
         
         smb.connectShare(name: share, encrypted: encrypted) { (error) in
             XCTAssertNil(error)
@@ -699,7 +699,7 @@ class AMSMB2Tests: XCTestCase {
     }
 }
 
-extension AMSMB2Tests {
+extension SMB2ManagerTests {
     fileprivate func random<T: FixedWidthInteger>(max: T) -> T {
         #if swift(>=4.2)
         return T.random(in: 0...max)

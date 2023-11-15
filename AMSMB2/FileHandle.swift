@@ -8,7 +8,6 @@
 
 import Foundation
 import SMB2
-import SMB2.Raw
 
 typealias smb2fh = OpaquePointer
 

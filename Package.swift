@@ -4,18 +4,50 @@ import PackageDescription
 let package = Package(
     name: "AMSMB2",
     platforms: [
-        .iOS(.v9),
-        .macOS(.v10_11),
-        .tvOS(.v9),
+        .iOS(.v12),
+        .macOS(.v10_13),
+        .macCatalyst(.v13),
+        .tvOS(.v12),
+        .watchOS(.v4),
     ],
     products: [
-        .library(name: "AMSMB2",
-                 targets: ["AMSMB2"])
+        .library(
+            name: "AMSMB2",
+            type: .dynamic,
+            targets: ["AMSMB2"]
+        )
     ],
     targets: [
-        .binaryTarget(
+        .target(
             name: "libsmb2",
-            path: "./libsmb2.xcframework"
+            path: "Dependencies/libsmb2",
+            exclude: [
+                "lib/CMakeLists.txt",
+                "lib/libsmb2.syms",
+                "lib/Makefile.am",
+                "lib/Makefile.DC_KOS",
+                "lib/Makefile.PS2_EE",
+                "lib/Makefile.PS2_IOP",
+                "lib/Makefile.PS3_PPU",
+                "lib/Makefile.PS4",
+            ],
+            sources: [
+                "lib",
+            ],
+            publicHeadersPath: ".",
+            cSettings: [
+                .headerSearchPath("include"),
+                .headerSearchPath("include/apple"),
+                .headerSearchPath("include/smb2"),
+                .headerSearchPath("lib"),
+                .define("_U_", to: "__attribute__((unused))"),
+                .define("HAVE_CONFIG_H", to: "1"),
+                .unsafeFlags([
+                    "-Wno-everything",
+                ]),
+            ],
+            linkerSettings: [
+            ]
         ),
         .target(
             name: "AMSMB2",

@@ -8,9 +8,6 @@
 
 import Foundation
 import SMB2
-#if !SWIFT_PACKAGE
-import SMB2.Raw
-#endif
 
 /// Provides synchronous operation on SMB2
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
@@ -164,17 +161,11 @@ extension SMB2Context {
     }
     
     var isConnected: Bool {
-        do {
-            return try withThreadSafeContext { (context) -> Bool in
-                context.pointee.is_connected != 0
-            }
-        } catch {
-            return false
-        }
+        fileDescriptor != -1
     }
     
     var fileDescriptor: Int32 {
-        return (try? smb2_get_fd(unsafe.unwrap())) ?? -1
+        (try? smb2_get_fd(unsafe.unwrap())) ?? -1
     }
     
     var error: String? {
@@ -183,7 +174,7 @@ extension SMB2Context {
     }
     
     func whichEvents() throws -> Int16 {
-        return try Int16(truncatingIfNeeded: smb2_which_events(unsafe.unwrap()))
+        try Int16(truncatingIfNeeded: smb2_which_events(unsafe.unwrap()))
     }
     
     func service(revents: Int32) throws {
@@ -219,7 +210,6 @@ extension SMB2Context {
         try async_await { (context, cbPtr) -> Int32 in
             smb2_echo_async(context, SMB2Context.generic_handler, cbPtr)
         }
-        return
     }
 }
 
@@ -374,7 +364,9 @@ extension SMB2Context {
                     dataHandlerError = error
                 }
             }
-            let result = try handler(context, &cb)
+            let result = try withUnsafeMutablePointer(to: &cb) { cb in
+                try handler(context, cb)
+            }
             try POSIXError.throwIfError(result, description: error)
             try wait_for_reply(&cb)
             let cbResult = cb.result
@@ -406,7 +398,9 @@ extension SMB2Context {
                     dataHandlerError = error
                 }
             }
-            let pdu = try handler(context, &cb).unwrap()
+            let pdu = try withUnsafeMutablePointer(to: &cb) { cb in
+                try handler(context, cb).unwrap()
+            }
             smb2_queue_pdu(context, pdu)
             try wait_for_reply(&cb)
             let status = cb.status
@@ -438,6 +432,7 @@ extension smb2_negotiate_version {
     static let v2_10 = SMB2_VERSION_0210
     static let v3_00 = SMB2_VERSION_0300
     static let v3_02 = SMB2_VERSION_0302
+    static let v3_11 = SMB2_VERSION_0311
     
     static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
         if lhs.rawValue == rhs.rawValue { return true }

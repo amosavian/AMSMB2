@@ -8,6 +8,7 @@
 
 import Foundation
 import SMB2
+import SMB2.Raw
 
 extension String {
     init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
