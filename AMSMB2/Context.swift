@@ -228,14 +228,14 @@ extension SMB2Context {
         // Connection to server service.
         let srvsvc = try SMB2FileHandle.using(path: "srvsvc", on: self)
         // Bind command
-        _ = try srvsvc.write(data: MSRPC.srvsvcBindData())
+        _ = try srvsvc.write(data: MSRPC.SrvsvcBindData())
         let recvBindData = try srvsvc.pread(offset: 0, length: Int(Int16.max))
         try MSRPC.validateBindData(recvBindData)
 
         // NetShareEnum reqeust, Level 1 mean we need share name and remark.
-        _ = try srvsvc.pwrite(data: MSRPC.requestNetShareEnumAll(server: server!), offset: 0)
+        _ = try srvsvc.pwrite(data: MSRPC.NetShareEnumAllRequest(serverName: server!), offset: 0)
         let recvData = try srvsvc.pread(offset: 0)
-        return try MSRPC.parseNetShareEnumAllLevel1(data: recvData)
+        return try MSRPC.NetShareEnumAllLevel1(data: recvData).shares
     }
 }
 
@@ -244,7 +244,7 @@ extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
         var st = smb2_stat_64()
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_stat_async(context, path, &st, SMB2Context.generic_handler, cbPtr)
+            smb2_stat_async(context, path.canonical, &st, SMB2Context.generic_handler, cbPtr)
         }
         return st
     }
@@ -252,14 +252,14 @@ extension SMB2Context {
     func statvfs(_ path: String) throws -> smb2_statvfs {
         var st = smb2_statvfs()
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_statvfs_async(context, path, &st, SMB2Context.generic_handler, cbPtr)
+            smb2_statvfs_async(context, path.canonical, &st, SMB2Context.generic_handler, cbPtr)
         }
         return st
     }
 
     func readlink(_ path: String) throws -> String {
         return try async_await(dataHandler: String.init) { (context, cbPtr) -> Int32 in
-            smb2_readlink_async(context, path, SMB2Context.generic_handler, cbPtr)
+            smb2_readlink_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }.data
     }
 }
@@ -268,31 +268,33 @@ extension SMB2Context {
 extension SMB2Context {
     func mkdir(_ path: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_mkdir_async(context, path, SMB2Context.generic_handler, cbPtr)
+            smb2_mkdir_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func rmdir(_ path: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_rmdir_async(context, path, SMB2Context.generic_handler, cbPtr)
+            smb2_rmdir_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func unlink(_ path: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_unlink_async(context, path, SMB2Context.generic_handler, cbPtr)
+            smb2_unlink_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func rename(_ path: String, to newPath: String) throws {
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_rename_async(context, path, newPath, SMB2Context.generic_handler, cbPtr)
+            smb2_rename_async(
+                context, path.canonical, newPath.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func truncate(_ path: String, toLength: UInt64) throws {
         try async_await { (context, cbPtr) -> Int32 in
-            smb2_truncate_async(context, path, toLength, SMB2Context.generic_handler, cbPtr)
+            smb2_truncate_async(
+                context, path.canonical, toLength, SMB2Context.generic_handler, cbPtr)
         }
     }
 }

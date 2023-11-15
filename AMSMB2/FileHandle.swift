@@ -84,7 +84,7 @@ final class SMB2FileHandle {
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
         let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) {
             (context, cbPtr) -> Int32 in
-            smb2_open_async(context, path, flags, SMB2Context.generic_handler, cbPtr)
+            smb2_open_async(context, path.canonical, flags, SMB2Context.generic_handler, cbPtr)
         }
         self.context = context
         self.handle = handle
@@ -140,7 +140,7 @@ final class SMB2FileHandle {
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
         let handle = try self.handle.unwrap()
         let result = smb2_lseek(context.unsafe, handle, offset, whence.rawValue, nil)
-        try POSIXError.throwIfError(Int32(result), description: context.error)
+        try POSIXError.throwIfError(result, description: context.error)
         return result
     }
 

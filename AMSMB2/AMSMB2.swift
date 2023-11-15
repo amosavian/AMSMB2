@@ -426,7 +426,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     ) {
         with(completionHandler: completionHandler) { context in
             // This exactly matches implementation of Swift Foundation.
-            let stat = try context.statvfs(path.canonical)
+            let stat = try context.statvfs(path)
             var result = [FileAttributeKey: Any]()
             let blockSize = UInt64(stat.f_bsize)
             // NSNumber allows to cast to any number type, but it is unsafe to cast to types with lower bitwidth
@@ -469,7 +469,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: @escaping (_ result: Result<[URLResourceKey: Any], Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
-            let stat = try context.stat(path.canonical)
+            let stat = try context.stat(path)
             var result = [URLResourceKey: Any]()
             let name = (path as NSString).lastPathComponent
             result[.nameKey] = name

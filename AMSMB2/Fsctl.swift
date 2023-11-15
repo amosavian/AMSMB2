@@ -24,7 +24,7 @@ extension Data: DataInitializable {
     }
 }
 
-protocol FcntlDataProtocol: DataProtocol {}
+protocol FcntlDataProtocol: DataProtocol where Index == Int, Element == UInt8 {}
 
 extension FcntlDataProtocol {
     var startIndex: Int {
@@ -32,24 +32,26 @@ extension FcntlDataProtocol {
     }
 
     var endIndex: Int {
-        return regions.first!.endIndex as! Int
+        return regions.map(\.count).reduce(0, +)
     }
 
     subscript(index: Int) -> UInt8 {
         get {
-            let regionOne = regions.first!
-            return regionOne[regionOne.index(regionOne.startIndex, offsetBy: index)]
+            let data = regions.joined()
+            let index = data.index(data.startIndex, offsetBy: index)
+            return data[index]
         }
+    }
+
+    subscript(bounds: Range<Index>) -> Data {
+        let data = regions.joined()
+        let start = data.index(data.startIndex, offsetBy: bounds.lowerBound)
+        let end = data.index(data.startIndex, offsetBy: bounds.upperBound)
+        return Data(data[start..<end])
     }
 
     func index(after i: Int) -> Int {
         return i + 1
-    }
-
-    func withContiguousStorageIfAvailable<R>(_ body: (UnsafeBufferPointer<UInt8>) throws -> R)
-        rethrows -> R?
-    {
-        return try (regions.first! as! Data).withContiguousStorageIfAvailable(body)
     }
 }
 
@@ -82,37 +84,45 @@ struct IOCtl {
     }
 
     struct SrvCopyChunk: FcntlDataProtocol {
-
         typealias Element = UInt8
 
         let sourceOffset: UInt64
         let targetOffset: UInt64
         let length: UInt32
 
-        var regions: CollectionOfOne<Data> {
-            var data = Data()
-            data.append(value: sourceOffset)
-            data.append(value: targetOffset)
-            data.append(value: length)
-            data.append(value: 0 as UInt32)
-            return CollectionOfOne(data)
+        var regions: [Data] {
+            return [
+                .init(value: sourceOffset),
+                .init(value: targetOffset),
+                .init(value: length),
+                .init(value: 0 as UInt32),
+            ]
+        }
+
+        init(sourceOffset: UInt64, targetOffset: UInt64, length: UInt32) {
+            self.sourceOffset = sourceOffset
+            self.targetOffset = targetOffset
+            self.length = length
         }
     }
 
     struct SrvCopyChunkCopy: FcntlDataProtocol {
-
         typealias Element = UInt8
 
         let sourceKey: Data
         let chunks: [SrvCopyChunk]
 
-        public var regions: CollectionOfOne<Data> {
-            var data = Data()
-            data.append(sourceKey)
-            data.append(value: UInt32(chunks.count))
-            data.append(value: 0 as UInt32)
-            chunks.forEach { data.append($0.regions[0]) }
-            return CollectionOfOne(data)
+        var regions: [Data] {
+            return [
+                sourceKey,
+                .init(value: UInt32(chunks.count)),
+                .init(value: 0 as UInt32),
+            ] + chunks.flatMap(\.regions)
+        }
+
+        init(sourceKey: Data, chunks: [SrvCopyChunk]) {
+            self.sourceKey = sourceKey
+            self.chunks = chunks
         }
     }
 
@@ -130,10 +140,12 @@ struct IOCtl {
             throw POSIXError(.ENODATA, description: "Invalid Resume Key")
         }
     }
-    /*
+
     struct SymbolicLinkReparse: DataInitializable, FcntlDataProtocol {
+        typealias Element = UInt8
+
         static private let headerLength = 20
-        private let reparseTag: UInt32 = 0xA000000C
+        private let reparseTag: UInt32 = 0xA000_000C
         let substituteName: String
         let printName: String
         let isRelative: Bool
@@ -151,9 +163,13 @@ struct IOCtl {
             let printLen = try data.scanInt(offset: 14, as: UInt16.self).unwrap()
             let flag = try data.scanValue(offset: 16, as: UInt32.self).unwrap()
 
-            let substituteData = data.dropFirst(Int(SymbolicLinkReparse.headerLength + substituteOffset)).prefix(substituteLen)
-            let printData = data.dropFirst(Int(SymbolicLinkReparse.headerLength + printOffset)).prefix(printLen)
-            let substituteName = try String(data: substituteData, encoding: .utf16LittleEndian).unwrap()
+            let substituteData = data.dropFirst(
+                Int(SymbolicLinkReparse.headerLength + substituteOffset)
+            ).prefix(substituteLen)
+            let printData = data.dropFirst(Int(SymbolicLinkReparse.headerLength + printOffset))
+                .prefix(printLen)
+            let substituteName = try String(data: substituteData, encoding: .utf16LittleEndian)
+                .unwrap()
             let printName = try String(data: printData, encoding: .utf16LittleEndian).unwrap()
 
             self.substituteName = substituteName
@@ -161,23 +177,23 @@ struct IOCtl {
             self.isRelative = flag & 1 == 1
         }
 
-        var regions: CollectionOfOne<Data> {
+        var regions: [Data] {
             let substituteData = substituteName.data(using: .utf16LittleEndian)!
             let substituteLen = UInt16(substituteData.count)
             let printData = printName.data(using: .utf16LittleEndian)!
             let printLen = UInt16(printData.count)
-            var data = Data()
-            data.append(value: reparseTag)
-            data.append(value: substituteLen + printLen)
-            data.append(value: 0 as UInt16) // reserved
-            data.append(value: printLen) // substitute offset
-            data.append(value: substituteLen)
-            data.append(value: 0 as UInt16)
-            data.append(value: printLen)
-            data.append(value: UInt32(isRelative ? 1 : 0))
-            data.append(printData)
-            data.append(substituteData)
-            return CollectionOfOne(data)
+            return [
+                .init(value: reparseTag),
+                .init(value: substituteLen + printLen),
+                .init(value: 0 as UInt16),  // reserved
+                .init(value: printLen),  // substitute offset
+                .init(value: substituteLen),
+                .init(value: 0 as UInt16),
+                .init(value: printLen),
+                .init(value: UInt32(isRelative ? 1 : 0)),
+                .init(printData),
+                .init(substituteData),
+            ]
         }
 
         private init() {
@@ -192,8 +208,10 @@ struct IOCtl {
     }
 
     struct MountPointReparse: DataInitializable, FcntlDataProtocol {
+        typealias Element = UInt8
+
         static private let headerLength = 16
-        private let reparseTag: UInt32 = 0xA0000003
+        private let reparseTag: UInt32 = 0xA000_0003
         let substituteName: String
         let printName: String
 
@@ -207,9 +225,13 @@ struct IOCtl {
             let printOffset = try data.scanInt(offset: 12, as: UInt16.self).unwrap()
             let printLen = try data.scanInt(offset: 14, as: UInt16.self).unwrap()
 
-            let substituteData = data.dropFirst(Int(MountPointReparse.headerLength + substituteOffset)).prefix(substituteLen)
-            let printData = data.dropFirst(Int(MountPointReparse.headerLength + printOffset)).prefix(printLen)
-            let substituteName = try String(data: substituteData, encoding: .utf16LittleEndian).unwrap()
+            let substituteData = data.dropFirst(
+                Int(MountPointReparse.headerLength + substituteOffset)
+            ).prefix(substituteLen)
+            let printData = data.dropFirst(Int(MountPointReparse.headerLength + printOffset))
+                .prefix(printLen)
+            let substituteName = try String(data: substituteData, encoding: .utf16LittleEndian)
+                .unwrap()
             let printName = try String(data: printData, encoding: .utf16LittleEndian).unwrap()
 
             self.substituteName = substituteName
@@ -220,22 +242,22 @@ struct IOCtl {
             throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
         }
 
-        var regions: CollectionOfOne<Data> {
+        var regions: [Data] {
             let substituteData = substituteName.data(using: .utf16LittleEndian)!
             let substituteLen = UInt16(substituteData.count)
             let printData = printName.data(using: .utf16LittleEndian)!
             let printLen = UInt16(printData.count)
-            var data = Data()
-            data.append(value: reparseTag)
-            data.append(value: substituteLen + printLen)
-            data.append(value: 0 as UInt16) // reserved
-            data.append(value: printLen) // substitute offset
-            data.append(value: substituteLen)
-            data.append(value: 0 as UInt16)
-            data.append(value: printLen)
-            data.append(printData)
-            data.append(substituteData)
-            return CollectionOfOne(data)
+            return [
+                .init(value: reparseTag),
+                .init(value: substituteLen + printLen + 8),
+                .init(value: 0 as UInt16),  // reserved
+                .init(value: printLen),  // substitute offset
+                .init(value: substituteLen),
+                .init(value: 0 as UInt16),
+                .init(value: printLen),
+                .init(printData),
+                .init(substituteData),
+            ]
         }
-    }*/
+    }
 }

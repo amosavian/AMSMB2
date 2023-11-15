@@ -143,20 +143,27 @@ extension Date {
 }
 
 extension Data {
-    mutating func append<T: FixedWidthInteger>(value: T) {
+    init<T: FixedWidthInteger>(value: T) {
         var value = value.littleEndian
         let bytes = Swift.withUnsafeBytes(of: &value) { Array($0) }
-        append(contentsOf: bytes)
+        self.init(bytes)
     }
 
-    mutating func append(value uuid: UUID) {
-        // Microsoft GUID is mixed-endian
-        append(contentsOf: [
+    mutating func append<T: FixedWidthInteger>(value: T) {
+        append(Data(value: value))
+    }
+
+    init(value uuid: UUID) {
+        self.init([
             uuid.uuid.3, uuid.uuid.2, uuid.uuid.1, uuid.uuid.0,
             uuid.uuid.5, uuid.uuid.4, uuid.uuid.7, uuid.uuid.6,
             uuid.uuid.8, uuid.uuid.9, uuid.uuid.10, uuid.uuid.11,
             uuid.uuid.12, uuid.uuid.13, uuid.uuid.14, uuid.uuid.15,
         ])
+    }
+
+    mutating func append(value uuid: UUID) {
+        append(Data(value: uuid))
     }
 
     func scanValue<T: FixedWidthInteger>(offset: Int, as: T.Type) -> T? {
