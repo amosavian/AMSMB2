@@ -108,7 +108,7 @@ extension SMB2Manager {
        - atPath: path of directory to be enumerated.
        - completionHandler: closure will be run after enumerating is completed.
        - recursive: subdirectories will enumerated if `YES`.
-       - contents: An array of `NSDictionart<NSURLResourceKey, NSObject>` which holds files' attributes. file name is stored in `NSURLResourceKeyNameKey`.
+       - contents: An array of `NSDictionary<NSURLResourceKey, NSObject>` which holds files' attributes. file name is stored in `NSURLResourceKeyNameKey`.
        - error: `NSError` if any occurred during enumeration.
      */
     @available(swift, obsoleted: 1.0)
