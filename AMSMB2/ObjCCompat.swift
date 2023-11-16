@@ -189,9 +189,9 @@ extension SMB2Manager {
        - atPath: path of file to be fetched.
        - offset: first byte of file to be read, starting from zero.
        - length: length of bytes should be read from offset.
-       - progress: reports progress of recieved bytes count read and expected content length.
+       - progress: reports progress of received bytes count read and expected content length.
            User must return `YES` if they want to continuing or `NO` to abort reading.
-       - bytes: recieved bytes count.
+       - bytes: received bytes count.
        - total: expected content length.
        - completionHandler: closure will be run after reading data is completed.
        - contents: a `NSData` object which contains file contents.
