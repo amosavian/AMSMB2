@@ -127,7 +127,7 @@ extension SMB2Manager {
      - Parameters:
        - forPath: Any pathname within the mounted file system.
        - completionHandler: closure will be run after fetching attributes is completed.
-       - attrubutes: A dictionary object that describes the attributes of the mounted file system on which path resides.
+       - attributes: A dictionary object that describes the attributes of the mounted file system on which path resides.
            See _File-System Attribute Keys_ for a description of the keys available in the dictionary.
        - error: `NSError` if any occurred during enumeration.
      */
@@ -135,7 +135,7 @@ extension SMB2Manager {
     @objc(attributesOfFileSystemForPath:completionHandler:)
     public func __attributesOfFileSystem(
         forPath path: String,
-        completionHandler: @escaping (_ attrubutes: [FileAttributeKey: Any]?, _ error: Error?) ->
+        completionHandler: @escaping (_ attributes: [FileAttributeKey: Any]?, _ error: Error?) ->
             Void
     ) {
         attributesOfFileSystem(forPath: path, completionHandler: convert(completionHandler))
