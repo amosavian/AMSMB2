@@ -56,6 +56,10 @@ extension POSIXErrorCode {
     }
 }
 
+protocol EmptyInitializable {
+    init()
+}
+
 extension Dictionary where Key == URLResourceKey {
     private func value<T>(forKey key: Key) -> T? {
         return self[key] as? T
