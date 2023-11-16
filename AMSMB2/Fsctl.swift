@@ -71,7 +71,7 @@ struct IOCtl {
         static let srvRequestResumeKey = Command(
             rawValue: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY))
         static let srvReadHash = Command(rawValue: UInt32(SMB2_FSCTL_SRV_READ_HASH))
-        static let lmrRequestResilency = Command(
+        static let lmrRequestResiliency = Command(
             rawValue: UInt32(SMB2_FSCTL_LMR_REQUEST_RESILIENCY))
         static let queryNetworkInterfaceInfo = Command(
             rawValue: UInt32(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO))
