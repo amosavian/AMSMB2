@@ -60,6 +60,8 @@ protocol EmptyInitializable {
     init()
 }
 
+extension Bool: EmptyInitializable { }
+
 extension Dictionary where Key == URLResourceKey {
     private func value<T>(forKey key: Key) -> T? {
         return self[key] as? T
@@ -82,15 +84,15 @@ extension Dictionary where Key == URLResourceKey {
     }
 
     public var isDirectory: Bool {
-        return value(forKey: .isDirectoryKey) ?? false
+        return value(forKey: .isDirectoryKey)
     }
 
     public var isRegularFile: Bool {
-        return value(forKey: .isRegularFileKey) ?? false
+        return value(forKey: .isRegularFileKey)
     }
 
     public var isSymbolicLink: Bool {
-        return value(forKey: .isSymbolicLinkKey) ?? false
+        return value(forKey: .isSymbolicLinkKey)
     }
 
     public var fileSize: Int64? {
