@@ -9,11 +9,7 @@
 import Foundation
 
 class MSRPC {
-    struct NetShareEnumAllLevel1: DataInitializable {
-        static func empty() throws -> MSRPC.NetShareEnumAllLevel1 {
-            .init(shares: [])
-        }
-
+    struct NetShareEnumAllLevel1: IOCtlReply {
         let shares: [SMB2Share]
 
         init(shares: [SMB2Share]) {
@@ -115,7 +111,7 @@ class MSRPC {
         }
     }
 
-    struct DCEHeader: FcntlDataProtocol {
+    struct DCEHeader: IOCtlArgument {
         enum Command: UInt8 {
             case request = 0x00
             case bind = 0x0b
@@ -157,7 +153,7 @@ class MSRPC {
         }
     }
 
-    struct SrvsvcBindData: FcntlDataProtocol {
+    struct SrvsvcBindData: IOCtlArgument {
         typealias Element = UInt8
 
         var regions: [Data] {
@@ -191,7 +187,7 @@ class MSRPC {
         }
     }
 
-    struct NetShareEnumAllRequest: FcntlDataProtocol {
+    struct NetShareEnumAllRequest: IOCtlArgument {
         typealias Element = UInt8
 
         let serverName: String

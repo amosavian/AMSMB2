@@ -218,10 +218,10 @@ final class SMB2FileHandle {
     }
 
     @discardableResult
-    func fcntl<DataType: DataProtocol, R: DataInitializable>(
-        command: IOCtl.Command, data: DataType, needsReply: Bool = true
+    func fcntl<DataType: DataProtocol, R: IOCtlReply>(
+        command: IOCtl.Command, args: DataType, needsReply: Bool = true
     ) throws -> R {
-        var inputBuffer = [UInt8](data)
+        var inputBuffer = [UInt8](args)
         return try inputBuffer.withUnsafeMutableBytes { (buf) in
             var req = smb2_ioctl_request(
                 ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buf.count),
@@ -234,20 +234,14 @@ final class SMB2FileHandle {
     }
 
     func fcntl(command: IOCtl.Command) throws {
-        let _: Data = try fcntl(command: command, data: [], needsReply: false)
+        let _: AnyIOCtlReply = try fcntl(command: command, args: Data(), needsReply: false)
     }
 
     func fcntl<DataType: DataProtocol>(command: IOCtl.Command, args: DataType) throws {
-        let _: Data = try fcntl(command: command, data: args, needsReply: false)
+        let _: AnyIOCtlReply = try fcntl(command: command, args: args, needsReply: false)
     }
 
-    func fcntl<R: DataInitializable>(command: IOCtl.Command) throws -> R {
-        return try fcntl(command: command, data: [])
-    }
-
-    func fcntl<DataType: DataProtocol, R: DataInitializable>(command: IOCtl.Command, args: DataType)
-        throws -> R
-    {
-        return try fcntl(command: command, data: args)
+    func fcntl<R: IOCtlReply>(command: IOCtl.Command) throws -> R {
+        return try fcntl(command: command, args: [])
     }
 }

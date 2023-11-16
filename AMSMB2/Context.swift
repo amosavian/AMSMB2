@@ -437,7 +437,7 @@ extension SMB2Context {
     typealias Security = smb2_sec
 }
 
-extension smb2_negotiate_version {
+extension smb2_negotiate_version: Hashable {
     static let any = SMB2_VERSION_ANY
     static let v2 = SMB2_VERSION_ANY2
     static let v3 = SMB2_VERSION_ANY3
@@ -448,17 +448,11 @@ extension smb2_negotiate_version {
     static let v3_11 = SMB2_VERSION_0311
 
     static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
-        if lhs.rawValue == rhs.rawValue { return true }
-        switch (lhs, rhs) {
-        case (.any, _), (_, .any):
-            return true
-        case (.v2, v2_02), (v2_02, v2), (.v2, v2_10), (v2_10, v2):
-            return true
-        case (.v3, v3_00), (v3_00, v3), (.v3, v3_02), (v3_02, v3):
-            return true
-        default:
-            return false
-        }
+        lhs.rawValue == rhs.rawValue
+    }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(rawValue)
     }
 }
 

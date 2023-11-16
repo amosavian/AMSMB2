@@ -50,11 +50,11 @@ extension SMB2FileHandle {
     }
 }
 
-extension DataInitializable {
+extension IOCtlReply {
     init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
         let reply = try dataPtr.unwrap().assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
         guard reply.output_count > 0, let output = reply.output else {
-            self = try Self.empty()
+            self = try Self(data: .init())
             return
         }
         defer { smb2_free_data(context.unsafe, output) }

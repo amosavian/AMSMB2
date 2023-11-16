@@ -9,24 +9,9 @@
 import Foundation
 import SMB2
 
-protocol DataInitializable {
-    init(data: Data) throws
-    static func empty() throws -> Self
-}
+protocol IOCtlArgument: ContiguousBytes & DataProtocol where Index == Int, Element == UInt8 {}
 
-extension Data: DataInitializable {
-    init(data: Data) throws {
-        self = data
-    }
-
-    static func empty() throws -> Data {
-        return .init()
-    }
-}
-
-protocol FcntlDataProtocol: DataProtocol where Index == Int, Element == UInt8 {}
-
-extension FcntlDataProtocol {
+extension IOCtlArgument {
     var startIndex: Int {
         return 0
     }
@@ -52,6 +37,22 @@ extension FcntlDataProtocol {
 
     func index(after i: Int) -> Int {
         return i + 1
+    }
+    
+    func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
+        try Data(regions.joined()).withUnsafeBytes(body)
+    }
+}
+
+protocol IOCtlReply {
+    init(data: Data) throws
+}
+
+struct AnyIOCtlReply: IOCtlReply {
+    private let data: Data
+    
+    init(data: Data) {
+        self.data = data
     }
 }
 
@@ -83,7 +84,7 @@ struct IOCtl {
             rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO))
     }
 
-    struct SrvCopyChunk: FcntlDataProtocol {
+    struct SrvCopyChunk: IOCtlArgument {
         typealias Element = UInt8
 
         let sourceOffset: UInt64
@@ -106,7 +107,7 @@ struct IOCtl {
         }
     }
 
-    struct SrvCopyChunkCopy: FcntlDataProtocol {
+    struct SrvCopyChunkCopy: IOCtlArgument {
         typealias Element = UInt8
 
         let sourceKey: Data
@@ -126,7 +127,7 @@ struct IOCtl {
         }
     }
 
-    struct RequestResumeKey: DataInitializable {
+    struct RequestResumeKey: IOCtlReply {
         let resumeKey: Data
 
         init(data: Data) throws {
@@ -135,13 +136,9 @@ struct IOCtl {
             }
             self.resumeKey = data.prefix(24)
         }
-
-        static func empty() throws -> RequestResumeKey {
-            throw POSIXError(.ENODATA, description: "Invalid Resume Key")
-        }
     }
 
-    struct SymbolicLinkReparse: DataInitializable, FcntlDataProtocol {
+    struct SymbolicLinkReparse: IOCtlReply, IOCtlArgument {
         typealias Element = UInt8
 
         static private let headerLength = 20
@@ -201,13 +198,9 @@ struct IOCtl {
             self.printName = ""
             self.isRelative = false
         }
-
-        static func empty() throws -> SymbolicLinkReparse {
-            throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
-        }
     }
 
-    struct MountPointReparse: DataInitializable, FcntlDataProtocol {
+    struct MountPointReparse: IOCtlReply, IOCtlArgument {
         typealias Element = UInt8
 
         static private let headerLength = 16
@@ -236,10 +229,6 @@ struct IOCtl {
 
             self.substituteName = substituteName
             self.printName = printName
-        }
-
-        static func empty() throws -> IOCtl.MountPointReparse {
-            throw POSIXError(.ENODATA, description: "Invalid Reparse Point")
         }
 
         var regions: [Data] {
