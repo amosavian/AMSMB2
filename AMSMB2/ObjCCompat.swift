@@ -77,7 +77,7 @@ extension SMB2Manager {
      Enumerates shares' list on server.
 
      - Parameters:
-       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+       - enumerateHidden: enumerating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
        - names: An array of share names. Can be passed to `connectShare:` function.
