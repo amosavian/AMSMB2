@@ -1440,7 +1440,7 @@ extension SMB2Manager {
                 let written = try stream.write(data)
                 guard written == data.count else {
                     throw POSIXError(
-                        .EIO, description: "Inconsitency in reading from SMB file handle.")
+                        .EIO, description: "Inconsistency in reading from SMB file handle.")
                 }
                 sent += Int64(written)
                 shouldContinue = progress?(sent, size) ?? true
@@ -1471,7 +1471,7 @@ extension SMB2Manager {
                     let written = try file.write(data: segment)
                     if written != segment.count {
                         throw POSIXError(
-                            .EIO, description: "Inconsitency in writing to SMB file handle.")
+                            .EIO, description: "Inconsistency in writing to SMB file handle.")
                     }
 
                     var offset = try file.lseek(offset: 0, whence: .current)
