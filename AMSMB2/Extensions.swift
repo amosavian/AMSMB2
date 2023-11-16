@@ -59,6 +59,10 @@ extension POSIXErrorCode {
 extension Dictionary where Key == URLResourceKey {
     public var name: String? {
         return self[.nameKey] as? String
+    private func value<T>(forKey key: Key) -> T? {
+        return self[key] as? T
+    }
+
     }
 
     public var path: String? {
