@@ -11,7 +11,7 @@ import SMB2
 
 typealias smb2dir = OpaquePointer
 
-/// NO THREAD-SAFE
+/// - Note: This class is NOT thread-safe.
 final class SMB2Directory: Collection {
     private var context: SMB2Context
     private var handle: smb2dir
