@@ -233,14 +233,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             if self.context == nil || self.context?.fileDescriptor == -1
                 || self.context?.share != name
             {
-                self.context = try self.connnect(shareName: name, encrypted: encrypted)
+                self.context = try self.connect(shareName: name, encrypted: encrypted)
             }
 
             // Workaround disgraceful disconnect issue (e.g. server timeout)
             do {
                 try self.context!.echo()
             } catch {
-                self.context = try self.connnect(shareName: name, encrypted: encrypted)
+                self.context = try self.connect(shareName: name, encrypted: encrypted)
             }
         }
     }
@@ -1173,7 +1173,7 @@ extension SMB2Manager {
         context.timeout = _timeout
     }
 
-    fileprivate func connnect(shareName: String, encrypted: Bool) throws -> SMB2Context {
+    fileprivate func connect(shareName: String, encrypted: Bool) throws -> SMB2Context {
         let context = try SMB2Context(timeout: _timeout)
         self.context = context
         initContext(context, encrypted: encrypted)
@@ -1227,7 +1227,7 @@ extension SMB2Manager {
     ) {
         queue {
             do {
-                let context = try self.connnect(shareName: shareName, encrypted: encrypted)
+                let context = try self.connect(shareName: shareName, encrypted: encrypted)
                 defer { try? context.disconnect() }
 
                 let result = try handler(context)
