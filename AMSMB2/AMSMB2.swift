@@ -329,7 +329,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      Enumerates shares' list on server.
 
      - Parameters:
-       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+       - enumerateHidden: enumerating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
        - result: An array of shares' name and remark name. `name` element can be passed to `connectShare()` function.
@@ -349,7 +349,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      Enumerates shares' list on server.
 
      - Parameters:
-       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+       - enumerateHidden: enumerating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
      - Returns: An array of shares' name and remark name. `name` element can be passed to `connectShare()` function.
