@@ -1052,7 +1052,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
            User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
@@ -1082,7 +1082,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
            User must return `true` if they want to continuing or `false` to abort copying.
      */
     open func downloadItem(
@@ -1107,7 +1107,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
          User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
@@ -1133,7 +1133,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
          User must return `true` if they want to continuing or `false` to abort copying.
      */
     open func downloadItem(
