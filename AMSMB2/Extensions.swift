@@ -57,52 +57,52 @@ extension POSIXErrorCode {
 }
 
 extension Dictionary where Key == URLResourceKey {
-    public var name: String? {
-        return self[.nameKey] as? String
     private func value<T>(forKey key: Key) -> T? {
         return self[key] as? T
     }
 
+    public var name: String? { 
+        return self.value(forKey: .nameKey)
     }
 
     public var path: String? {
-        return self[.pathKey] as? String
+        return value(forKey: .pathKey)
     }
 
     public var fileResourceType: URLFileResourceType? {
-        return self[.fileResourceTypeKey] as? URLFileResourceType
+        return value(forKey: .fileResourceTypeKey)
     }
 
     public var isDirectory: Bool {
-        return self[.isDirectoryKey] as? Bool ?? false
+        return value(forKey: .isDirectoryKey) ?? false
     }
 
     public var isRegularFile: Bool {
-        return self[.isRegularFileKey] as? Bool ?? false
+        return value(forKey: .isRegularFileKey) ?? false
     }
 
     public var isSymbolicLink: Bool {
-        return self[.isSymbolicLinkKey] as? Bool ?? false
+        return value(forKey: .isSymbolicLinkKey) ?? false
     }
 
     public var fileSize: Int64? {
-        return self[.fileSizeKey] as? Int64
+        return value(forKey: .fileSizeKey)
     }
 
     public var attributeModificationDate: Date? {
-        return self[.attributeModificationDateKey] as? Date
+        return value(forKey: .attributeModificationDateKey)
     }
 
     public var contentModificationDate: Date? {
-        return self[.contentModificationDateKey] as? Date
+        return value(forKey: .contentModificationDateKey)
     }
 
     public var contentAccessDate: Date? {
-        return self[.contentAccessDateKey] as? Date
+        return value(forKey: .contentAccessDateKey)
     }
 
     public var creationDate: Date? {
-        return self[.creationDateKey] as? Date
+        return value(forKey: .creationDateKey)
     }
 }
 
