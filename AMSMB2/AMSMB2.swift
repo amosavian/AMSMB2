@@ -1102,7 +1102,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Note: given url must be local file url otherwise it will throw error.
 
-     - Important: Stream will be closed eventually if is not alrady opened.
+     - Important: Stream will be closed eventually if is not already opened.
 
      - Parameters:
        - atPath: path of file to be downloaded from.
@@ -1128,7 +1128,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Note: given url must be local file url otherwise it will throw error.
 
-     - Important: Stream will be closed eventually if is not alrady opened.
+     - Important: Stream will be closed eventually if is not already opened.
 
      - Parameters:
        - atPath: path of file to be downloaded from.
