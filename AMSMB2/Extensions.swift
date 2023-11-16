@@ -56,7 +56,7 @@ extension POSIXErrorCode {
     }
 }
 
-extension Dictionary where Key == URLResourceKey, Value == Any {
+extension Dictionary where Key == URLResourceKey {
     public var name: String? {
         return self[.nameKey] as? String
     }
