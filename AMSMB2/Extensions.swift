@@ -65,6 +65,10 @@ extension Dictionary where Key == URLResourceKey {
         return self[key] as? T
     }
 
+    private func value<T>(forKey key: Key) -> T where T: EmptyInitializable {
+        return self[key] as? T ?? T.init()
+    }
+
     public var name: String? { 
         return self.value(forKey: .nameKey)
     }
