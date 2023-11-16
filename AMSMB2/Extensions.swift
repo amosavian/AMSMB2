@@ -60,6 +60,7 @@ protocol EmptyInitializable {
     init()
 }
 
+/// Booleans can be initialized with no arguments and it would be `false` by default.
 extension Bool: EmptyInitializable { }
 
 extension Dictionary where Key == URLResourceKey {
