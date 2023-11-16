@@ -56,6 +56,9 @@ extension POSIXErrorCode {
     }
 }
 
+/// The conformant must be able to be initialized with no arguments.
+///
+/// This is also known as the default initial value.
 protocol EmptyInitializable {
     init()
 }
