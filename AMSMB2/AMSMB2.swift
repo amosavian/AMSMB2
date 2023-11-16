@@ -720,9 +720,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be fetched.
        - range: byte range that should be read, default value is whole file. e.g. `..<10` will read first ten bytes.
-       - progress: reports progress of recieved bytes count read and expected content length.
+       - progress: reports progress of received bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
-       - bytes: recieved bytes count.
+       - bytes: received bytes count.
        - total: expected content length.
        - completionHandler: closure will be run after reading data is completed.
        - result: a `Data` object which contains file contents.
@@ -759,9 +759,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be fetched.
        - range: byte range that should be read, default value is whole file. e.g. `..<10` will read first ten bytes.
-       - progress: reports progress of recieved bytes count read and expected content length.
+       - progress: reports progress of received bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
-       - bytes: recieved bytes count.
+       - bytes: received bytes count.
        - total: expected content length.
        - completionHandler: closure will be run after reading data is completed.
      - Returns: a `Data` object which contains file contents.
@@ -783,7 +783,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be fetched.
        - offset: first byte of file to be read, starting from zero.
-       - fetchedData: returns data portion fetched and recieved bytes count read and expected content length.
+       - fetchedData: returns data portion fetched and received bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
        - offset: offset of first byte of data portion in file.
        - total: expected content length.
