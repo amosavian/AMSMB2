@@ -232,7 +232,7 @@ extension SMB2Context {
         let recvBindData = try srvsvc.pread(offset: 0, length: Int(Int16.max))
         try MSRPC.validateBindData(recvBindData)
 
-        // NetShareEnum reqeust, Level 1 mean we need share name and remark.
+        // NetShareEnum request, Level 1 mean we need share name and remark.
         _ = try srvsvc.pwrite(data: MSRPC.NetShareEnumAllRequest(serverName: server!), offset: 0)
         let recvData = try srvsvc.pread(offset: 0)
         return try MSRPC.NetShareEnumAllLevel1(data: recvData).shares

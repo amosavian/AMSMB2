@@ -233,14 +233,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             if self.context == nil || self.context?.fileDescriptor == -1
                 || self.context?.share != name
             {
-                self.context = try self.connnect(shareName: name, encrypted: encrypted)
+                self.context = try self.connect(shareName: name, encrypted: encrypted)
             }
 
             // Workaround disgraceful disconnect issue (e.g. server timeout)
             do {
                 try self.context!.echo()
             } catch {
-                self.context = try self.connnect(shareName: name, encrypted: encrypted)
+                self.context = try self.connect(shareName: name, encrypted: encrypted)
             }
         }
     }
@@ -329,7 +329,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      Enumerates shares' list on server.
 
      - Parameters:
-       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+       - enumerateHidden: enumerating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
        - result: An array of shares' name and remark name. `name` element can be passed to `connectShare()` function.
@@ -349,7 +349,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      Enumerates shares' list on server.
 
      - Parameters:
-       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+       - enumerateHidden: enumerating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
      - Returns: An array of shares' name and remark name. `name` element can be passed to `connectShare()` function.
@@ -720,9 +720,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be fetched.
        - range: byte range that should be read, default value is whole file. e.g. `..<10` will read first ten bytes.
-       - progress: reports progress of recieved bytes count read and expected content length.
+       - progress: reports progress of received bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
-       - bytes: recieved bytes count.
+       - bytes: received bytes count.
        - total: expected content length.
        - completionHandler: closure will be run after reading data is completed.
        - result: a `Data` object which contains file contents.
@@ -759,9 +759,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be fetched.
        - range: byte range that should be read, default value is whole file. e.g. `..<10` will read first ten bytes.
-       - progress: reports progress of recieved bytes count read and expected content length.
+       - progress: reports progress of received bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
-       - bytes: recieved bytes count.
+       - bytes: received bytes count.
        - total: expected content length.
        - completionHandler: closure will be run after reading data is completed.
      - Returns: a `Data` object which contains file contents.
@@ -783,7 +783,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be fetched.
        - offset: first byte of file to be read, starting from zero.
-       - fetchedData: returns data portion fetched and recieved bytes count read and expected content length.
+       - fetchedData: returns data portion fetched and received bytes count read and expected content length.
            User must return `true` if they want to continuing or `false` to abort reading.
        - offset: offset of first byte of data portion in file.
        - total: expected content length.
@@ -1052,7 +1052,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
            User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
@@ -1082,7 +1082,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
            User must return `true` if they want to continuing or `false` to abort copying.
      */
     open func downloadItem(
@@ -1102,12 +1102,12 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Note: given url must be local file url otherwise it will throw error.
 
-     - Important: Stream will be closed eventually if is not alrady opened.
+     - Important: Stream will be closed eventually if is not already opened.
 
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
          User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
@@ -1128,12 +1128,12 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Note: given url must be local file url otherwise it will throw error.
 
-     - Important: Stream will be closed eventually if is not alrady opened.
+     - Important: Stream will be closed eventually if is not already opened.
 
      - Parameters:
        - atPath: path of file to be downloaded from.
        - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so farand expected length of contents.
+       - progress: reports progress of written bytes count so far and expected length of contents.
          User must return `true` if they want to continuing or `false` to abort copying.
      */
     open func downloadItem(
@@ -1173,7 +1173,7 @@ extension SMB2Manager {
         context.timeout = _timeout
     }
 
-    fileprivate func connnect(shareName: String, encrypted: Bool) throws -> SMB2Context {
+    fileprivate func connect(shareName: String, encrypted: Bool) throws -> SMB2Context {
         let context = try SMB2Context(timeout: _timeout)
         self.context = context
         initContext(context, encrypted: encrypted)
@@ -1227,7 +1227,7 @@ extension SMB2Manager {
     ) {
         queue {
             do {
-                let context = try self.connnect(shareName: shareName, encrypted: encrypted)
+                let context = try self.connect(shareName: shareName, encrypted: encrypted)
                 defer { try? context.disconnect() }
 
                 let result = try handler(context)
@@ -1440,7 +1440,7 @@ extension SMB2Manager {
                 let written = try stream.write(data)
                 guard written == data.count else {
                     throw POSIXError(
-                        .EIO, description: "Inconsitency in reading from SMB file handle.")
+                        .EIO, description: "Inconsistency in reading from SMB file handle.")
                 }
                 sent += Int64(written)
                 shouldContinue = progress?(sent, size) ?? true
@@ -1471,7 +1471,7 @@ extension SMB2Manager {
                     let written = try file.write(data: segment)
                     if written != segment.count {
                         throw POSIXError(
-                            .EIO, description: "Inconsitency in writing to SMB file handle.")
+                            .EIO, description: "Inconsistency in writing to SMB file handle.")
                     }
 
                     var offset = try file.lseek(offset: 0, whence: .current)

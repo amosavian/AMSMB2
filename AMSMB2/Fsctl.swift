@@ -64,7 +64,7 @@ struct IOCtl {
         static let dfsGetReferrals = Command(rawValue: UInt32(SMB2_FSCTL_DFS_GET_REFERRALS))
         static let pipePeek = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_PEEK))
         static let pipeWait = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_WAIT))
-        static let pipeTranceive = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_TRANSCEIVE))
+        static let pipeTransceive = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_TRANSCEIVE))
         static let srvCopyChunk = Command(rawValue: UInt32(SMB2_FSCTL_SRV_COPYCHUNK))
         static let srvCopyChunkWrite = Command(rawValue: UInt32(SMB2_FSCTL_SRV_COPYCHUNK_WRITE))
         static let srvEnumerateSnapshots = Command(
@@ -72,7 +72,7 @@ struct IOCtl {
         static let srvRequestResumeKey = Command(
             rawValue: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY))
         static let srvReadHash = Command(rawValue: UInt32(SMB2_FSCTL_SRV_READ_HASH))
-        static let lmrRequestResilency = Command(
+        static let lmrRequestResiliency = Command(
             rawValue: UInt32(SMB2_FSCTL_LMR_REQUEST_RESILIENCY))
         static let queryNetworkInterfaceInfo = Command(
             rawValue: UInt32(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO))

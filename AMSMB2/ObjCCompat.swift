@@ -55,7 +55,7 @@ extension SMB2Manager {
        - completionHandler: closure will be run after enumerating is completed.
        - names: An array of share names. Can be passed to `connectShare:` function.
        - comments: An array of share remark name, related to names array with same index. Suitable for displaying shares to user.
-       - error: `NSError` if any occured during enumeration.
+       - error: `NSError` if any occurred during enumeration.
      */
     @available(swift, obsoleted: 1.0)
     @objc(listSharesWithCompletionHandler:)
@@ -77,12 +77,12 @@ extension SMB2Manager {
      Enumerates shares' list on server.
 
      - Parameters:
-       - enumerateHidden: enumrating special/administrative e.g. user directory in macOS or
+       - enumerateHidden: enumerating special/administrative e.g. user directory in macOS or
            shares usually ends with `$`, e.g. `C$` or `admin$`.
        - completionHandler: closure will be run after enumerating is completed.
        - names: An array of share names. Can be passed to `connectShare:` function.
        - comments: An array of share remark name, related to names array with same index. Suitable for displaying shares to user.
-       - error: `Error` if any occured during enumeration.
+       - error: `Error` if any occurred during enumeration.
      */
     @available(swift, obsoleted: 1.0)
     @objc(listSharesWithEnumerateHidden:completionHandler:)
@@ -108,8 +108,8 @@ extension SMB2Manager {
        - atPath: path of directory to be enumerated.
        - completionHandler: closure will be run after enumerating is completed.
        - recursive: subdirectories will enumerated if `YES`.
-       - contents: An array of `NSDictionart<NSURLResourceKey, NSObject>` which holds files' attributes. file name is stored in `NSURLResourceKeyNameKey`.
-       - error: `NSError` if any occured during enumeration.
+       - contents: An array of `NSDictionary<NSURLResourceKey, NSObject>` which holds files' attributes. file name is stored in `NSURLResourceKeyNameKey`.
+       - error: `NSError` if any occurred during enumeration.
      */
     @available(swift, obsoleted: 1.0)
     @objc(contentsOfDirectoryAtPath:recursive:completionHandler:)
@@ -127,15 +127,15 @@ extension SMB2Manager {
      - Parameters:
        - forPath: Any pathname within the mounted file system.
        - completionHandler: closure will be run after fetching attributes is completed.
-       - attrubutes: A dictionary object that describes the attributes of the mounted file system on which path resides.
+       - attributes: A dictionary object that describes the attributes of the mounted file system on which path resides.
            See _File-System Attribute Keys_ for a description of the keys available in the dictionary.
-       - error: `NSError` if any occured during enumeration.
+       - error: `NSError` if any occurred during enumeration.
      */
     @available(swift, obsoleted: 1.0)
     @objc(attributesOfFileSystemForPath:completionHandler:)
     public func __attributesOfFileSystem(
         forPath path: String,
-        completionHandler: @escaping (_ attrubutes: [FileAttributeKey: Any]?, _ error: Error?) ->
+        completionHandler: @escaping (_ attributes: [FileAttributeKey: Any]?, _ error: Error?) ->
             Void
     ) {
         attributesOfFileSystem(forPath: path, completionHandler: convert(completionHandler))
@@ -148,7 +148,7 @@ extension SMB2Manager {
        - atPath: path of file to be enumerated.
        - completionHandler: closure will be run after enumerating is completed.
        - file: A dictionary with `NSURLResourceKey` as key which holds file's attributes.
-       - error: `NSError` if any occured during enumeration.
+       - error: `NSError` if any occurred during enumeration.
      */
     @available(swift, obsoleted: 1.0)
     @objc(attributesOfItemAtPath:completionHandler:)
@@ -167,7 +167,7 @@ extension SMB2Manager {
       - completionHandler: closure will be run after reading link is completed.
       - destinationPath: A `NSString` object containing the path of the directory or file to which the symbolic link path refers.
                 If the symbolic link is specified as a relative path, that relative path is returned.
-      - error: `NSError` if any occured during enumeration.
+      - error: `NSError` if any occurred during enumeration.
     */
     @available(swift, obsoleted: 1.0)
     @objc(destinationOfSymbolicLinkAtPath:completionHandler:)
@@ -189,13 +189,13 @@ extension SMB2Manager {
        - atPath: path of file to be fetched.
        - offset: first byte of file to be read, starting from zero.
        - length: length of bytes should be read from offset.
-       - progress: reports progress of recieved bytes count read and expected content length.
+       - progress: reports progress of received bytes count read and expected content length.
            User must return `YES` if they want to continuing or `NO` to abort reading.
-       - bytes: recieved bytes count.
+       - bytes: received bytes count.
        - total: expected content length.
        - completionHandler: closure will be run after reading data is completed.
        - contents: a `NSData` object which contains file contents.
-       - error: `NSError` if any occured during reading.
+       - error: `NSError` if any occurred during reading.
      */
     @available(swift, obsoleted: 1.0)
     @objc(contentsAtPath:fromOffset:toLength:progress:completionHandler:)
