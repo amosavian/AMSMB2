@@ -56,49 +56,67 @@ extension POSIXErrorCode {
     }
 }
 
-extension Dictionary where Key == URLResourceKey, Value == Any {
-    public var name: String? {
-        return self[.nameKey] as? String
+/// The conformant must be able to be initialized with no arguments.
+///
+/// This is also known as the default initial value.
+protocol EmptyInitializable {
+    init()
+}
+
+/// Booleans can be initialized with no arguments and it would be `false` by default.
+extension Bool: EmptyInitializable { }
+
+extension Dictionary where Key == URLResourceKey {
+    private func value<T>(forKey key: Key) -> T? {
+        return self[key] as? T
+    }
+
+    private func value<T>(forKey key: Key) -> T where T: EmptyInitializable {
+        return self[key] as? T ?? T.init()
+    }
+
+    public var name: String? { 
+        return self.value(forKey: .nameKey)
     }
 
     public var path: String? {
-        return self[.pathKey] as? String
+        return value(forKey: .pathKey)
     }
 
     public var fileResourceType: URLFileResourceType? {
-        return self[.fileResourceTypeKey] as? URLFileResourceType
+        return value(forKey: .fileResourceTypeKey)
     }
 
     public var isDirectory: Bool {
-        return self[.isDirectoryKey] as? Bool ?? false
+        return value(forKey: .isDirectoryKey)
     }
 
     public var isRegularFile: Bool {
-        return self[.isRegularFileKey] as? Bool ?? false
+        return value(forKey: .isRegularFileKey)
     }
 
     public var isSymbolicLink: Bool {
-        return self[.isSymbolicLinkKey] as? Bool ?? false
+        return value(forKey: .isSymbolicLinkKey)
     }
 
     public var fileSize: Int64? {
-        return self[.fileSizeKey] as? Int64
+        return value(forKey: .fileSizeKey)
     }
 
     public var attributeModificationDate: Date? {
-        return self[.attributeModificationDateKey] as? Date
+        return value(forKey: .attributeModificationDateKey)
     }
 
     public var contentModificationDate: Date? {
-        return self[.contentModificationDateKey] as? Date
+        return value(forKey: .contentModificationDateKey)
     }
 
     public var contentAccessDate: Date? {
-        return self[.contentAccessDateKey] as? Date
+        return value(forKey: .contentAccessDateKey)
     }
 
     public var creationDate: Date? {
-        return self[.creationDateKey] as? Date
+        return value(forKey: .creationDateKey)
     }
 }
 
