@@ -64,7 +64,7 @@ protocol EmptyInitializable {
 }
 
 /// Booleans can be initialized with no arguments and it would be `false` by default.
-extension Bool: EmptyInitializable { }
+extension Bool: EmptyInitializable {}
 
 extension Dictionary where Key == URLResourceKey {
     private func value<T>(forKey key: Key) -> T? {
@@ -75,7 +75,7 @@ extension Dictionary where Key == URLResourceKey {
         return self[key] as? T ?? T.init()
     }
 
-    public var name: String? { 
+    public var name: String? {
         return self.value(forKey: .nameKey)
     }
 
@@ -197,6 +197,18 @@ extension Data {
 extension String {
     var canonical: String {
         return trimmingCharacters(in: .init(charactersIn: "/\\"))
+    }
+
+    func fileURL(_ isDirectory: Bool = false) -> URL {
+        if #available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *) {
+            return .init(
+                filePath: self, directoryHint: isDirectory ? .isDirectory : .notDirectory,
+                relativeTo: .init(filePath: "/"))
+        } else {
+            return .init(
+                fileURLWithPath: self, isDirectory: isDirectory,
+                relativeTo: .init(fileURLWithPath: "/"))
+        }
     }
 }
 

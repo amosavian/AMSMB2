@@ -375,6 +375,17 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         }
     }
 
+    /// Only for test case coverage
+    func _swift_listShares(
+        enumerateHidden: Bool = false
+    ) async throws -> [(name: String, comment: String)] {
+        return try await withCheckedThrowingContinuation { continuation in
+            _swift_listShares(enumerateHidden: enumerateHidden) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+
     /**
      Enumerates directory contents in the give path.
 
@@ -471,10 +482,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         with(completionHandler: completionHandler) { context in
             let stat = try context.stat(path)
             var result = [URLResourceKey: Any]()
-            let name = (path as NSString).lastPathComponent
-            result[.nameKey] = name
-            result[.pathKey] = (path as NSString).appendingPathComponent(name)
-            self.populateResourceValue(&result, stat: stat)
+            result[.nameKey] = path.fileURL().lastPathComponent
+            result[.pathKey] = path.fileURL(stat.isDirectory).path
+            stat.populateResourceValue(&result)
             return result
         }
     }
@@ -813,6 +823,16 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         }
     }
 
+    open func contents(
+        atPath path: String, offset: Int64 = 0,
+        fetchedData: @escaping ((_ offset: Int64, _ total: Int64, _ data: Data) -> Bool)
+    ) async throws {
+        return try await withCheckedThrowingContinuation { continuation in
+            contents(
+                atPath: path, offset: offset, fetchedData: fetchedData,
+                completionHandler: asyncHandler(continuation))
+        }
+    }
     /**
      Creates and writes data to file. With reporting progress on about every 1MiB.
 
@@ -1237,36 +1257,6 @@ extension SMB2Manager {
             }
         }
     }
-
-    fileprivate func populateResourceValue(_ dic: inout [URLResourceKey: Any], stat: smb2_stat_64) {
-        dic.reserveCapacity(11)
-        dic[.fileSizeKey] = NSNumber(value: stat.smb2_size)
-        dic[.linkCountKey] = NSNumber(value: stat.smb2_nlink)
-        dic[.documentIdentifierKey] = NSNumber(value: stat.smb2_ino)
-
-        switch Int32(stat.smb2_type) {
-        case SMB2_TYPE_DIRECTORY:
-            dic[.fileResourceTypeKey] = URLFileResourceType.directory
-        case SMB2_TYPE_FILE:
-            dic[.fileResourceTypeKey] = URLFileResourceType.regular
-        case SMB2_TYPE_LINK:
-            dic[.fileResourceTypeKey] = URLFileResourceType.symbolicLink
-        default:
-            dic[.fileResourceTypeKey] = URLFileResourceType.unknown
-        }
-        dic[.isDirectoryKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_DIRECTORY)
-        dic[.isRegularFileKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_FILE)
-        dic[.isSymbolicLinkKey] = NSNumber(value: stat.smb2_type == SMB2_TYPE_LINK)
-
-        dic[.contentModificationDateKey] = Date(
-            timespec(tv_sec: Int(stat.smb2_mtime), tv_nsec: Int(stat.smb2_mtime_nsec)))
-        dic[.attributeModificationDateKey] = Date(
-            timespec(tv_sec: Int(stat.smb2_ctime), tv_nsec: Int(stat.smb2_ctime_nsec)))
-        dic[.contentAccessDateKey] = Date(
-            timespec(tv_sec: Int(stat.smb2_atime), tv_nsec: Int(stat.smb2_atime_nsec)))
-        dic[.creationDateKey] = Date(
-            timespec(tv_sec: Int(stat.smb2_btime), tv_nsec: Int(stat.smb2_btime_nsec)))
-    }
 }
 
 extension SMB2Manager {
@@ -1280,8 +1270,9 @@ extension SMB2Manager {
             if [".", ".."].contains(name) { continue }
             var result = [URLResourceKey: Any]()
             result[.nameKey] = name
-            result[.pathKey] = (path as NSString).appendingPathComponent(name)
-            populateResourceValue(&result, stat: ent.st)
+            result[.pathKey] =
+                path.fileURL().appendingPathComponent(name, isDirectory: ent.st.isDirectory).path
+            ent.st.populateResourceValue(&result)
             contents.append(result)
         }
 
@@ -1307,7 +1298,7 @@ extension SMB2Manager {
         ) throws -> Bool
     ) throws {
         let stat = try context.stat(path)
-        if stat.smb2_type == SMB2_TYPE_DIRECTORY {
+        if stat.isDirectory {
             try context.mkdir(toPath)
 
             let list = try listDirectory(context: context, path: path, recursive: recursive)
@@ -1317,8 +1308,8 @@ extension SMB2Manager {
             var totalCopied: Int64 = 0
             for item in list {
                 let itemPath = try item.path.unwrap()
-                let destPath = itemPath.replacingOccurrences(
-                    of: path, with: toPath, options: .anchored)
+                let destPath = itemPath.canonical
+                    .replacingOccurrences(of: path, with: toPath, options: .anchored)
                 if item.isDirectory {
                     try context.mkdir(destPath)
                 } else {
@@ -1490,5 +1481,41 @@ extension SMB2Manager {
             try? context.unlink(toPath)
             throw error
         }
+    }
+}
+
+extension smb2_stat_64 {
+    var isDirectory: Bool {
+        smb2_type == SMB2_TYPE_DIRECTORY
+    }
+
+    func populateResourceValue(_ dic: inout [URLResourceKey: Any]) {
+        dic.reserveCapacity(11 + dic.count)
+        dic[.fileSizeKey] = NSNumber(value: smb2_size)
+        dic[.linkCountKey] = NSNumber(value: smb2_nlink)
+        dic[.documentIdentifierKey] = NSNumber(value: smb2_ino)
+
+        switch Int32(smb2_type) {
+        case SMB2_TYPE_DIRECTORY:
+            dic[.fileResourceTypeKey] = URLFileResourceType.directory
+        case SMB2_TYPE_FILE:
+            dic[.fileResourceTypeKey] = URLFileResourceType.regular
+        case SMB2_TYPE_LINK:
+            dic[.fileResourceTypeKey] = URLFileResourceType.symbolicLink
+        default:
+            dic[.fileResourceTypeKey] = URLFileResourceType.unknown
+        }
+        dic[.isDirectoryKey] = NSNumber(value: smb2_type == SMB2_TYPE_DIRECTORY)
+        dic[.isRegularFileKey] = NSNumber(value: smb2_type == SMB2_TYPE_FILE)
+        dic[.isSymbolicLinkKey] = NSNumber(value: smb2_type == SMB2_TYPE_LINK)
+
+        dic[.contentModificationDateKey] = Date(
+            timespec(tv_sec: Int(smb2_mtime), tv_nsec: Int(smb2_mtime_nsec)))
+        dic[.attributeModificationDateKey] = Date(
+            timespec(tv_sec: Int(smb2_ctime), tv_nsec: Int(smb2_ctime_nsec)))
+        dic[.contentAccessDateKey] = Date(
+            timespec(tv_sec: Int(smb2_atime), tv_nsec: Int(smb2_atime_nsec)))
+        dic[.creationDateKey] = Date(
+            timespec(tv_sec: Int(smb2_btime), tv_nsec: Int(smb2_btime_nsec)))
     }
 }

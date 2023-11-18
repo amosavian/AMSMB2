@@ -38,7 +38,7 @@ extension IOCtlArgument {
     func index(after i: Int) -> Int {
         return i + 1
     }
-    
+
     func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
         try Data(regions.joined()).withUnsafeBytes(body)
     }
@@ -50,7 +50,7 @@ protocol IOCtlReply {
 
 struct AnyIOCtlReply: IOCtlReply {
     private let data: Data
-    
+
     init(data: Data) {
         self.data = data
     }

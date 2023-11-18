@@ -450,7 +450,7 @@ extension smb2_negotiate_version: Hashable {
     static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
         lhs.rawValue == rhs.rawValue
     }
-    
+
     public func hash(into hasher: inout Hasher) {
         hasher.combine(rawValue)
     }
