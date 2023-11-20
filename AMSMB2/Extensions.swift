@@ -2,8 +2,9 @@
 //  Extensions.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas Mousavian.
-//  Copyright © 2018 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
@@ -45,7 +46,7 @@ extension POSIXError {
 
     init(_ code: POSIXError.Code, description: String?) {
         let userInfo: [String: Any] =
-            description.map({ [NSLocalizedFailureReasonErrorKey: $0] }) ?? [:]
+            description.map { [NSLocalizedFailureReasonErrorKey: $0] } ?? [:]
         self = POSIXError(code, userInfo: userInfo)
     }
 }
@@ -68,61 +69,61 @@ extension Bool: EmptyInitializable {}
 
 extension Dictionary where Key == URLResourceKey {
     private func value<T>(forKey key: Key) -> T? {
-        return self[key] as? T
+        self[key] as? T
     }
 
     private func value<T>(forKey key: Key) -> T where T: EmptyInitializable {
-        return self[key] as? T ?? T.init()
+        self[key] as? T ?? T()
     }
 
     public var name: String? {
-        return self.value(forKey: .nameKey)
+        value(forKey: .nameKey)
     }
 
     public var path: String? {
-        return value(forKey: .pathKey)
+        value(forKey: .pathKey)
     }
 
     public var fileResourceType: URLFileResourceType? {
-        return value(forKey: .fileResourceTypeKey)
+        value(forKey: .fileResourceTypeKey)
     }
 
     public var isDirectory: Bool {
-        return value(forKey: .isDirectoryKey)
+        value(forKey: .isDirectoryKey)
     }
 
     public var isRegularFile: Bool {
-        return value(forKey: .isRegularFileKey)
+        value(forKey: .isRegularFileKey)
     }
 
     public var isSymbolicLink: Bool {
-        return value(forKey: .isSymbolicLinkKey)
+        value(forKey: .isSymbolicLinkKey)
     }
 
     public var fileSize: Int64? {
-        return value(forKey: .fileSizeKey)
+        value(forKey: .fileSizeKey)
     }
 
     public var attributeModificationDate: Date? {
-        return value(forKey: .attributeModificationDateKey)
+        value(forKey: .attributeModificationDateKey)
     }
 
     public var contentModificationDate: Date? {
-        return value(forKey: .contentModificationDateKey)
+        value(forKey: .contentModificationDateKey)
     }
 
     public var contentAccessDate: Date? {
-        return value(forKey: .contentAccessDateKey)
+        value(forKey: .contentAccessDateKey)
     }
 
     public var creationDate: Date? {
-        return value(forKey: .creationDateKey)
+        value(forKey: .creationDateKey)
     }
 }
 
 extension Array where Element == [URLResourceKey: Any] {
     func sortedByPath(_ comparison: ComparisonResult) -> [[URLResourceKey: Any]] {
-        return sorted {
+        sorted {
             guard let firstPath = $0.path, let secPath = $1.path else {
                 return false
             }
@@ -131,12 +132,10 @@ extension Array where Element == [URLResourceKey: Any] {
     }
 
     var overallSize: Int64 {
-        return reduce(
-            0,
-            { (result, value) -> Int64 in
-                guard value.isRegularFile else { return result }
-                return result + (value.fileSize ?? 0)
-            })
+        reduce(0) { result, value -> Int64 in
+            guard value.isRegularFile else { return result }
+            return result + (value.fileSize ?? 0)
+        }
     }
 }
 
@@ -152,11 +151,22 @@ extension Array where Element == SMB2Share {
     }
 }
 
+extension RangeExpression where Bound: FixedWidthInteger {
+    var int64Range: Range<Int64> {
+        let range: Range<Bound> = relative(to: 0..<Bound.max)
+        let lower = Int64(exactly: range.lowerBound) ?? (Int64.max - 1)
+        let upper = Int64(exactly: range.upperBound) ?? Int64.max
+        return lower..<upper
+    }
+}
+
 extension Date {
     init(_ timespec: timespec) {
         self.init(
             timeIntervalSince1970: TimeInterval(timespec.tv_sec) + TimeInterval(
-                timespec.tv_nsec / 1000) / TimeInterval(USEC_PER_SEC))
+                timespec.tv_nsec / 1000
+            ) / TimeInterval(USEC_PER_SEC)
+        )
     }
 }
 
@@ -184,30 +194,32 @@ extension Data {
         append(Data(value: uuid))
     }
 
-    func scanValue<T: FixedWidthInteger>(offset: Int, as: T.Type) -> T? {
+    func scanValue<T: FixedWidthInteger>(offset: Int, as _: T.Type) -> T? {
         guard count >= offset + MemoryLayout<T>.size else { return nil }
         return T(littleEndian: withUnsafeBytes { $0.load(fromByteOffset: offset, as: T.self) })
     }
 
-    func scanInt<T: FixedWidthInteger>(offset: Int, as: T.Type) -> Int? {
-        return scanValue(offset: offset, as: T.self).map(Int.init)
+    func scanInt<T: FixedWidthInteger>(offset: Int, as _: T.Type) -> Int? {
+        scanValue(offset: offset, as: T.self).map(Int.init)
     }
 }
 
 extension String {
     var canonical: String {
-        return trimmingCharacters(in: .init(charactersIn: "/\\"))
+        trimmingCharacters(in: .init(charactersIn: "/\\"))
     }
 
     func fileURL(_ isDirectory: Bool = false) -> URL {
         if #available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, *) {
             return .init(
                 filePath: self, directoryHint: isDirectory ? .isDirectory : .notDirectory,
-                relativeTo: .init(filePath: "/"))
+                relativeTo: .init(filePath: "/")
+            )
         } else {
             return .init(
                 fileURLWithPath: self, isDirectory: isDirectory,
-                relativeTo: .init(fileURLWithPath: "/"))
+                relativeTo: .init(fileURLWithPath: "/")
+            )
         }
     }
 }
@@ -252,7 +264,7 @@ extension OutputStream {
 }
 
 func asyncHandler(_ continuation: CheckedContinuation<Void, Error>) -> (_ error: Error?) -> Void {
-    return { error in
+    { error in
         if let error = error {
             continuation.resume(throwing: error)
             return
@@ -262,7 +274,7 @@ func asyncHandler(_ continuation: CheckedContinuation<Void, Error>) -> (_ error:
 }
 
 func asyncHandler<T>(_ continuation: CheckedContinuation<T, Error>) -> (Result<T, Error>) -> Void {
-    return { result in
+    { result in
         continuation.resume(with: result)
     }
 }

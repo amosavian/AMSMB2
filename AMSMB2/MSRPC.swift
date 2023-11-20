@@ -2,13 +2,14 @@
 //  MSRPC.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas Mousavian.
-//  Copyright © 2018 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
 
-class MSRPC {
+enum MSRPC {
     struct NetShareEnumAllLevel1: IOCtlReply {
         let shares: [SMB2Share]
 
@@ -41,7 +42,7 @@ class MSRPC {
 
             // First 48 bytes are header, _SHARE_INFO_1 is 12 bytes and "type" starts from 4th byte
             func typeOffset(_ i: Int) -> Int {
-                return 48 + i * 12 + 4
+                48 + i * 12 + 4
             }
 
             var shares = [SMB2Share]()
@@ -66,7 +67,7 @@ class MSRPC {
                 let nameStringData = data.dropFirst(offset).prefix((nameActualCount - 1) * 2)
                 let nameString: String =
                     nameActualCount > 1
-                    ? (String(data: nameStringData, encoding: .utf16LittleEndian) ?? "") : ""
+                        ? (String(data: nameStringData, encoding: .utf16LittleEndian) ?? "") : ""
 
                 offset += nameActualCount * 2
                 if nameActualCount % 2 == 1 {
@@ -87,7 +88,7 @@ class MSRPC {
                 let commentStringData = data.dropFirst(offset).prefix((commentActualCount - 1) * 2)
                 let commentString: String =
                     commentActualCount > 1
-                    ? (String(data: commentStringData, encoding: .utf16LittleEndian) ?? "") : ""
+                        ? (String(data: commentStringData, encoding: .utf16LittleEndian) ?? "") : ""
 
                 offset += commentActualCount * 2
 
@@ -100,7 +101,8 @@ class MSRPC {
                     .init(
                         name: nameString, props: ShareProperties(rawValue: type),
                         comment: commentString
-                    ))
+                    )
+                )
 
                 if offset > data.count {
                     break
@@ -126,7 +128,7 @@ class MSRPC {
         let callId: UInt32
 
         var regions: [Data] {
-            return [
+            [
                 // Version major, version minor, packet type = 'bind', packet flags
                 .init([0x05, 0x00, command.rawValue, 0x03]),
                 // Representation = little endian/ASCII.
@@ -217,7 +219,7 @@ class MSRPC {
 
                 // The server name
                 .init(serverNameData),
-                (serverNameLen % 2 == 1 ? .init(value: 0 as UInt32) : .init(value: 0 as UInt16)),
+                serverNameLen % 2 == 1 ? .init(value: 0 as UInt32) : .init(value: 0 as UInt16),
 
                 // Level 1
                 .init(value: level as UInt32),

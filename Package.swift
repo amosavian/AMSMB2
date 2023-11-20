@@ -15,11 +15,9 @@ let package = Package(
             name: "AMSMB2",
             type: .dynamic,
             targets: ["AMSMB2"]
-        )
+        ),
     ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-format.git", "509.0.0"..<"600.0.0"),
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "libsmb2",
@@ -55,7 +53,7 @@ let package = Package(
         .target(
             name: "AMSMB2",
             dependencies: [
-                "libsmb2"
+                "libsmb2",
             ],
             path: "AMSMB2"
         ),

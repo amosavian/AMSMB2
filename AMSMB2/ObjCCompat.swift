@@ -2,8 +2,9 @@
 //  ObjCCompat.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 2/7/1398 AP.
-//  Copyright © 1398 AP Mousavian. All rights reserved.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
@@ -63,10 +64,10 @@ extension SMB2Manager {
         completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) ->
             Void
     ) {
-        listShares(enumerateHidden: false) { (result) in
+        listShares(enumerateHidden: false) { result in
             switch result {
             case .success(let shares):
-                completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
+                completionHandler(shares.map(\.name), shares.map(\.comment), nil)
             case .failure(let error):
                 completionHandler([], [], error)
             }
@@ -91,10 +92,10 @@ extension SMB2Manager {
         completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) ->
             Void
     ) {
-        listShares(enumerateHidden: enumerateHidden) { (result) in
+        listShares(enumerateHidden: enumerateHidden) { result in
             switch result {
             case .success(let shares):
-                completionHandler(shares.map({ $0.name }), shares.map({ $0.comment }), nil)
+                completionHandler(shares.map(\.name), shares.map(\.comment), nil)
             case .failure(let error):
                 completionHandler([], [], error)
             }
@@ -118,7 +119,8 @@ extension SMB2Manager {
         completionHandler: @escaping (_ contents: [[URLResourceKey: Any]]?, _ error: Error?) -> Void
     ) {
         contentsOfDirectory(
-            atPath: path, recursive: recursive, completionHandler: convert(completionHandler))
+            atPath: path, recursive: recursive, completionHandler: convert(completionHandler)
+        )
     }
 
     /**
@@ -160,15 +162,15 @@ extension SMB2Manager {
     }
 
     /**
-    Returns the path of the item pointed to by a symbolic link.
+     Returns the path of the item pointed to by a symbolic link.
 
-    - Parameters:
-      - atPath: The path of a file or directory.
-      - completionHandler: closure will be run after reading link is completed.
-      - destinationPath: A `NSString` object containing the path of the directory or file to which the symbolic link path refers.
-                If the symbolic link is specified as a relative path, that relative path is returned.
-      - error: `NSError` if any occurred during enumeration.
-    */
+     - Parameters:
+       - atPath: The path of a file or directory.
+       - completionHandler: closure will be run after reading link is completed.
+       - destinationPath: A `NSString` object containing the path of the directory or file to which the symbolic link path refers.
+                 If the symbolic link is specified as a relative path, that relative path is returned.
+       - error: `NSError` if any occurred during enumeration.
+     */
     @available(swift, obsoleted: 1.0)
     @objc(destinationOfSymbolicLinkAtPath:completionHandler:)
     open func __destinationOfSymbolicLink(
@@ -212,7 +214,8 @@ extension SMB2Manager {
         let range = length >= 0 ? offset..<(offset + Int64(length)) : offset..<Int64.max
         contents(
             atPath: path, range: range, progress: progress,
-            completionHandler: convert(completionHandler))
+            completionHandler: convert(completionHandler)
+        )
     }
 
     /**
@@ -239,10 +242,10 @@ extension SMB2Manager {
 }
 
 extension SMB2Manager {
-    fileprivate func convert<T>(_ resultCompletion: @escaping (T?, Error?) -> Void) -> (
+    private func convert<T>(_ resultCompletion: @escaping (T?, Error?) -> Void) -> (
         (Result<T, Error>) -> Void
     ) {
-        return { result in
+        { result in
             switch result {
             case .success(let val):
                 resultCompletion(val, nil)

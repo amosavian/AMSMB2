@@ -2,8 +2,9 @@
 //  FileHandle.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas Mousavian.
-//  Copyright © 2018 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
@@ -12,7 +13,6 @@ import SMB2
 typealias smb2fh = OpaquePointer
 
 final class SMB2FileHandle {
-
     struct SeekWhence: RawRepresentable {
         var rawValue: Int32
 
@@ -57,8 +57,8 @@ final class SMB2FileHandle {
         createOptions: Int32 = 0, on context: SMB2Context
     ) throws -> SMB2FileHandle {
         let (_, result) = try context.async_await_pdu(dataHandler: SMB2FileHandle.init) {
-            (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
-            return path.replacingOccurrences(of: "/", with: "\\").withCString { (path) in
+            context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+            path.replacingOccurrences(of: "/", with: "\\").withCString { path in
                 var req = smb2_create_request()
                 req.requested_oplock_level = UInt8(opLock)
                 req.impersonation_level = UInt32(impersonation)
@@ -83,7 +83,7 @@ final class SMB2FileHandle {
 
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
         let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) {
-            (context, cbPtr) -> Int32 in
+            context, cbPtr -> Int32 in
             smb2_open_async(context, path.canonical, flags, SMB2Context.generic_handler, cbPtr)
         }
         self.context = context
@@ -93,52 +93,52 @@ final class SMB2FileHandle {
     deinit {
         do {
             let handle = try self.handle.unwrap()
-            try context.async_await { (context, cbPtr) -> Int32 in
+            try context.async_await { context, cbPtr -> Int32 in
                 smb2_close_async(context, handle, SMB2Context.generic_handler, cbPtr)
             }
         } catch {}
     }
 
     var fileId: smb2_file_id {
-        return (try? smb2_get_file_id(handle.unwrap()).unwrap().pointee) ?? compound_file_id
+        (try? smb2_get_file_id(handle.unwrap()).unwrap().pointee) ?? compound_file_id
     }
 
     func close() {
         guard let handle = handle else { return }
         self.handle = nil
-        _ = try? context.withThreadSafeContext { (context) in
+        _ = try? context.withThreadSafeContext { context in
             smb2_close(context, handle)
         }
     }
 
     func fstat() throws -> smb2_stat_64 {
-        let handle = try self.handle.unwrap()
+        let handle = try handle.unwrap()
         var st = smb2_stat_64()
-        try context.async_await { (context, cbPtr) -> Int32 in
+        try context.async_await { context, cbPtr -> Int32 in
             smb2_fstat_async(context, handle, &st, SMB2Context.generic_handler, cbPtr)
         }
         return st
     }
 
     func ftruncate(toLength: UInt64) throws {
-        let handle = try self.handle.unwrap()
-        try context.async_await { (context, cbPtr) -> Int32 in
+        let handle = try handle.unwrap()
+        try context.async_await { context, cbPtr -> Int32 in
             smb2_ftruncate_async(context, handle, toLength, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     var maxReadSize: Int {
-        return (try? Int(context.withThreadSafeContext(smb2_get_max_read_size))) ?? -1
+        (try? Int(context.withThreadSafeContext(smb2_get_max_read_size))) ?? -1
     }
 
     /// This value allows softer streaming
     var optimizedReadSize: Int {
-        return min(maxReadSize, 1_048_576)
+        min(maxReadSize, 1_048_576)
     }
 
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
-        let handle = try self.handle.unwrap()
+        let handle = try handle.unwrap()
         let result = smb2_lseek(context.unsafe, handle, offset, whence.rawValue, nil)
         try POSIXError.throwIfError(result, description: context.error)
         return result
@@ -146,50 +146,56 @@ final class SMB2FileHandle {
 
     func read(length: Int = 0) throws -> Data {
         precondition(
-            length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
+            length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2."
+        )
 
-        let handle = try self.handle.unwrap()
+        let handle = try handle.unwrap()
         let count = length > 0 ? length : optimizedReadSize
         var buffer = [UInt8](repeating: 0, count: count)
-        let result = try context.async_await { (context, cbPtr) -> Int32 in
+        let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_read_async(
-                context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr)
+                context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr
+            )
         }
         return Data(buffer.prefix(Int(result)))
     }
 
     func pread(offset: UInt64, length: Int = 0) throws -> Data {
         precondition(
-            length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2.")
+            length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2."
+        )
 
-        let handle = try self.handle.unwrap()
+        let handle = try handle.unwrap()
         let count = length > 0 ? length : optimizedReadSize
         var buffer = [UInt8](repeating: 0, count: count)
-        let result = try context.async_await { (context, cbPtr) -> Int32 in
+        let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_pread_async(
                 context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler,
-                cbPtr)
+                cbPtr
+            )
         }
         return Data(buffer.prefix(Int(result)))
     }
 
     var maxWriteSize: Int {
-        return (try? Int(context.withThreadSafeContext(smb2_get_max_write_size))) ?? -1
+        (try? Int(context.withThreadSafeContext(smb2_get_max_write_size))) ?? -1
     }
 
     var optimizedWriteSize: Int {
-        return min(maxWriteSize, 1_048_576)
+        min(maxWriteSize, 1_048_576)
     }
 
     func write<DataType: DataProtocol>(data: DataType) throws -> Int {
         precondition(
-            data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
+            data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2."
+        )
 
-        let handle = try self.handle.unwrap()
+        let handle = try handle.unwrap()
         var buffer = Array(data)
-        let result = try context.async_await { (context, cbPtr) -> Int32 in
+        let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_write_async(
-                context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr)
+                context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr
+            )
         }
 
         return Int(result)
@@ -197,37 +203,40 @@ final class SMB2FileHandle {
 
     func pwrite<DataType: DataProtocol>(data: DataType, offset: UInt64) throws -> Int {
         precondition(
-            data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2.")
+            data.count <= Int32.max, "Data bigger than Int32.max can't be handled by libsmb2."
+        )
 
-        let handle = try self.handle.unwrap()
+        let handle = try handle.unwrap()
         var buffer = Array(data)
-        let result = try context.async_await { (context, cbPtr) -> Int32 in
+        let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_pwrite_async(
                 context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler,
-                cbPtr)
+                cbPtr
+            )
         }
 
         return Int(result)
     }
 
     func fsync() throws {
-        let handle = try self.handle.unwrap()
-        try context.async_await { (context, cbPtr) -> Int32 in
+        let handle = try handle.unwrap()
+        try context.async_await { context, cbPtr -> Int32 in
             smb2_fsync_async(context, handle, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     @discardableResult
     func fcntl<DataType: DataProtocol, R: IOCtlReply>(
-        command: IOCtl.Command, args: DataType, needsReply: Bool = true
+        command: IOCtl.Command, args: DataType, needsReply _: Bool = true
     ) throws -> R {
         var inputBuffer = [UInt8](args)
-        return try inputBuffer.withUnsafeMutableBytes { (buf) in
+        return try inputBuffer.withUnsafeMutableBytes { buf in
             var req = smb2_ioctl_request(
                 ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buf.count),
-                input: buf.baseAddress, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL))
+                input: buf.baseAddress, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL)
+            )
             return try context.async_await_pdu(dataHandler: R.init) {
-                (context, cbPtr) -> UnsafeMutablePointer<smb2_pdu>? in
+                context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
                 smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
             }.data
         }
@@ -242,6 +251,6 @@ final class SMB2FileHandle {
     }
 
     func fcntl<R: IOCtlReply>(command: IOCtl.Command) throws -> R {
-        return try fcntl(command: command, args: [])
+        try fcntl(command: command, args: [])
     }
 }

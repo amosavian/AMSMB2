@@ -1,9 +1,10 @@
 //
 //  SMB2ManagerTests.swift
-//  SMB2ManagerTests
+//  AMSMB2
 //
-//  Created by Amir Abbas on 2/27/1397 AP.
-//  Copyright © 1397 AP Mousavian. All rights reserved.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import XCTest
@@ -11,7 +12,6 @@ import XCTest
 @testable import AMSMB2
 
 class SMB2ManagerTests: XCTestCase {
-
     override func setUp() {
         super.setUp()
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -38,7 +38,8 @@ class SMB2ManagerTests: XCTestCase {
         unarchiver.decodingFailurePolicy = .setErrorAndReturn
         unarchiver.requiresSecureCoding = true
         let decodedSMB = unarchiver.decodeObject(
-            of: SMB2Manager.self, forKey: NSKeyedArchiveRootObjectKey)
+            of: SMB2Manager.self, forKey: NSKeyedArchiveRootObjectKey
+        )
         XCTAssertNotNil(decodedSMB)
         XCTAssertEqual(smb?.url, decodedSMB?.url)
         XCTAssertEqual(smb?.timeout, decodedSMB?.timeout)
@@ -77,30 +78,27 @@ class SMB2ManagerTests: XCTestCase {
     }
 
     // Change server address and testing share
-    lazy var server: URL = {
-        return URL(string: ProcessInfo.processInfo.environment["SMB_SERVER"]!)!
-    }()
-    lazy var share: String = {
-        return ProcessInfo.processInfo.environment["SMB_SHARE"]!
-    }()
+    lazy var server: URL = .init(string: ProcessInfo.processInfo.environment["SMB_SERVER"]!)!
+
+    lazy var share: String = ProcessInfo.processInfo.environment["SMB_SHARE"]!
+
     lazy var credential: URLCredential? = {
         if let user = ProcessInfo.processInfo.environment["SMB_USER"],
-            let pass = ProcessInfo.processInfo.environment["SMB_PASSWORD"]
+           let pass = ProcessInfo.processInfo.environment["SMB_PASSWORD"]
         {
             return URLCredential(user: user, password: pass, persistence: .forSession)
         } else {
             return nil
         }
     }()
-    lazy var encrypted: Bool = {
-        return ProcessInfo.processInfo.environment["SMB_ENCRYPTED"] == "1"
-    }()
+
+    lazy var encrypted: Bool = ProcessInfo.processInfo.environment["SMB_ENCRYPTED"] == "1"
 
     func testConnectDisconnect() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.disconnectShare(gracefully: false)
-        try await smb.connectShare(name: self.share, encrypted: self.encrypted)
+        try await smb.connectShare(name: share, encrypted: encrypted)
     }
 
     func testShareEnum() async throws {
@@ -128,7 +126,8 @@ class SMB2ManagerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(fsAttributes[.systemSize] as! Int64, 0)
         XCTAssertGreaterThanOrEqual(fsAttributes[.systemFreeSize] as! Int64, 0)
         XCTAssertGreaterThanOrEqual(
-            fsAttributes[.systemSize] as! Int64, fsAttributes[.systemFreeSize] as! Int64)
+            fsAttributes[.systemSize] as! Int64, fsAttributes[.systemFreeSize] as! Int64
+        )
     }
 
     func testListing() async throws {
@@ -153,7 +152,8 @@ class SMB2ManagerTests: XCTestCase {
             XCTAssert(
                 !destination.trimmingCharacters(
                     in: CharacterSet.alphanumerics.inverted
-                ).isEmpty)
+                ).isEmpty
+            )
         }
     }
 
@@ -169,7 +169,7 @@ class SMB2ManagerTests: XCTestCase {
     }
 
     func testZeroWriteRead() async throws {
-        let size: Int = 0
+        let size = 0
         try await readWrite(size: size, function: #function)
     }
 
@@ -178,11 +178,11 @@ class SMB2ManagerTests: XCTestCase {
         try await readWrite(size: size, function: #function)
     }
 
-    private var optimizedSize = 1024 * 1024  // 1MB
-    private var maxSize = 4 * 1024 * 1024  // 4MB
+    private var optimizedSize = 1024 * 1024 // 1MB
+    private var maxSize = 4 * 1024 * 1024 // 4MB
 
     func testMediumWriteRead() async throws {
-        let size: Int = 15 + random(max: optimizedSize - 15)
+        let size = 15 + random(max: optimizedSize - 15)
         try await readWrite(size: size, function: #function)
     }
 
@@ -204,42 +204,44 @@ class SMB2ManagerTests: XCTestCase {
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.write(
             data: data, toPath: "writetest.dat",
-            progress: { (progress) -> Bool in
+            progress: { progress -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 print(function, "uploaded:", progress, "of", size)
                 return true
             }
         )
         if checkLeak {
-            XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+            XCTAssertLessThan(report_memory() - baseMemUsage, 2 * size)
         }
 
         let rdata = try await smb.contents(
             atPath: "writetest.dat",
-            progress: { (progress, total) -> Bool in
+            progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertEqual(total, Int64(data.count))
                 print(function, "downloaded:", progress, "of", total)
                 return true
-            })
+            }
+        )
         if checkLeak {
-            XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+            XCTAssertLessThan(report_memory() - baseMemUsage, 2 * size)
         }
         XCTAssertEqual(data, rdata)
 
         let trdata = try await smb.contents(
-            atPath: "writetest.dat", range: ..<UInt64(10), progress: nil)
+            atPath: "writetest.dat", range: ..<UInt64(10), progress: nil
+        )
         XCTAssertEqual(data.prefix(10), trdata)
 
         if checkLeak {
-            print("\(function) after free memory usage:", self.report_memory() - baseMemUsage)
-            XCTAssertLessThan(self.report_memory() - baseMemUsage, 2 * size)
+            print("\(function) after free memory usage:", report_memory() - baseMemUsage)
+            XCTAssertLessThan(report_memory() - baseMemUsage, 2 * size)
         }
     }
 
     func testChunkedLoad() async throws {
         let file = "chunkedreadtest.dat"
-        let size: Int = random(max: 0xF00000)
+        let size: Int = random(max: 0xf00000)
         let smb = SMB2Manager(url: server, credential: credential)!
         print(#function, "test size:", size)
         let data = randomData(size: size)
@@ -251,21 +253,26 @@ class SMB2ManagerTests: XCTestCase {
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.write(data: data, toPath: file, progress: nil)
 
-        var cachedOffset: Int64 = 0
-        try await smb.contents(
-            atPath: file,
-            fetchedData: { (offset, total, chunk) -> Bool in
+        return try await withCheckedThrowingContinuation { continuation in
+            var cachedOffset: Int64 = 0
+            smb.contents(atPath: file) { offset, _, chunk in
                 XCTAssertEqual(offset, cachedOffset)
                 cachedOffset += Int64(chunk.count)
                 XCTAssertEqual(data[Int(offset)..<Int(cachedOffset)], chunk)
                 return true
+            } completionHandler: { error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
             }
-        )
+        }
     }
 
     func testUploadDownload() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
-        let size: Int = random(max: 0xF00000)
+        let size: Int = random(max: 0xf00000)
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
         let dlURL = url.appendingPathExtension("downloaded")
@@ -280,7 +287,7 @@ class SMB2ManagerTests: XCTestCase {
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.uploadItem(
             at: url, toPath: "uploadtest.dat",
-            progress: { (progress) -> Bool in
+            progress: { progress -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 print(#function, "uploaded:", progress, "of", size)
                 return true
@@ -297,7 +304,7 @@ class SMB2ManagerTests: XCTestCase {
 
         try await smb.downloadItem(
             atPath: "uploadtest.dat", to: dlURL,
-            progress: { (progress, total) -> Bool in
+            progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertGreaterThan(total, 0)
                 print(#function, "downloaded:", progress, "of", total)
@@ -312,7 +319,7 @@ class SMB2ManagerTests: XCTestCase {
     func testStreamUploadDownload() async throws {
         let file = "uploadtest.dat"
         let smb = SMB2Manager(url: server, credential: credential)!
-        let size: Int = random(max: 0xF00000)
+        let size: Int = random(max: 0xf00000)
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
         let dlURL = url.appendingPathExtension("downloaded")
@@ -328,7 +335,7 @@ class SMB2ManagerTests: XCTestCase {
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.write(
             stream: inputStream, toPath: file,
-            progress: { (progress) -> Bool in
+            progress: { progress -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 print(#function, "uploaded:", progress, "of", size)
                 return true
@@ -338,7 +345,7 @@ class SMB2ManagerTests: XCTestCase {
 
         try await smb.downloadItem(
             atPath: file, to: outputStream,
-            progress: { (progress, total) -> Bool in
+            progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertGreaterThan(total, 0)
                 print(#function, "downloaded:", progress, "of", total)
@@ -351,7 +358,7 @@ class SMB2ManagerTests: XCTestCase {
 
     func testTruncate() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
-        let size: Int = random(max: 0xF00000)
+        let size: Int = random(max: 0xf00000)
         let url = dummyFile(size: size)
         let file = "tructest.dat"
 
@@ -385,7 +392,7 @@ class SMB2ManagerTests: XCTestCase {
         try await smb.write(data: data, toPath: "copyTest.dat", progress: nil)
         try await smb.copyItem(
             atPath: "copyTest.dat", toPath: "copyTestDest.dat", recursive: false,
-            progress: { (progress, total) -> Bool in
+            progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertEqual(total, Int64(data.count))
                 print(#function, "copied:", progress, "of", total)
@@ -443,15 +450,15 @@ class SMB2ManagerTests: XCTestCase {
 }
 
 extension SMB2ManagerTests {
-    fileprivate func random<T: FixedWidthInteger>(max: T) -> T {
-        #if swift(>=4.2)
+    private func random<T: FixedWidthInteger>(max: T) -> T {
+#if swift(>=4.2)
         return T.random(in: 0...max)
-        #else
+#else
         return T(arc4random_uniform(Int32(max)))
-        #endif
+#endif
     }
 
-    fileprivate func randomData(size: Int = 262144) -> Data {
+    private func randomData(size: Int = 262_144) -> Data {
         var keyBuffer = [UInt8](repeating: 0, count: size)
         let result = SecRandomCopyBytes(kSecRandomDefault, keyBuffer.count, &keyBuffer)
         if result == errSecSuccess {
@@ -461,9 +468,10 @@ extension SMB2ManagerTests {
         }
     }
 
-    fileprivate func dummyFile() -> URL {
+    private func dummyFile() -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
-            "dummyfile.dat")
+            "dummyfile.dat"
+        )
 
         if !FileManager.default.fileExists(atPath: url.path) {
             let data = randomData()
@@ -472,7 +480,7 @@ extension SMB2ManagerTests {
         return url
     }
 
-    fileprivate func dummyFile(size: Int, name: String = #function) -> URL {
+    private func dummyFile(size: Int, name: String = #function) -> URL {
         let name = name.trimmingCharacters(in: CharacterSet(charactersIn: "()"))
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
 
@@ -485,7 +493,7 @@ extension SMB2ManagerTests {
         return url
     }
 
-    fileprivate func report_memory() -> Int {
+    private func report_memory() -> Int {
         var taskInfo = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
         let kerr: kern_return_t = withUnsafeMutablePointer(to: &taskInfo) {

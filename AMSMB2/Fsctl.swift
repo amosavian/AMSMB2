@@ -1,9 +1,10 @@
 //
-//  fsctl.swift
+//  Fsctl.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 4/17/1397 AP.
-//  Copyright © 1397 AP Mousavian. All rights reserved.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
@@ -13,19 +14,17 @@ protocol IOCtlArgument: ContiguousBytes & DataProtocol where Index == Int, Eleme
 
 extension IOCtlArgument {
     var startIndex: Int {
-        return 0
+        0
     }
 
     var endIndex: Int {
-        return regions.map(\.count).reduce(0, +)
+        regions.map(\.count).reduce(0, +)
     }
 
     subscript(index: Int) -> UInt8 {
-        get {
-            let data = regions.joined()
-            let index = data.index(data.startIndex, offsetBy: index)
-            return data[index]
-        }
+        let data = regions.joined()
+        let index = data.index(data.startIndex, offsetBy: index)
+        return data[index]
     }
 
     subscript(bounds: Range<Index>) -> Data {
@@ -36,7 +35,7 @@ extension IOCtlArgument {
     }
 
     func index(after i: Int) -> Int {
-        return i + 1
+        i + 1
     }
 
     func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
@@ -56,8 +55,7 @@ struct AnyIOCtlReply: IOCtlReply {
     }
 }
 
-struct IOCtl {
-
+enum IOCtl {
     struct Command: RawRepresentable, Equatable, Hashable {
         var rawValue: UInt32
 
@@ -68,20 +66,25 @@ struct IOCtl {
         static let srvCopyChunk = Command(rawValue: UInt32(SMB2_FSCTL_SRV_COPYCHUNK))
         static let srvCopyChunkWrite = Command(rawValue: UInt32(SMB2_FSCTL_SRV_COPYCHUNK_WRITE))
         static let srvEnumerateSnapshots = Command(
-            rawValue: UInt32(SMB2_FSCTL_SRV_ENUMERATE_SNAPSHOTS))
+            rawValue: UInt32(SMB2_FSCTL_SRV_ENUMERATE_SNAPSHOTS)
+        )
         static let srvRequestResumeKey = Command(
-            rawValue: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY))
+            rawValue: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY)
+        )
         static let srvReadHash = Command(rawValue: UInt32(SMB2_FSCTL_SRV_READ_HASH))
         static let lmrRequestResiliency = Command(
-            rawValue: UInt32(SMB2_FSCTL_LMR_REQUEST_RESILIENCY))
+            rawValue: UInt32(SMB2_FSCTL_LMR_REQUEST_RESILIENCY)
+        )
         static let queryNetworkInterfaceInfo = Command(
-            rawValue: UInt32(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO))
+            rawValue: UInt32(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO)
+        )
         static let getReparsePoint = Command(rawValue: UInt32(SMB2_FSCTL_GET_REPARSE_POINT))
         static let setReparsePoint = Command(rawValue: UInt32(SMB2_FSCTL_SET_REPARSE_POINT))
-        static let deleteReparsePoint = Command(rawValue: 0x0009_00AC)
+        static let deleteReparsePoint = Command(rawValue: 0x0009_00ac)
         static let fileLevelTrim = Command(rawValue: UInt32(SMB2_FSCTL_FILE_LEVEL_TRIM))
         static let validateNegotiateInfo = Command(
-            rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO))
+            rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO)
+        )
     }
 
     struct SrvCopyChunk: IOCtlArgument {
@@ -92,7 +95,7 @@ struct IOCtl {
         let length: UInt32
 
         var regions: [Data] {
-            return [
+            [
                 .init(value: sourceOffset),
                 .init(value: targetOffset),
                 .init(value: length),
@@ -114,7 +117,7 @@ struct IOCtl {
         let chunks: [SrvCopyChunk]
 
         var regions: [Data] {
-            return [
+            [
                 sourceKey,
                 .init(value: UInt32(chunks.count)),
                 .init(value: 0 as UInt32),
@@ -141,14 +144,14 @@ struct IOCtl {
     struct SymbolicLinkReparse: IOCtlReply, IOCtlArgument {
         typealias Element = UInt8
 
-        static private let headerLength = 20
-        private let reparseTag: UInt32 = 0xA000_000C
+        private static let headerLength = 20
+        private let reparseTag: UInt32 = 0xa000_000c
         let substituteName: String
         let printName: String
         let isRelative: Bool
 
         init(data: Data) throws {
-            guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
+            guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
                 throw POSIXError(.EINVAL)
             }
             let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
@@ -182,8 +185,8 @@ struct IOCtl {
             return [
                 .init(value: reparseTag),
                 .init(value: substituteLen + printLen),
-                .init(value: 0 as UInt16),  // reserved
-                .init(value: printLen),  // substitute offset
+                .init(value: 0 as UInt16), // reserved
+                .init(value: printLen), // substitute offset
                 .init(value: substituteLen),
                 .init(value: 0 as UInt16),
                 .init(value: printLen),
@@ -203,13 +206,13 @@ struct IOCtl {
     struct MountPointReparse: IOCtlReply, IOCtlArgument {
         typealias Element = UInt8
 
-        static private let headerLength = 16
-        private let reparseTag: UInt32 = 0xA000_0003
+        private static let headerLength = 16
+        private let reparseTag: UInt32 = 0xa000_0003
         let substituteName: String
         let printName: String
 
         init(data: Data) throws {
-            guard data.scanValue(offset: 0, as: UInt32.self) == self.reparseTag else {
+            guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
                 throw POSIXError(.EINVAL)
             }
 
@@ -239,8 +242,8 @@ struct IOCtl {
             return [
                 .init(value: reparseTag),
                 .init(value: substituteLen + printLen + 8),
-                .init(value: 0 as UInt16),  // reserved
-                .init(value: printLen),  // substitute offset
+                .init(value: 0 as UInt16), // reserved
+                .init(value: printLen), // substitute offset
                 .init(value: substituteLen),
                 .init(value: 0 as UInt16),
                 .init(value: printLen),

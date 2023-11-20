@@ -2,8 +2,9 @@
 //  Parsers.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 8/7/1398 AP.
-//  Copyright © 1398 AP Mousavian. All rights reserved.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
@@ -11,7 +12,7 @@ import SMB2
 import SMB2.Raw
 
 extension String {
-    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
+    init(_: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
         self = try String(cString: dataPtr.unwrap().assumingMemoryBound(to: Int8.self))
     }
 }
@@ -31,13 +32,14 @@ extension Array where Element == SMB2Share {
             SMB2Share(
                 name: .init(cString: $0.name),
                 props: .init(rawValue: $0.type),
-                comment: .init(cString: $0.comment))
+                comment: .init(cString: $0.comment)
+            )
         }
     }
 }
 
 extension OpaquePointer {
-    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
+    init(_: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
         self = try OpaquePointer(dataPtr.unwrap())
     }
 }

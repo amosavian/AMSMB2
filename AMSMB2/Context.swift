@@ -2,8 +2,9 @@
 //  Context.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas Mousavian.
-//  Copyright © 2018 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 11/20/23.
+//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  All rights reserved.
 //
 
 import Foundation
@@ -25,7 +26,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
         if isConnected {
             try? self.disconnect()
         }
-        try? withThreadSafeContext { (context) in
+        try? withThreadSafeContext { context in
             self.unsafe = nil
             smb2_destroy_context(context)
         }
@@ -42,12 +43,12 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
     }
 
     public var debugDescription: String {
-        return String(reflecting: self)
+        String(reflecting: self)
     }
 
     public var customMirror: Mirror {
         var c: [(label: String?, value: Any)] = []
-        if self.unsafe != nil {
+        if unsafe != nil {
             c.append((label: "server", value: server!))
             c.append((label: "securityMode", value: securityMode))
             c.append((label: "authentication", value: authentication))
@@ -64,13 +65,14 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable {
 }
 
 // MARK: Setting manipulation
+
 extension SMB2Context {
     var workstation: String {
         get {
-            return (unsafe?.pointee.workstation).map(String.init(cString:)) ?? ""
+            (unsafe?.pointee.workstation).map(String.init(cString:)) ?? ""
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_workstation(context, newValue)
             }
         }
@@ -78,10 +80,10 @@ extension SMB2Context {
 
     var domain: String {
         get {
-            return (unsafe?.pointee.domain).map(String.init(cString:)) ?? ""
+            (unsafe?.pointee.domain).map(String.init(cString:)) ?? ""
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_domain(context, newValue)
             }
         }
@@ -89,10 +91,10 @@ extension SMB2Context {
 
     var user: String {
         get {
-            return (unsafe?.pointee.user).map(String.init(cString:)) ?? ""
+            (unsafe?.pointee.user).map(String.init(cString:)) ?? ""
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_user(context, newValue)
             }
         }
@@ -100,10 +102,10 @@ extension SMB2Context {
 
     var password: String {
         get {
-            return (unsafe?.pointee.password).map(String.init(cString:)) ?? ""
+            (unsafe?.pointee.password).map(String.init(cString:)) ?? ""
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_password(context, newValue)
             }
         }
@@ -111,10 +113,10 @@ extension SMB2Context {
 
     var securityMode: NegotiateSigning {
         get {
-            return (unsafe?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
+            (unsafe?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_security_mode(context, newValue.rawValue)
             }
         }
@@ -122,10 +124,10 @@ extension SMB2Context {
 
     var seal: Bool {
         get {
-            return unsafe?.pointee.seal ?? 0 != 0
+            unsafe?.pointee.seal ?? 0 != 0
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_seal(context, newValue ? 1 : 0)
             }
         }
@@ -133,10 +135,10 @@ extension SMB2Context {
 
     var authentication: Security {
         get {
-            return unsafe?.pointee.sec ?? SMB2_SEC_UNDEFINED
+            unsafe?.pointee.sec ?? SMB2_SEC_UNDEFINED
         }
         set {
-            try? withThreadSafeContext { (context) in
+            try? withThreadSafeContext { context in
                 smb2_set_authentication(context, Int32(bitPattern: newValue.rawValue))
             }
         }
@@ -151,15 +153,15 @@ extension SMB2Context {
     }
 
     var server: String? {
-        return unsafe?.pointee.server.map(String.init(cString:))
+        unsafe?.pointee.server.map(String.init(cString:))
     }
 
     var share: String? {
-        return unsafe?.pointee.share.map(String.init(cString:))
+        unsafe?.pointee.share.map(String.init(cString:))
     }
 
     var version: Version {
-        return (unsafe?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
+        (unsafe?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
     }
 
     var isConnected: Bool {
@@ -182,7 +184,7 @@ extension SMB2Context {
     func service(revents: Int32) throws {
         let result = smb2_service(unsafe, revents)
         if result < 0 {
-            self.unsafe = nil
+            unsafe = nil
             smb2_destroy_context(unsafe)
         }
         try POSIXError.throwIfError(result, description: error)
@@ -190,16 +192,18 @@ extension SMB2Context {
 }
 
 // MARK: Connectivity
+
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_connect_share_async(
-                context, server, share, user, SMB2Context.generic_handler, cbPtr)
+                context, server, share, user, SMB2Context.generic_handler, cbPtr
+            )
         }
     }
 
     func disconnect() throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_free_all_dirs(context)
             smb2_free_all_fhs(context)
             return smb2_disconnect_share_async(context, SMB2Context.generic_handler, cbPtr)
@@ -210,16 +214,17 @@ extension SMB2Context {
         if !isConnected {
             throw POSIXError(.ENOTCONN)
         }
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_echo_async(context, SMB2Context.generic_handler, cbPtr)
         }
     }
 }
 
 // MARK: DCE-RPC
+
 extension SMB2Context {
     func shareEnum() throws -> [SMB2Share] {
-        return try async_await(dataHandler: [SMB2Share].init) { (context, cbPtr) -> Int32 in
+        try async_await(dataHandler: [SMB2Share].init) { context, cbPtr -> Int32 in
             smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
         }.data
     }
@@ -240,10 +245,11 @@ extension SMB2Context {
 }
 
 // MARK: File information
+
 extension SMB2Context {
     func stat(_ path: String) throws -> smb2_stat_64 {
         var st = smb2_stat_64()
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_stat_async(context, path.canonical, &st, SMB2Context.generic_handler, cbPtr)
         }
         return st
@@ -251,62 +257,66 @@ extension SMB2Context {
 
     func statvfs(_ path: String) throws -> smb2_statvfs {
         var st = smb2_statvfs()
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_statvfs_async(context, path.canonical, &st, SMB2Context.generic_handler, cbPtr)
         }
         return st
     }
 
     func readlink(_ path: String) throws -> String {
-        return try async_await(dataHandler: String.init) { (context, cbPtr) -> Int32 in
+        try async_await(dataHandler: String.init) { context, cbPtr -> Int32 in
             smb2_readlink_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }.data
     }
 }
 
 // MARK: File operation
+
 extension SMB2Context {
     func mkdir(_ path: String) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_mkdir_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func rmdir(_ path: String) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_rmdir_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func unlink(_ path: String) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_unlink_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }
     }
 
     func rename(_ path: String, to newPath: String) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_rename_async(
-                context, path.canonical, newPath.canonical, SMB2Context.generic_handler, cbPtr)
+                context, path.canonical, newPath.canonical, SMB2Context.generic_handler, cbPtr
+            )
         }
     }
 
     func truncate(_ path: String, toLength: UInt64) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             smb2_truncate_async(
-                context, path.canonical, toLength, SMB2Context.generic_handler, cbPtr)
+                context, path.canonical, toLength, SMB2Context.generic_handler, cbPtr
+            )
         }
     }
 }
 
 // MARK: Async operation handler
+
 extension SMB2Context {
     private class CBData {
         var result: Int32 = SMB2_STATUS_SUCCESS
         var isFinished: Bool = false
-        var dataHandler: ((UnsafeMutableRawPointer?) -> Void)? = nil
+        var dataHandler: ((UnsafeMutableRawPointer?) -> Void)?
         var status: UInt32 {
-            return UInt32(bitPattern: result)
+            UInt32(bitPattern: result)
         }
     }
 
@@ -352,7 +362,7 @@ extension SMB2Context {
 
     @discardableResult
     func async_await(execute handler: UnsafeContextHandler<Int32>) throws -> Int32 {
-        return try async_await(dataHandler: { _, _ in }, execute: handler).result
+        try async_await(dataHandler: { _, _ in }, execute: handler).result
     }
 
     @discardableResult
@@ -362,7 +372,7 @@ extension SMB2Context {
     )
         throws -> (result: Int32, data: DataType)
     {
-        return try withThreadSafeContext { (context) -> (Int32, DataType) in
+        try withThreadSafeContext { context -> (Int32, DataType) in
             var cb = CBData()
             var resultData: DataType?
             var dataHandlerError: Error?
@@ -390,7 +400,7 @@ extension SMB2Context {
     func async_await_pdu(execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
         throws -> UInt32
     {
-        return try async_await_pdu(dataHandler: { _, _ in }, execute: handler).status
+        try async_await_pdu(dataHandler: { _, _ in }, execute: handler).status
     }
 
     @discardableResult
@@ -400,7 +410,7 @@ extension SMB2Context {
     )
         throws -> (status: UInt32, data: DataType)
     {
-        return try withThreadSafeContext { (context) -> (UInt32, DataType) in
+        try withThreadSafeContext { context -> (UInt32, DataType) in
             var cb = CBData()
             var resultData: DataType?
             var dataHandlerError: Error?
@@ -447,7 +457,7 @@ extension smb2_negotiate_version: Hashable {
     static let v3_02 = SMB2_VERSION_0302
     static let v3_11 = SMB2_VERSION_0311
 
-    static func == (lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
+    static func ==(lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
         lhs.rawValue == rhs.rawValue
     }
 
@@ -461,8 +471,8 @@ extension smb2_sec {
     static let ntlmSsp = SMB2_SEC_NTLMSSP
     static let kerberos5 = SMB2_SEC_KRB5
 
-    static func == (lhs: smb2_sec, rhs: smb2_sec) -> Bool {
-        return lhs.rawValue == rhs.rawValue
+    static func ==(lhs: smb2_sec, rhs: smb2_sec) -> Bool {
+        lhs.rawValue == rhs.rawValue
     }
 }
 
@@ -483,14 +493,14 @@ struct ShareProperties: RawRepresentable {
     let rawValue: UInt32
 
     var type: ShareType {
-        return ShareType(rawValue: rawValue & 0x0fff_ffff)!
+        ShareType(rawValue: rawValue & 0x0fff_ffff)!
     }
 
     var isTemporary: Bool {
-        return rawValue & UInt32(bitPattern: SHARE_TYPE_TEMPORARY) != 0
+        rawValue & UInt32(bitPattern: SHARE_TYPE_TEMPORARY) != 0
     }
 
     var isHidden: Bool {
-        return rawValue & SHARE_TYPE_HIDDEN != 0
+        rawValue & SHARE_TYPE_HIDDEN != 0
     }
 }
