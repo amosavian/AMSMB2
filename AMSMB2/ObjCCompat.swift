@@ -20,7 +20,7 @@ extension SMB2Manager {
      */
     @available(swift, obsoleted: 1.0)
     @objc(connectShareWithName:completionHandler:)
-    open func __connectShare(name: String, completionHandler: @escaping (_ error: Error?) -> Void) {
+    open func __connectShare(name: String, completionHandler: @Sendable @escaping (_ error: Error?) -> Void) {
         connectShare(name: name, completionHandler: completionHandler)
     }
 
@@ -61,8 +61,7 @@ extension SMB2Manager {
     @available(swift, obsoleted: 1.0)
     @objc(listSharesWithCompletionHandler:)
     public func __listShares(
-        completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) ->
-            Void
+        completionHandler: @Sendable @escaping (_ names: [String], _ comments: [String], _ error: Error?) -> Void
     ) {
         listShares(enumerateHidden: false) { result in
             switch result {
@@ -89,8 +88,7 @@ extension SMB2Manager {
     @objc(listSharesWithEnumerateHidden:completionHandler:)
     public func __listShares(
         enumerateHidden: Bool,
-        completionHandler: @escaping (_ names: [String], _ comments: [String], _ error: Error?) ->
-            Void
+        completionHandler: @Sendable @escaping (_ names: [String], _ comments: [String], _ error: Error?) -> Void
     ) {
         listShares(enumerateHidden: enumerateHidden) { result in
             switch result {
@@ -116,7 +114,7 @@ extension SMB2Manager {
     @objc(contentsOfDirectoryAtPath:recursive:completionHandler:)
     public func __contentsOfDirectory(
         atPath path: String, recursive: Bool = false,
-        completionHandler: @escaping (_ contents: [[URLResourceKey: Any]]?, _ error: Error?) -> Void
+        completionHandler: @Sendable @escaping (_ contents: [[URLResourceKey: Any]]?, _ error: Error?) -> Void
     ) {
         contentsOfDirectory(
             atPath: path, recursive: recursive, completionHandler: convert(completionHandler)
@@ -137,8 +135,7 @@ extension SMB2Manager {
     @objc(attributesOfFileSystemForPath:completionHandler:)
     public func __attributesOfFileSystem(
         forPath path: String,
-        completionHandler: @escaping (_ attributes: [FileAttributeKey: Any]?, _ error: Error?) ->
-            Void
+        completionHandler: @Sendable @escaping (_ attributes: [FileAttributeKey: Any]?, _ error: Error?) -> Void
     ) {
         attributesOfFileSystem(forPath: path, completionHandler: convert(completionHandler))
     }
@@ -156,7 +153,7 @@ extension SMB2Manager {
     @objc(attributesOfItemAtPath:completionHandler:)
     public func __attributesOfItem(
         atPath path: String,
-        completionHandler: @escaping (_ file: [URLResourceKey: Any]?, _ error: Error?) -> Void
+        completionHandler: @Sendable @escaping (_ file: [URLResourceKey: Any]?, _ error: Error?) -> Void
     ) {
         attributesOfItem(atPath: path, completionHandler: convert(completionHandler))
     }
@@ -175,7 +172,7 @@ extension SMB2Manager {
     @objc(destinationOfSymbolicLinkAtPath:completionHandler:)
     open func __destinationOfSymbolicLink(
         atPath path: String,
-        completionHandler: @escaping (_ destinationPath: String?, _ error: Error?) -> Void
+        completionHandler: @Sendable @escaping (_ destinationPath: String?, _ error: Error?) -> Void
     ) {
         destinationOfSymbolicLink(atPath: path, completionHandler: convert(completionHandler))
     }
@@ -203,7 +200,7 @@ extension SMB2Manager {
     @objc(contentsAtPath:fromOffset:toLength:progress:completionHandler:)
     open func __contents(
         atPath path: String, offset: Int64 = 0, length: Int = -1, progress: ReadProgressHandler,
-        completionHandler: @escaping (_ contents: Data?, _ error: Error?) -> Void
+        completionHandler: @Sendable @escaping (_ contents: Data?, _ error: Error?) -> Void
     ) {
         guard offset >= 0 else {
             let error = POSIXError(.EINVAL, description: "Invalid content offset.")
@@ -242,8 +239,8 @@ extension SMB2Manager {
 }
 
 extension SMB2Manager {
-    private func convert<T>(_ resultCompletion: @escaping (T?, Error?) -> Void) -> (
-        (Result<T, Error>) -> Void
+    private func convert<T>(_ resultCompletion: @Sendable @escaping (T?, Error?) -> Void) -> (
+        @Sendable (Result<T, Error>) -> Void
     ) {
         { result in
             switch result {

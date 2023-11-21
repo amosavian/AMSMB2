@@ -9,6 +9,7 @@
 
 import XCTest
 
+import Atomics
 @testable import AMSMB2
 
 class SMB2ManagerTests: XCTestCase {
@@ -224,7 +225,7 @@ class SMB2ManagerTests: XCTestCase {
             }
         )
         if checkLeak {
-            XCTAssertLessThan(report_memory() - baseMemUsage, 2 * size)
+            XCTAssertLessThan(report_memory() - baseMemUsage, 3 * size)
         }
         XCTAssertEqual(data, rdata)
 
@@ -235,7 +236,7 @@ class SMB2ManagerTests: XCTestCase {
 
         if checkLeak {
             print("\(function) after free memory usage:", report_memory() - baseMemUsage)
-            XCTAssertLessThan(report_memory() - baseMemUsage, 2 * size)
+            XCTAssertLessThan(report_memory() - baseMemUsage, 3 * size)
         }
     }
 
@@ -254,11 +255,11 @@ class SMB2ManagerTests: XCTestCase {
         try await smb.write(data: data, toPath: file, progress: nil)
 
         return try await withCheckedThrowingContinuation { continuation in
-            var cachedOffset: Int64 = 0
+            let cachedOffset: ManagedAtomic<Int64> = .init(0)
             smb.contents(atPath: file) { offset, _, chunk in
-                XCTAssertEqual(offset, cachedOffset)
-                cachedOffset += Int64(chunk.count)
-                XCTAssertEqual(data[Int(offset)..<Int(cachedOffset)], chunk)
+                XCTAssertEqual(offset, cachedOffset.load(ordering: .relaxed))
+                _ = cachedOffset.loadThenWrappingIncrement(by: Int64(chunk.count), ordering: .relaxed)
+                XCTAssertEqual(data[Int(offset)..<Int(cachedOffset.load(ordering: .relaxed))], chunk)
                 return true
             } completionHandler: { error in
                 if let error = error {

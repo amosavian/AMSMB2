@@ -263,7 +263,7 @@ extension OutputStream {
     }
 }
 
-func asyncHandler(_ continuation: CheckedContinuation<Void, Error>) -> (_ error: Error?) -> Void {
+func asyncHandler(_ continuation: CheckedContinuation<Void, Error>) -> @Sendable (_ error: Error?) -> Void {
     { error in
         if let error = error {
             continuation.resume(throwing: error)
@@ -273,7 +273,7 @@ func asyncHandler(_ continuation: CheckedContinuation<Void, Error>) -> (_ error:
     }
 }
 
-func asyncHandler<T>(_ continuation: CheckedContinuation<T, Error>) -> (Result<T, Error>) -> Void {
+func asyncHandler<T>(_ continuation: CheckedContinuation<T, Error>) -> @Sendable (Result<T, Error>) -> Void {
     { result in
         continuation.resume(with: result)
     }

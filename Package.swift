@@ -17,7 +17,9 @@ let package = Package(
             targets: ["AMSMB2"]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-atomics.git", .upToNextMajor(from: "1.2.0")),
+    ],
     targets: [
         .target(
             name: "libsmb2",
@@ -55,11 +57,20 @@ let package = Package(
             dependencies: [
                 "libsmb2",
             ],
-            path: "AMSMB2"
+            path: "AMSMB2",
+            swiftSettings: [
+                .unsafeFlags([
+                    "-Xfrontend", "-warn-concurrency",
+                    "-Xfrontend", "-enable-actor-data-race-checks",
+                ]),
+            ]
         ),
         .testTarget(
             name: "AMSMB2Tests",
-            dependencies: ["AMSMB2"],
+            dependencies: [
+                "AMSMB2",
+                .product(name: "Atomics", package: "swift-atomics"),
+            ],
             path: "AMSMB2Tests"
         ),
     ],

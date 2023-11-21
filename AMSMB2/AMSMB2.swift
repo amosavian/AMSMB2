@@ -15,13 +15,12 @@ public typealias AMSMB2 = SMB2Manager
 
 /// Implements SMB2 File operations.
 @objc(AMSMB2Manager)
-public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable {
-    public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
-    public typealias ReadProgressHandler = ((_ bytes: Int64, _ total: Int64) -> Bool)?
-    public typealias WriteProgressHandler = ((_ bytes: Int64) -> Bool)?
-    fileprivate typealias CopyProgressHandler = (
-        (_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool
-    )?
+public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable, @unchecked Sendable {
+    public typealias SimpleCompletionHandler = (@Sendable (_ error: Error?) -> Void)?
+    public typealias ReadProgressHandler = (@Sendable (_ bytes: Int64, _ total: Int64) -> Bool)?
+    public typealias WriteProgressHandler = (@Sendable (_ bytes: Int64) -> Bool)?
+    fileprivate typealias CopyProgressHandler = (@Sendable
+        (_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Int64?)?
 
     fileprivate var context: SMB2Context?
 
@@ -347,8 +346,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func listShares(
         enumerateHidden: Bool = false,
-        completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) ->
-            Void
+        completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void
     ) {
         // Connecting to Interprocess Communication share
         with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
@@ -379,8 +377,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     /// Only for test case coverage
     func _swift_listShares(
         enumerateHidden: Bool = false,
-        completionHandler: @escaping (_ result: Result<[(name: String, comment: String)], Error>) ->
-            Void
+        completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void
     ) {
         with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
             try context.shareEnumSwift().map(enumerateHidden: enumerateHidden)
@@ -409,7 +406,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func contentsOfDirectory(
         atPath path: String, recursive: Bool = false,
-        completionHandler: @escaping (_ result: Result<[[URLResourceKey: Any]], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[[URLResourceKey: Any]], Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             try self.listDirectory(context: context, path: path, recursive: recursive)
@@ -446,7 +443,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func attributesOfFileSystem(
         forPath path: String,
-        completionHandler: @escaping (_ result: Result<[FileAttributeKey: Any], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[FileAttributeKey: Any], Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             // This exactly matches implementation of Swift Foundation.
@@ -490,7 +487,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func attributesOfItem(
         atPath path: String,
-        completionHandler: @escaping (_ result: Result<[URLResourceKey: Any], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: Any], Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             let stat = try context.stat(path)
@@ -527,7 +524,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func destinationOfSymbolicLink(
         atPath path: String,
-        completionHandler: @escaping (_ result: Result<String, Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<String, Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             try context.readlink(path)
@@ -755,7 +752,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func contents<R: RangeExpression>(
         atPath path: String, range: R? = Range<UInt64>?.none,
         progress: ReadProgressHandler,
-        completionHandler: @escaping (_ result: Result<Data, Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<Data, Error>) -> Void
     ) where R.Bound: FixedWidthInteger {
         let range = range?.int64Range ?? 0..<Int64.max
         with(completionHandler: completionHandler) { context in
@@ -816,7 +813,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     @objc(contentsAtPath:fromOffset:fetchedData:completionHandler:)
     open func contents(
         atPath path: String, offset: Int64 = 0,
-        fetchedData: @escaping ((_ offset: Int64, _ total: Int64, _ data: Data) -> Bool),
+        fetchedData: @Sendable @escaping (_ offset: Int64, _ total: Int64, _ data: Data) -> Bool,
         completionHandler: SimpleCompletionHandler
     ) {
         with(completionHandler: completionHandler) { context in
@@ -839,7 +836,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     @available(swift, deprecated: 1)
     open func contents(
         atPath path: String, offset: Int64 = 0,
-        fetchedData: @escaping ((_ offset: Int64, _ total: Int64, _ data: Data) -> Bool)
+        fetchedData: @Sendable @escaping (_ offset: Int64, _ total: Int64, _ data: Data) -> Bool
     ) async throws {
         try await withCheckedThrowingContinuation { continuation in
             contents(
@@ -873,7 +870,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             do {
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
                 try file.lseek(offset: range.lowerBound, whence: .set)
-                
                 while offset < range.upperBound {
                     let data = try file.read()
                     if data.isEmpty {
@@ -907,9 +903,10 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         data: DataType, toPath path: String, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
     ) {
+        let data = Data(data)
         with(completionHandler: completionHandler) { context in
             try self.write(
-                context: context, from: InputStream(data: Data(data)), toPath: path,
+                context: context, from: InputStream(data: data), toPath: path,
                 progress: progress
             )
         }
@@ -930,6 +927,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func write<DataType: DataProtocol>(
         data: DataType, toPath path: String, progress: WriteProgressHandler
     ) async throws {
+        let data = Data(data)
         try await withCheckedThrowingContinuation { continuation in
             write(
                 data: data, toPath: path, progress: progress,
@@ -1237,7 +1235,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 }
 
 extension SMB2Manager {
-    private func queue(_ closure: @escaping () -> Void) {
+    private func queue(_ closure: @Sendable @escaping () -> Void) {
         operationLock.lock()
         operationCount += 1
         operationLock.unlock()
@@ -1272,7 +1270,7 @@ extension SMB2Manager {
     }
 
     private func with(
-        completionHandler: SimpleCompletionHandler, handler: @escaping () throws -> Void
+        completionHandler: SimpleCompletionHandler, handler: @Sendable @escaping () throws -> Void
     ) {
         queue {
             do {
@@ -1286,7 +1284,7 @@ extension SMB2Manager {
 
     private func with(
         completionHandler: SimpleCompletionHandler,
-        handler: @escaping (_ context: SMB2Context) throws -> Void
+        handler: @Sendable @escaping (_ context: SMB2Context) throws -> Void
     ) {
         queue {
             do {
@@ -1299,8 +1297,8 @@ extension SMB2Manager {
     }
 
     private func with<T>(
-        completionHandler: @escaping (Result<T, Error>) -> Void,
-        handler: @escaping (_ context: SMB2Context) throws -> T
+        completionHandler: @Sendable @escaping (Result<T, Error>) -> Void,
+        handler: @Sendable @escaping (_ context: SMB2Context) throws -> T
     ) {
         queue {
             completionHandler(
@@ -1312,8 +1310,8 @@ extension SMB2Manager {
     }
 
     private func with<T>(
-        shareName: String, encrypted: Bool, completionHandler: @escaping (Result<T, Error>) -> Void,
-        handler: @escaping (_ context: SMB2Context) throws -> T
+        shareName: String, encrypted: Bool, completionHandler: @Sendable @escaping (Result<T, Error>) -> Void,
+        handler: @Sendable @escaping (_ context: SMB2Context) throws -> T
     ) {
         queue {
             do {
@@ -1367,7 +1365,7 @@ extension SMB2Manager {
         handle: (
             _ context: SMB2Context, _ path: String, _ toPath: String,
             _ progress: CopyProgressHandler
-        ) throws -> Bool
+        ) throws -> Int64?
     ) throws {
         let stat = try context.stat(path)
         if stat.isDirectory {
@@ -1385,14 +1383,18 @@ extension SMB2Manager {
                 if item.isDirectory {
                     try context.mkdir(destPath)
                 } else {
-                    let shouldContinue = try handle(
+                    let bytes = try handle(
                         context, itemPath, destPath
-                    ) {
-                        bytes, _, _ -> Bool in
-                        totalCopied += bytes
-                        return progress?(totalCopied, overallSize) ?? true
+                    ) { [totalCopied] bytes, _, _ -> Int64? in
+                        if let progress {
+                            return progress(totalCopied + Int64(bytes), overallSize) ? bytes : nil
+                        } else {
+                            return bytes
+                        }
                     }
-                    if !shouldContinue {
+                    if let bytes {
+                        totalCopied += bytes
+                    } else {
                         break
                     }
                 }
@@ -1400,15 +1402,19 @@ extension SMB2Manager {
         } else {
             _ = try handle(
                 context, path, toPath
-            ) { _, soFar, total -> Bool in
-                progress?(soFar, total) ?? true
+            ) { bytes, soFar, total -> Int64? in
+                if let progress {
+                    return progress(soFar, total) ? bytes : nil
+                } else {
+                    return bytes
+                }
             }
         }
     }
 
     private func copyFile(
         context: SMB2Context, fromPath path: String, toPath: String, progress: CopyProgressHandler
-    ) throws -> Bool {
+    ) throws -> Int64? {
         let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileSource.fstat().smb2_size)
         let sourceKey: IOCtl.RequestResumeKey = try fileSource.fcntl(command: .srvRequestResumeKey)
@@ -1425,35 +1431,37 @@ extension SMB2Manager {
         for chunk in chunkArray {
             let chunkCopy = IOCtl.SrvCopyChunkCopy(sourceKey: sourceKey.resumeKey, chunks: [chunk])
             try fileDest.fcntl(command: .srvCopyChunk, args: chunkCopy)
-            shouldContinue =
-                progress?(
-                    Int64(chunk.length), Int64(chunk.sourceOffset) + Int64(chunk.length), size
-                )
-                ?? true
+            if let progress {
+                shouldContinue =
+                    progress(Int64(chunk.length), Int64(chunk.sourceOffset) + Int64(chunk.length), size) != nil
+            }
+            
             if !shouldContinue {
                 break
             }
         }
-        return shouldContinue
+        return shouldContinue ? size : nil
     }
 
     private func copyContentsOfFile(
         context: SMB2Context, fromPath path: String, toPath: String, progress: CopyProgressHandler
-    ) throws -> Bool {
+    ) throws -> Int64? {
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
         let fileWrite = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
         var shouldContinue = true
+        var written = 0
         while shouldContinue {
             let data = try fileRead.read()
-            let written = try fileWrite.write(data: data)
+            written += try fileWrite.write(data: data)
             let offset = try fileRead.lseek(offset: 0, whence: .current)
-
-            shouldContinue = progress?(Int64(written), offset, size) ?? true
+            if let progress {
+                shouldContinue = progress(Int64(written), offset, size) != nil
+            }
             shouldContinue = shouldContinue && !data.isEmpty
         }
         try fileWrite.fsync()
-        return shouldContinue
+        return shouldContinue ? Int64(written) : nil
     }
 
     private func removeDirectory(context: SMB2Context, path: String, recursive: Bool) throws {
