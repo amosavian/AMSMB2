@@ -32,16 +32,20 @@ final class SMB2FileHandle {
         try self.init(path, flags: O_WRONLY, on: context)
     }
 
-    convenience init(forCreatingAndWritingAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
+        try self.init(path, flags: O_RDWR | O_APPEND, on: context)
+    }
+
+    convenience init(forOverwritingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_WRONLY | O_CREAT | O_TRUNC, on: context)
     }
 
+    convenience init(forOutputAtPath path: String, on context: SMB2Context) throws {
+        try self.init(path, flags: O_WRONLY | O_CREAT, on: context)
+    }
+    
     convenience init(forCreatingIfNotExistsAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDWR | O_CREAT | O_EXCL, on: context)
-    }
-
-    convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
-        try self.init(path, flags: O_RDWR | O_APPEND, on: context)
     }
 
     static func using(

@@ -833,6 +833,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         }
     }
 
+    // **DEPRECATED, DON'T USE**
     @available(swift, deprecated: 1)
     open func contents(
         atPath path: String, offset: Int64 = 0,
@@ -931,6 +932,64 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         try await withCheckedThrowingContinuation { continuation in
             write(
                 data: data, toPath: path, progress: progress,
+                completionHandler: asyncHandler(continuation)
+            )
+        }
+    }
+    
+    /**
+     Creates/Opens and writes data to file at given offset. With reporting progress on about every 1MiB.
+     
+     - Important: If file size is greater than offset, contents after offset shall be truncated.
+         If file size is less than offset, file size will be increased to the offset first.
+
+     - Note: Data saved in server maybe truncated when completion handler returns error.
+
+     - Parameters:
+       - data: data that must be written to file. You can pass either `Data`, `[UInt8]` or `NSData` object.
+       - toPath: path of file to be written.
+       - offset: The offset that new data will be written to.
+       - progress: reports progress of written bytes count so far.
+           User must return `true` if they want to continuing or `false` to abort writing.
+       - bytes: written bytes count.
+       - completionHandler: closure will be run after writing is completed.
+     */
+    open func append<DataType: DataProtocol>(
+        data: DataType, toPath path: String, offset: Int64, progress: WriteProgressHandler,
+        completionHandler: SimpleCompletionHandler
+    ) {
+        let data = Data(data)
+        with(completionHandler: completionHandler) { context in
+            try self.write(
+                context: context, from: InputStream(data: data), toPath: path,
+                offset: offset, progress: progress
+            )
+        }
+    }
+
+    /**
+     Creates/Opens and writes data to file at given offset. With reporting progress on about every 1MiB.
+     
+     - Important: If file size is greater than offset, contents after offset shall be truncated.
+         If file size is less than offset, file size will be increased to the offset first.
+
+     - Note: Data saved in server maybe truncated when completion handler returns error.
+
+     - Parameters:
+       - data: data that must be written to file. You can pass either `Data`, `[UInt8]` or `NSData` object.
+       - toPath: path of file to be written.
+       - offset: The offset that new data will be written to.
+       - progress: reports progress of written bytes count so far.
+           User must return `true` if they want to continuing or `false` to abort writing.
+       - bytes: written bytes count.
+     */
+    open func append<DataType: DataProtocol>(
+        data: DataType, toPath path: String, offset: Int64, progress: WriteProgressHandler
+    ) async throws {
+        let data = Data(data)
+        try await withCheckedThrowingContinuation { continuation in
+            append(
+                data: data, toPath: path, offset: offset, progress: progress,
                 completionHandler: asyncHandler(continuation)
             )
         }
@@ -1524,13 +1583,21 @@ extension SMB2Manager {
 
     private func write(
         context: SMB2Context, from stream: InputStream, toPath: String,
-        chunkSize: Int = 0, progress: WriteProgressHandler
+        offset: Int64? = nil, chunkSize: Int = 0, progress: WriteProgressHandler
     ) throws {
-        let file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
+        let file = offset == nil ? try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context) : try SMB2FileHandle(
+            forOutputAtPath: toPath,
+            on: context
+        )
         let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
         var totalWritten: UInt64 = 0
 
         do {
+            if let offset {
+                try file.lseek(offset: offset, whence: .set)
+                try file.ftruncate(toLength: UInt64(offset))
+            }
+           
             try stream.withOpenStream {
                 while true {
                     var segment = try stream.readData(maxLength: chunkSize)
