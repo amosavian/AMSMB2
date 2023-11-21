@@ -123,6 +123,36 @@ final class SMB2FileHandle {
         }
         return st
     }
+    
+    func set(stat: smb2_stat_64, attributes: SMB2FileAttributes) throws {
+        let handle = try handle.unwrap()
+        try context.async_await_pdu(dataHandler: EmptyReply.init) {
+            context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+            var bfi = smb2_file_basic_info(
+                creation_time: smb2_timeval(
+                    tv_sec: UInt32(stat.smb2_btime),
+                    tv_usec: UInt32(stat.smb2_btime_nsec) / 1000),
+                last_access_time: smb2_timeval(
+                    tv_sec: UInt32(stat.smb2_atime),
+                    tv_usec: UInt32(stat.smb2_atime_nsec) / 1000),
+                last_write_time: smb2_timeval(
+                    tv_sec: UInt32(stat.smb2_mtime),
+                    tv_usec: UInt32(stat.smb2_mtime_nsec) / 1000),
+                change_time: smb2_timeval(
+                    tv_sec: UInt32(stat.smb2_ctime),
+                    tv_usec: UInt32(stat.smb2_ctime_nsec) / 1000),
+                file_attributes: attributes.rawValue)
+            
+            var req = smb2_set_info_request()
+            req.file_id = smb2_get_file_id(handle).pointee
+            req.info_type = UInt8(SMB2_0_INFO_FILE)
+            req.file_info_class = UInt8(SMB2_FILE_BASIC_INFORMATION)
+            return withUnsafeMutablePointer(to: &bfi) { bfi in
+                req.input_data = .init(bfi)
+                return smb2_cmd_set_info_async(context, &req, SMB2Context.generic_handler, cbPtr)
+            }
+        }
+    }
 
     func ftruncate(toLength: UInt64) throws {
         let handle = try handle.unwrap()
@@ -257,4 +287,32 @@ final class SMB2FileHandle {
     func fcntl<R: IOCtlReply>(command: IOCtl.Command) throws -> R {
         try fcntl(command: command, args: [])
     }
+}
+
+struct SMB2FileAttributes: OptionSet, Sendable {
+    var rawValue: UInt32
+    
+    init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    
+    init(rawValue: Int32) {
+        self.rawValue = .init(bitPattern: rawValue)
+    }
+    
+    static let readonly = Self(rawValue: SMB2_FILE_ATTRIBUTE_READONLY)
+    static let hidden = Self(rawValue: SMB2_FILE_ATTRIBUTE_HIDDEN)
+    static let system = Self(rawValue: SMB2_FILE_ATTRIBUTE_SYSTEM)
+    static let directory = Self(rawValue: SMB2_FILE_ATTRIBUTE_DIRECTORY)
+    static let archive = Self(rawValue: SMB2_FILE_ATTRIBUTE_ARCHIVE)
+    static let normal = Self(rawValue: SMB2_FILE_ATTRIBUTE_NORMAL)
+    static let temporary = Self(rawValue: SMB2_FILE_ATTRIBUTE_TEMPORARY)
+    static let sparseFile = Self(rawValue: SMB2_FILE_ATTRIBUTE_SPARSE_FILE)
+    static let reparsePoint = Self(rawValue: SMB2_FILE_ATTRIBUTE_REPARSE_POINT)
+    static let compressed = Self(rawValue: SMB2_FILE_ATTRIBUTE_COMPRESSED)
+    static let offline = Self(rawValue: SMB2_FILE_ATTRIBUTE_OFFLINE)
+    static let notContentIndexed = Self(rawValue: SMB2_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
+    static let encrypted = Self(rawValue: SMB2_FILE_ATTRIBUTE_ENCRYPTED)
+    static let integrityStream = Self(rawValue: SMB2_FILE_ATTRIBUTE_INTEGRITY_STREAM)
+    static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
 }

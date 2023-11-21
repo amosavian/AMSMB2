@@ -512,6 +512,88 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             attributesOfItem(atPath: path, completionHandler: asyncHandler(continuation))
         }
     }
+    
+    /**
+     Sets the attributes of the specified file or directory.
+     
+     - Parameters:
+       - attributes: A dictionary containing as keys the attributes to set for path
+            and as values the corresponding value for the attribute.
+            You can set the following attributes: `creationDateKey`, `contentAccessDateKey`,
+            `contentModificationDateKey`, `attributeModificationDateKey`,
+            `isUserImmutableKey`, `isSystemImmutableKey` and `isHiddenKey`.
+            You can change single attributes or any combination of attributes;
+            you need not specify keys for all attributes.
+       - path: The path of a file or directory.
+       - completionHandler: closure will be run after operation is completed.
+     */
+    open func setAttributes(attributes: [URLResourceKey: Any], ofItemAtPath path: String, completionHandler: SimpleCompletionHandler) {
+        var stat = smb2_stat_64()
+        var smb2Attributes = SMB2FileAttributes()
+        for attribute in attributes {
+            switch attribute.key {
+            case .creationDateKey:
+                attributes.creationDate.map(timespec.init).map {
+                    stat.smb2_btime = UInt64($0.tv_sec)
+                    stat.smb2_btime_nsec = UInt64($0.tv_nsec)
+                }
+            case .contentAccessDateKey:
+                attributes.contentAccessDate.map(timespec.init).map {
+                    stat.smb2_atime = UInt64($0.tv_sec)
+                    stat.smb2_atime_nsec = UInt64($0.tv_nsec)
+                }
+            case .contentModificationDateKey:
+                attributes.contentModificationDate.map(timespec.init).map {
+                    stat.smb2_mtime = UInt64($0.tv_sec)
+                    stat.smb2_mtime_nsec = UInt64($0.tv_nsec)
+                }
+            case .attributeModificationDateKey:
+                attributes.contentModificationDate.map(timespec.init).map {
+                    stat.smb2_ctime = UInt64($0.tv_sec)
+                    stat.smb2_ctime_nsec = UInt64($0.tv_nsec)
+                }
+            case .isUserImmutableKey:
+                guard let value = attribute.value as? Bool else { break }
+                smb2Attributes.insert(value ? .readonly : .normal)
+            case .isSystemImmutableKey:
+                guard let value = attribute.value as? Bool else { break }
+                smb2Attributes.insert(value ? .system : .normal)
+            case .isHiddenKey:
+                guard let value = attribute.value as? Bool else { break }
+                smb2Attributes.insert(value ? .hidden : .normal)
+            default:
+                break
+            }
+        }
+        
+        if smb2Attributes.subtracting(.normal) != [] {
+            smb2Attributes.remove(.normal)
+        }
+        
+        with(completionHandler: completionHandler) { [stat, smb2Attributes] context in
+            let file = try SMB2FileHandle(forUpdatingAtPath: path, on: context)
+            try file.set(stat: stat, attributes: smb2Attributes)
+        }
+    }
+    
+    /**
+     Sets the attributes of the specified file or directory.
+     
+     - Parameters:
+       - attributes: A dictionary containing as keys the attributes to set for path
+            and as values the corresponding value for the attribute.
+            You can set the following attributes: `creationDateKey`, `contentAccessDateKey`,
+            `contentModificationDateKey`, `attributeModificationDateKey`, `isReadableKey`,
+            `isUserImmutableKey`, `isSystemImmutableKey` and `isHiddenKey`.
+            You can change single attributes or any combination of attributes;
+            you need not specify keys for all attributes.
+       - path: The path of a file or directory.
+     */
+    open func setAttributes(attributes: [URLResourceKey: Any], ofItemAtPath path: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            setAttributes(attributes: attributes, ofItemAtPath: path, completionHandler: asyncHandler(continuation))
+        }
+    }
 
     /**
      Returns the path of the item pointed to by a symbolic link.

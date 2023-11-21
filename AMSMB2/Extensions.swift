@@ -170,6 +170,13 @@ extension Date {
     }
 }
 
+extension timespec {
+    init(_ date: Date) {
+        let interval = date.timeIntervalSince1970
+        self.init(tv_sec: .init(interval), tv_nsec: Int(interval.truncatingRemainder(dividingBy: 1) * Double(NSEC_PER_SEC)))
+    }
+}
+
 extension Data {
     init<T: FixedWidthInteger>(value: T) {
         var value = value.littleEndian

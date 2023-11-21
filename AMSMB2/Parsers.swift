@@ -11,6 +11,10 @@ import Foundation
 import SMB2
 import SMB2.Raw
 
+struct EmptyReply {
+    init(_: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws { }
+}
+
 extension String {
     init(_: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
         self = try String(cString: dataPtr.unwrap().assumingMemoryBound(to: Int8.self))

@@ -130,6 +130,36 @@ class SMB2ManagerTests: XCTestCase {
             fsAttributes[.systemSize] as! Int64, fsAttributes[.systemFreeSize] as! Int64
         )
     }
+    
+    func testFileAttributes() async throws {
+        let file = "attribstest.dat"
+        let size: Int = random(max: 0x000800)
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let data = randomData(size: size)
+
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: file)
+        }
+
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: file, progress: nil)
+        
+        let initialAttribs = try await smb.attributesOfItem(atPath: file)
+        XCTAssertNotNil(initialAttribs.name)
+        XCTAssertNotNil(initialAttribs.contentModificationDate)
+        XCTAssertNotNil(initialAttribs.creationDate)
+        XCTAssertGreaterThanOrEqual(initialAttribs.contentModificationDate!, initialAttribs.creationDate!)
+        XCTAssertEqual(initialAttribs[.isHiddenKey] as? Bool, nil)
+        
+        try await smb.setAttributes(attributes: [
+            .creationDateKey: Date(timeIntervalSinceReferenceDate: 0),
+            .isHiddenKey: true,
+        ], ofItemAtPath: file)
+        
+        let newAttribs = try await smb.attributesOfItem(atPath: file)
+        XCTAssertEqual(initialAttribs.contentModificationDate, newAttribs.contentModificationDate)
+        XCTAssertEqual(newAttribs.creationDate, Date(timeIntervalSinceReferenceDate: 0))
+    }
 
     func testListing() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
