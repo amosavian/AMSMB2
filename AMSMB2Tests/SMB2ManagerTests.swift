@@ -386,6 +386,59 @@ class SMB2ManagerTests: XCTestCase {
         XCTAssert(outputStream.streamStatus == .closed)
         XCTAssert(FileManager.default.contentsEqual(atPath: url.path, andPath: dlURL.path))
     }
+    
+    func testSimultaneousUpload() async throws {
+        let redownload = false
+        let fileNums = 5
+        let files = (1...fileNums).map { "uploadsimtest\($0).dat" }
+        let urls = (1...fileNums).map {
+            let size: Int = random(max: 0xf00000)
+            print(#function, "test size \($0):", size)
+            return self.dummyFile(size: size)
+        }
+        
+        let smb = SMB2Manager(url: server, credential: credential)!
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        
+        addTeardownBlock {
+            try? urls.forEach(FileManager.default.removeItem(at:))
+            try? urls
+                .map { $0.appendingPathExtension("download") }
+                .forEach(FileManager.default.removeItem(at:))
+            await withTaskGroup(of: Void.self) { group in
+                for file in files {
+                    group.addTask{
+                        try? await smb.removeFile(atPath: file)
+                    }
+                }
+                await group.waitForAll()
+            }
+            for file in files {
+                try? await smb.removeFile(atPath: file)
+            }
+        }
+        
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for (file, url) in zip(files, urls) {
+                group.addTask{
+                    try await smb.uploadItem(at: url, toPath: file, progress: nil)
+                }
+            }
+            
+            try await group.waitForAll()
+        }
+        
+        guard redownload else { return }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for (file, url) in zip(files, urls) {
+                group.addTask{
+                    try await smb.downloadItem(atPath: file, to: url.appendingPathExtension("download"), progress: nil)
+                }
+            }
+            
+            try await group.waitForAll()
+        }
+    }
 
     func testTruncate() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!

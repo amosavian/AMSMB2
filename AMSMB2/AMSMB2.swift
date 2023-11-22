@@ -16,7 +16,7 @@ public typealias AMSMB2 = SMB2Manager
 /// Implements SMB2 File operations.
 @objc(AMSMB2Manager)
 public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable, @unchecked Sendable {
-    public typealias SimpleCompletionHandler = (@Sendable (_ error: Error?) -> Void)?
+    public typealias SimpleCompletionHandler = (@Sendable (_ error: (any Error)?) -> Void)?
     public typealias ReadProgressHandler = (@Sendable (_ bytes: Int64, _ total: Int64) -> Bool)?
     public typealias WriteProgressHandler = (@Sendable (_ bytes: Int64) -> Bool)?
     fileprivate typealias CopyProgressHandler = (@Sendable
@@ -181,7 +181,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         case user, password, timeout
     }
 
-    public required init(from decoder: Decoder) throws {
+    public required init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let url = try container.decode(URL.self, forKey: .url)
         guard url.scheme?.lowercased() == "smb" else {
@@ -203,7 +203,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         super.init()
     }
 
-    open func encode(to encoder: Encoder) throws {
+    open func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(url, forKey: .url)
         try container.encode(_domain, forKey: .domain)
@@ -346,7 +346,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func listShares(
         enumerateHidden: Bool = false,
-        completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], any Error>) -> Void
     ) {
         // Connecting to Interprocess Communication share
         with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
@@ -377,7 +377,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     /// Only for test case coverage
     func _swift_listShares(
         enumerateHidden: Bool = false,
-        completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], any Error>) -> Void
     ) {
         with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
             try context.shareEnumSwift().map(enumerateHidden: enumerateHidden)
@@ -406,7 +406,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func contentsOfDirectory(
         atPath path: String, recursive: Bool = false,
-        completionHandler: @Sendable @escaping (_ result: Result<[[URLResourceKey: Any]], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[[URLResourceKey: Any]], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             try self.listDirectory(context: context, path: path, recursive: recursive)
@@ -443,7 +443,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func attributesOfFileSystem(
         forPath path: String,
-        completionHandler: @Sendable @escaping (_ result: Result<[FileAttributeKey: Any], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[FileAttributeKey: Any], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             // This exactly matches implementation of Swift Foundation.
@@ -487,7 +487,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func attributesOfItem(
         atPath path: String,
-        completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: Any], Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: Any], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             let stat = try context.stat(path)
@@ -606,7 +606,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func destinationOfSymbolicLink(
         atPath path: String,
-        completionHandler: @Sendable @escaping (_ result: Result<String, Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<String, any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             try context.readlink(path)
@@ -834,7 +834,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func contents<R: RangeExpression>(
         atPath path: String, range: R? = Range<UInt64>?.none,
         progress: ReadProgressHandler,
-        completionHandler: @Sendable @escaping (_ result: Result<Data, Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<Data, any Error>) -> Void
     ) where R.Bound: FixedWidthInteger {
         let range = range?.int64Range ?? 0..<Int64.max
         with(completionHandler: completionHandler) { context in
@@ -943,7 +943,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func contents<R: RangeExpression>(
         atPath path: String, range: R? = Range<UInt64>?.none
-    ) -> AsyncThrowingStream<Data, Error> where R.Bound: FixedWidthInteger {
+    ) -> AsyncThrowingStream<Data, any Error> where R.Bound: FixedWidthInteger {
         let range = range?.int64Range ?? 0..<Int64.max
         let (result, continuation) = AsyncThrowingStream.makeStream(of: Data.self, bufferingPolicy: .unbounded)
         
@@ -1438,7 +1438,7 @@ extension SMB2Manager {
     }
 
     private func with<T>(
-        completionHandler: @Sendable @escaping (Result<T, Error>) -> Void,
+        completionHandler: @Sendable @escaping (Result<T, any Error>) -> Void,
         handler: @Sendable @escaping (_ context: SMB2Context) throws -> T
     ) {
         queue {
@@ -1451,7 +1451,7 @@ extension SMB2Manager {
     }
 
     private func with<T>(
-        shareName: String, encrypted: Bool, completionHandler: @Sendable @escaping (Result<T, Error>) -> Void,
+        shareName: String, encrypted: Bool, completionHandler: @Sendable @escaping (Result<T, any Error>) -> Void,
         handler: @Sendable @escaping (_ context: SMB2Context) throws -> T
     ) {
         queue {

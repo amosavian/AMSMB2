@@ -375,7 +375,7 @@ extension SMB2Context {
         try withThreadSafeContext { context -> (Int32, DataType) in
             var cb = CBData()
             var resultData: DataType?
-            var dataHandlerError: Error?
+            var dataHandlerError: (any Error)?
             cb.dataHandler = { ptr in
                 do {
                     resultData = try dataHandler(self, ptr)
@@ -413,7 +413,7 @@ extension SMB2Context {
         try withThreadSafeContext { context -> (UInt32, DataType) in
             var cb = CBData()
             var resultData: DataType?
-            var dataHandlerError: Error?
+            var dataHandlerError: (any Error)?
             cb.dataHandler = { ptr in
                 do {
                     resultData = try dataHandler(self, ptr)
