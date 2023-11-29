@@ -45,9 +45,6 @@ let package = Package(
                 .headerSearchPath("lib"),
                 .define("_U_", to: "__attribute__((unused))"),
                 .define("HAVE_CONFIG_H", to: "1"),
-                .unsafeFlags([
-                    "-Wno-everything",
-                ]),
             ],
             linkerSettings: [
             ]
