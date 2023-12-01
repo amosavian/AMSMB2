@@ -130,17 +130,17 @@ final class SMB2FileHandle {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
             var bfi = smb2_file_basic_info(
                 creation_time: smb2_timeval(
-                    tv_sec: UInt32(stat.smb2_btime),
-                    tv_usec: UInt32(stat.smb2_btime_nsec) / 1000),
+                    tv_sec: .init(stat.smb2_btime),
+                    tv_usec: .init(stat.smb2_btime_nsec / 1000)),
                 last_access_time: smb2_timeval(
-                    tv_sec: UInt32(stat.smb2_atime),
-                    tv_usec: UInt32(stat.smb2_atime_nsec) / 1000),
+                    tv_sec: .init(stat.smb2_atime),
+                    tv_usec: .init(stat.smb2_atime_nsec / 1000)),
                 last_write_time: smb2_timeval(
-                    tv_sec: UInt32(stat.smb2_mtime),
-                    tv_usec: UInt32(stat.smb2_mtime_nsec) / 1000),
+                    tv_sec: .init(stat.smb2_mtime),
+                    tv_usec: .init(stat.smb2_mtime_nsec / 1000)),
                 change_time: smb2_timeval(
-                    tv_sec: UInt32(stat.smb2_ctime),
-                    tv_usec: UInt32(stat.smb2_ctime_nsec) / 1000),
+                    tv_sec: .init(stat.smb2_ctime),
+                    tv_usec: .init(stat.smb2_ctime_nsec / 1000)),
                 file_attributes: attributes.rawValue)
             
             var req = smb2_set_info_request()

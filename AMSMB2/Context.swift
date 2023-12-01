@@ -169,7 +169,11 @@ extension SMB2Context {
     }
 
     var fileDescriptor: Int32 {
-        (try? smb2_get_fd(unsafe.unwrap())) ?? -1
+        do {
+            return try smb2_get_fd(unsafe.unwrap())
+        } catch {
+            return -1
+        }
     }
 
     var error: String? {
