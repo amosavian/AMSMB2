@@ -58,33 +58,23 @@ struct AnyIOCtlReply: IOCtlReply {
 enum IOCtl {
     struct Command: RawRepresentable, Equatable, Hashable {
         var rawValue: UInt32
-
-        static let dfsGetReferrals = Command(rawValue: UInt32(SMB2_FSCTL_DFS_GET_REFERRALS))
-        static let pipePeek = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_PEEK))
-        static let pipeWait = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_WAIT))
-        static let pipeTransceive = Command(rawValue: UInt32(SMB2_FSCTL_PIPE_TRANSCEIVE))
-        static let srvCopyChunk = Command(rawValue: UInt32(SMB2_FSCTL_SRV_COPYCHUNK))
-        static let srvCopyChunkWrite = Command(rawValue: UInt32(SMB2_FSCTL_SRV_COPYCHUNK_WRITE))
-        static let srvEnumerateSnapshots = Command(
-            rawValue: UInt32(SMB2_FSCTL_SRV_ENUMERATE_SNAPSHOTS)
-        )
-        static let srvRequestResumeKey = Command(
-            rawValue: UInt32(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY)
-        )
-        static let srvReadHash = Command(rawValue: UInt32(SMB2_FSCTL_SRV_READ_HASH))
-        static let lmrRequestResiliency = Command(
-            rawValue: UInt32(SMB2_FSCTL_LMR_REQUEST_RESILIENCY)
-        )
-        static let queryNetworkInterfaceInfo = Command(
-            rawValue: UInt32(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO)
-        )
-        static let getReparsePoint = Command(rawValue: UInt32(SMB2_FSCTL_GET_REPARSE_POINT))
-        static let setReparsePoint = Command(rawValue: UInt32(SMB2_FSCTL_SET_REPARSE_POINT))
-        static let deleteReparsePoint = Command(rawValue: 0x0009_00ac)
-        static let fileLevelTrim = Command(rawValue: UInt32(SMB2_FSCTL_FILE_LEVEL_TRIM))
-        static let validateNegotiateInfo = Command(
-            rawValue: UInt32(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO)
-        )
+        
+        static let dfsGetReferrals = Command(SMB2_FSCTL_DFS_GET_REFERRALS)
+        static let pipePeek = Command(SMB2_FSCTL_PIPE_PEEK)
+        static let pipeWait = Command(SMB2_FSCTL_PIPE_WAIT)
+        static let pipeTransceive = Command(SMB2_FSCTL_PIPE_TRANSCEIVE)
+        static let srvCopyChunk = Command(SMB2_FSCTL_SRV_COPYCHUNK)
+        static let srvCopyChunkWrite = Command(SMB2_FSCTL_SRV_COPYCHUNK_WRITE)
+        static let srvEnumerateSnapshots = Command(SMB2_FSCTL_SRV_ENUMERATE_SNAPSHOTS)
+        static let srvRequestResumeKey = Command(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY)
+        static let srvReadHash = Command(SMB2_FSCTL_SRV_READ_HASH)
+        static let lmrRequestResiliency = Command(SMB2_FSCTL_LMR_REQUEST_RESILIENCY)
+        static let queryNetworkInterfaceInfo = Command(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO)
+        static let getReparsePoint = Command(SMB2_FSCTL_GET_REPARSE_POINT)
+        static let setReparsePoint = Command(SMB2_FSCTL_SET_REPARSE_POINT)
+        static let deleteReparsePoint = Command(0x0009_00ac)
+        static let fileLevelTrim = Command(SMB2_FSCTL_FILE_LEVEL_TRIM)
+        static let validateNegotiateInfo = Command(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO)
     }
 
     struct SrvCopyChunk: IOCtlArgument {

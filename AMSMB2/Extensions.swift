@@ -28,6 +28,18 @@ extension Optional where Wrapped: SMB2Context {
     }
 }
 
+extension RawRepresentable where RawValue == UInt32 {
+    init(_ rawValue: Int32) {
+        self.init(rawValue: .init(bitPattern: rawValue))!
+    }
+}
+
+extension RawRepresentable where RawValue == UInt16 {
+    init(_ rawValue: Int16) {
+        self.init(rawValue: .init(bitPattern: rawValue))!
+    }
+}
+
 extension POSIXError {
     static func throwIfError<Number: SignedInteger>(_ result: Number, description: String?) throws {
         guard result < 0 else { return }

@@ -64,13 +64,13 @@ final class SMB2FileHandle {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
             path.replacingOccurrences(of: "/", with: "\\").withCString { path in
                 var req = smb2_create_request()
-                req.requested_oplock_level = UInt8(opLock)
-                req.impersonation_level = UInt32(impersonation)
-                req.desired_access = UInt32(desiredAccess)
-                req.file_attributes = UInt32(fileAttributes)
-                req.share_access = UInt32(shareAccess)
-                req.create_disposition = UInt32(createDisposition)
-                req.create_options = UInt32(createOptions)
+                req.requested_oplock_level = .init(bitPattern: .init(opLock))
+                req.impersonation_level = .init(bitPattern: impersonation)
+                req.desired_access = .init(bitPattern: desiredAccess)
+                req.file_attributes = .init(bitPattern: fileAttributes)
+                req.share_access = .init(bitPattern: shareAccess)
+                req.create_disposition = .init(bitPattern: createDisposition)
+                req.create_options = .init(bitPattern: createOptions)
                 req.name = path
                 return smb2_cmd_create_async(context, &req, SMB2Context.generic_handler, cbPtr)
             }
@@ -145,8 +145,8 @@ final class SMB2FileHandle {
             
             var req = smb2_set_info_request()
             req.file_id = smb2_get_file_id(handle).pointee
-            req.info_type = UInt8(SMB2_0_INFO_FILE)
-            req.file_info_class = UInt8(SMB2_FILE_BASIC_INFORMATION)
+            req.info_type = .init(SMB2_0_INFO_FILE)
+            req.file_info_class = .init(SMB2_FILE_BASIC_INFORMATION)
             return withUnsafeMutablePointer(to: &bfi) { bfi in
                 req.input_data = .init(bfi)
                 return smb2_cmd_set_info_async(context, &req, SMB2Context.generic_handler, cbPtr)
@@ -188,7 +188,7 @@ final class SMB2FileHandle {
         var buffer = [UInt8](repeating: 0, count: count)
         let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_read_async(
-                context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr
+                context, handle, &buffer, .init(buffer.count), SMB2Context.generic_handler, cbPtr
             )
         }
         return Data(buffer.prefix(Int(result)))
@@ -204,7 +204,7 @@ final class SMB2FileHandle {
         var buffer = [UInt8](repeating: 0, count: count)
         let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_pread_async(
-                context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler,
+                context, handle, &buffer, .init(buffer.count), offset, SMB2Context.generic_handler,
                 cbPtr
             )
         }
@@ -228,7 +228,7 @@ final class SMB2FileHandle {
         var buffer = Array(data)
         let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_write_async(
-                context, handle, &buffer, UInt32(buffer.count), SMB2Context.generic_handler, cbPtr
+                context, handle, &buffer, .init(buffer.count), SMB2Context.generic_handler, cbPtr
             )
         }
 
@@ -244,7 +244,7 @@ final class SMB2FileHandle {
         var buffer = Array(data)
         let result = try context.async_await { context, cbPtr -> Int32 in
             smb2_pwrite_async(
-                context, handle, &buffer, UInt32(buffer.count), offset, SMB2Context.generic_handler,
+                context, handle, &buffer, .init(buffer.count), offset, SMB2Context.generic_handler,
                 cbPtr
             )
         }
@@ -266,8 +266,8 @@ final class SMB2FileHandle {
         var inputBuffer = [UInt8](args)
         return try inputBuffer.withUnsafeMutableBytes { buf in
             var req = smb2_ioctl_request(
-                ctl_code: command.rawValue, file_id: fileId, input_count: UInt32(buf.count),
-                input: buf.baseAddress, flags: UInt32(SMB2_0_IOCTL_IS_FSCTL)
+                ctl_code: command.rawValue, file_id: fileId, input_count: .init(buf.count),
+                input: buf.baseAddress, flags: .init(SMB2_0_IOCTL_IS_FSCTL)
             )
             return try context.async_await_pdu(dataHandler: R.init) {
                 context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in

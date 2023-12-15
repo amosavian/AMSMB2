@@ -534,23 +534,23 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             switch attribute.key {
             case .creationDateKey:
                 attributes.creationDate.map(timespec.init).map {
-                    stat.smb2_btime = UInt64($0.tv_sec)
-                    stat.smb2_btime_nsec = UInt64($0.tv_nsec)
+                    stat.smb2_btime = .init($0.tv_sec)
+                    stat.smb2_btime_nsec = .init($0.tv_nsec)
                 }
             case .contentAccessDateKey:
                 attributes.contentAccessDate.map(timespec.init).map {
-                    stat.smb2_atime = UInt64($0.tv_sec)
-                    stat.smb2_atime_nsec = UInt64($0.tv_nsec)
+                    stat.smb2_atime = .init($0.tv_sec)
+                    stat.smb2_atime_nsec = .init($0.tv_nsec)
                 }
             case .contentModificationDateKey:
                 attributes.contentModificationDate.map(timespec.init).map {
-                    stat.smb2_mtime = UInt64($0.tv_sec)
-                    stat.smb2_mtime_nsec = UInt64($0.tv_nsec)
+                    stat.smb2_mtime = .init($0.tv_sec)
+                    stat.smb2_mtime_nsec = .init($0.tv_nsec)
                 }
             case .attributeModificationDateKey:
                 attributes.contentModificationDate.map(timespec.init).map {
-                    stat.smb2_ctime = UInt64($0.tv_sec)
-                    stat.smb2_ctime_nsec = UInt64($0.tv_nsec)
+                    stat.smb2_ctime = .init($0.tv_sec)
+                    stat.smb2_ctime_nsec = .init($0.tv_nsec)
                 }
             case .isUserImmutableKey:
                 guard let value = attribute.value as? Bool else { break }
@@ -945,7 +945,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String, range: R? = Range<UInt64>?.none
     ) -> AsyncThrowingStream<Data, any Error> where R.Bound: FixedWidthInteger {
         let range = range?.int64Range ?? 0..<Int64.max
-        let (result, continuation) = AsyncThrowingStream.makeStream(of: Data.self, bufferingPolicy: .unbounded)
+        let (result, continuation) = AsyncThrowingStream<Data, any Error>.makeStream(bufferingPolicy: .unbounded)
         
         queue { [context] in
             guard let context = context else { return }

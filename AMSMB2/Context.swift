@@ -139,7 +139,7 @@ extension SMB2Context {
         }
         set {
             try? withThreadSafeContext { context in
-                smb2_set_authentication(context, Int32(bitPattern: newValue.rawValue))
+                smb2_set_authentication(context, .init(bitPattern: newValue.rawValue))
             }
         }
     }
@@ -443,8 +443,8 @@ extension SMB2Context {
     struct NegotiateSigning: OptionSet {
         var rawValue: UInt16
 
-        static let enabled = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_ENABLED))
-        static let required = NegotiateSigning(rawValue: UInt16(SMB2_NEGOTIATE_SIGNING_REQUIRED))
+        static let enabled = NegotiateSigning(.init(SMB2_NEGOTIATE_SIGNING_ENABLED))
+        static let required = NegotiateSigning(.init(SMB2_NEGOTIATE_SIGNING_REQUIRED))
     }
 
     typealias Version = smb2_negotiate_version
