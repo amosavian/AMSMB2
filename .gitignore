@@ -65,3 +65,4 @@ fastlane/screenshots
 fastlane/test_output
 *.xctestplan
 Package.resolved
+.swiftpm
