@@ -2,7 +2,7 @@
 //  SMB2ManagerTests.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
+//  Created by Amir Abbas on 12/21/23.
 //  Copyright © 2023 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
@@ -407,7 +407,7 @@ class SMB2ManagerTests: XCTestCase {
                 .forEach(FileManager.default.removeItem(at:))
             await withTaskGroup(of: Void.self) { group in
                 for file in files {
-                    group.addTask{
+                    group.addTask {
                         try? await smb.removeFile(atPath: file)
                     }
                 }
@@ -420,7 +420,7 @@ class SMB2ManagerTests: XCTestCase {
         
         try await withThrowingTaskGroup(of: Void.self) { group in
             for (file, url) in zip(files, urls) {
-                group.addTask{
+                group.addTask {
                     try await smb.uploadItem(at: url, toPath: file, progress: nil)
                 }
             }
@@ -431,7 +431,7 @@ class SMB2ManagerTests: XCTestCase {
         guard redownload else { return }
         try await withThrowingTaskGroup(of: Void.self) { group in
             for (file, url) in zip(files, urls) {
-                group.addTask{
+                group.addTask {
                     try await smb.downloadItem(atPath: file, to: url.appendingPathExtension("download"), progress: nil)
                 }
             }

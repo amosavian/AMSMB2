@@ -2,7 +2,7 @@
 //  FileHandle.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
+//  Created by Amir Abbas on 12/15/23.
 //  Copyright © 2023 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
@@ -103,8 +103,8 @@ final class SMB2FileHandle {
         } catch {}
     }
 
-    var fileId: smb2_file_id {
-        (try? smb2_get_file_id(handle.unwrap()).unwrap().pointee) ?? compound_file_id
+    var fileId: UUID {
+        .init(uuid: (try? smb2_get_file_id(handle.unwrap()).unwrap().pointee) ?? compound_file_id)
     }
 
     func close() {
@@ -131,17 +131,22 @@ final class SMB2FileHandle {
             var bfi = smb2_file_basic_info(
                 creation_time: smb2_timeval(
                     tv_sec: .init(stat.smb2_btime),
-                    tv_usec: .init(stat.smb2_btime_nsec / 1000)),
+                    tv_usec: .init(stat.smb2_btime_nsec / 1000)
+                ),
                 last_access_time: smb2_timeval(
                     tv_sec: .init(stat.smb2_atime),
-                    tv_usec: .init(stat.smb2_atime_nsec / 1000)),
+                    tv_usec: .init(stat.smb2_atime_nsec / 1000)
+                ),
                 last_write_time: smb2_timeval(
                     tv_sec: .init(stat.smb2_mtime),
-                    tv_usec: .init(stat.smb2_mtime_nsec / 1000)),
+                    tv_usec: .init(stat.smb2_mtime_nsec / 1000)
+                ),
                 change_time: smb2_timeval(
                     tv_sec: .init(stat.smb2_ctime),
-                    tv_usec: .init(stat.smb2_ctime_nsec / 1000)),
-                file_attributes: attributes.rawValue)
+                    tv_usec: .init(stat.smb2_ctime_nsec / 1000)
+                ),
+                file_attributes: attributes.rawValue
+            )
             
             var req = smb2_set_info_request()
             req.file_id = smb2_get_file_id(handle).pointee
@@ -266,7 +271,7 @@ final class SMB2FileHandle {
         var inputBuffer = [UInt8](args)
         return try inputBuffer.withUnsafeMutableBytes { buf in
             var req = smb2_ioctl_request(
-                ctl_code: command.rawValue, file_id: fileId, input_count: .init(buf.count),
+                ctl_code: command.rawValue, file_id: fileId.uuid, input_count: .init(buf.count),
                 input: buf.baseAddress, flags: .init(SMB2_0_IOCTL_IS_FSCTL)
             )
             return try context.async_await_pdu(dataHandler: R.init) {

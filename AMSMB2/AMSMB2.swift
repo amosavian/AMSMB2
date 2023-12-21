@@ -490,12 +490,30 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: Any], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
-            let stat = try context.stat(path)
-            var result = [URLResourceKey: Any]()
-            result[.nameKey] = path.fileURL().lastPathComponent
-            result[.pathKey] = path.fileURL(stat.isDirectory).path
-            stat.populateResourceValue(&result)
-            return result
+            do {
+                let stat = try context.stat(path)
+                var result = [URLResourceKey: Any]()
+                result[.nameKey] = path.fileURL().lastPathComponent
+                result[.pathKey] = path.fileURL(stat.isDirectory).path
+                stat.populateResourceValue(&result)
+                return result
+            } catch POSIXError.ENOLINK {
+                // `libsmb2` can not read symlink attributes, so if we get
+                // the related error, we simply check if the given file is
+                // a symbolic link by `readlink`.
+                // If so, we set the attributes for a symbolic link.
+                _ = try context.readlink(path)
+                var result = [URLResourceKey: Any]()
+                result[.nameKey] = path.fileURL().lastPathComponent
+                result[.pathKey] = path.fileURL(false).path
+                result[.fileResourceTypeKey] = URLFileResourceType.symbolicLink
+                result[.isDirectoryKey] = NSNumber(false)
+                result[.isRegularFileKey] = NSNumber(false)
+                result[.isSymbolicLinkKey] = NSNumber(true)
+                return result
+            } catch {
+                throw error
+            }
         }
     }
 
@@ -527,7 +545,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - path: The path of a file or directory.
        - completionHandler: closure will be run after operation is completed.
      */
-    open func setAttributes(attributes: [URLResourceKey: Any], ofItemAtPath path: String, completionHandler: SimpleCompletionHandler) {
+    open func setAttributes(
+        attributes: [URLResourceKey: Any],
+        ofItemAtPath path: String,
+        completionHandler: SimpleCompletionHandler
+    ) {
         var stat = smb2_stat_64()
         var smb2Attributes = SMB2FileAttributes()
         for attribute in attributes {
@@ -592,6 +614,38 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func setAttributes(attributes: [URLResourceKey: Any], ofItemAtPath path: String) async throws {
         try await withCheckedThrowingContinuation { continuation in
             setAttributes(attributes: attributes, ofItemAtPath: path, completionHandler: asyncHandler(continuation))
+        }
+    }
+    
+    /**
+     Creates a new symbolic link pointed to given destination.
+     
+     - Parameters:
+       - path: The path of a file or directory.
+       - destination:  Item that symbolic link will point to.
+       - completionHandler: closure will be run after reading link is completed.
+     */
+    func createSymbolicLink(
+        atPath path: String, withDestinationPath destination: String,
+        completionHandler: SimpleCompletionHandler
+    ) {
+        with(completionHandler: completionHandler) { context in
+            try context.symlink(path, to: destination)
+        }
+    }
+
+    /**
+     Returns the path of the item pointed to by a symbolic link.
+
+     - Parameters:
+       - atPath: The path of a file or directory.
+       - completionHandler: closure will be run after reading link is completed.
+     - Returns: An String object containing the path of the directory or file to which the symbolic link path refers.
+                 If the symbolic link is specified as a relative path, that relative path is returned.
+     */
+    func createSymbolicLink(atPath path: String, withDestinationPath destination: String) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            createSymbolicLink(atPath: path, withDestinationPath: destination, completionHandler: asyncHandler(continuation))
         }
     }
 
@@ -941,6 +995,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - range: byte range that should be read, default value is whole file. e.g. `..<10` will read first ten bytes.
      - Returns: an async stream of `Data` object which contains file contents.
      */
+    @available(swift 5.9)
     open func contents<R: RangeExpression>(
         atPath path: String, range: R? = Range<UInt64>?.none
     ) -> AsyncThrowingStream<Data, any Error> where R.Bound: FixedWidthInteger {

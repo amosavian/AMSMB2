@@ -2,7 +2,7 @@
 //  Context.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
+//  Created by Amir Abbas on 12/15/23.
 //  Copyright © 2023 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
@@ -271,6 +271,19 @@ extension SMB2Context {
         try async_await(dataHandler: String.init) { context, cbPtr -> Int32 in
             smb2_readlink_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
         }.data
+    }
+    
+    func symlink(_ path: String, to destination: String) throws {
+        let file = try SMB2FileHandle.using(
+            path: path,
+            desiredAccess: .init(bitPattern: SMB2_GENERIC_READ) | SMB2_GENERIC_WRITE,
+            shareAccess: SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE,
+            createDisposition: SMB2_FILE_CREATE,
+            createOptions: SMB2_FILE_OPEN_REPARSE_POINT,
+            on: self
+        )
+        let reparse = IOCtl.SymbolicLinkReparse(path: destination, isRelative: true)
+        try file.fcntl(command: .setReparsePoint, args: reparse)
     }
 }
 

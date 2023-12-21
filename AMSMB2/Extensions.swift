@@ -51,8 +51,8 @@ extension POSIXError {
     static func throwIfErrorStatus(_ status: UInt32) throws {
         if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
             let errorNo = nterror_to_errno(status)
-            let description = nterror_to_str(status).map(String.init(cString:))
-            try POSIXError.throwIfError(-errorNo, description: description)
+            let description = nterror_to_str(status).map(String.init(cString:)) ?? "Unknown"
+            throw POSIXError(.init(errorNo), description: "Error 0x\(String(status, radix: 16, uppercase: true)): \(description)")
         }
     }
 

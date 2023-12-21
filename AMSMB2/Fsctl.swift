@@ -45,6 +45,7 @@ extension IOCtlArgument {
 
 protocol IOCtlReply {
     init(data: Data) throws
+    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws
 }
 
 struct AnyIOCtlReply: IOCtlReply {
@@ -59,31 +60,43 @@ enum IOCtl {
     struct Command: RawRepresentable, Equatable, Hashable {
         var rawValue: UInt32
         
-        static let dfsGetReferrals = Command(SMB2_FSCTL_DFS_GET_REFERRALS)
-        static let pipePeek = Command(SMB2_FSCTL_PIPE_PEEK)
-        static let pipeWait = Command(SMB2_FSCTL_PIPE_WAIT)
-        static let pipeTransceive = Command(SMB2_FSCTL_PIPE_TRANSCEIVE)
-        static let srvCopyChunk = Command(SMB2_FSCTL_SRV_COPYCHUNK)
-        static let srvCopyChunkWrite = Command(SMB2_FSCTL_SRV_COPYCHUNK_WRITE)
         static let srvEnumerateSnapshots = Command(SMB2_FSCTL_SRV_ENUMERATE_SNAPSHOTS)
-        static let srvRequestResumeKey = Command(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY)
         static let srvReadHash = Command(SMB2_FSCTL_SRV_READ_HASH)
         static let lmrRequestResiliency = Command(SMB2_FSCTL_LMR_REQUEST_RESILIENCY)
         static let queryNetworkInterfaceInfo = Command(SMB2_FSCTL_QUERY_NETWORK_INTERFACE_INFO)
-        static let getReparsePoint = Command(SMB2_FSCTL_GET_REPARSE_POINT)
-        static let setReparsePoint = Command(SMB2_FSCTL_SET_REPARSE_POINT)
-        static let deleteReparsePoint = Command(0x0009_00ac)
         static let fileLevelTrim = Command(SMB2_FSCTL_FILE_LEVEL_TRIM)
         static let validateNegotiateInfo = Command(SMB2_FSCTL_VALIDATE_NEGOTIATE_INFO)
     }
+}
 
+// - MARK: Pipe
+extension IOCtl.Command {
+    static let pipePeek = Self(SMB2_FSCTL_PIPE_PEEK)
+    static let pipeWait = Self(SMB2_FSCTL_PIPE_WAIT)
+    static let pipeTransceive = Self(SMB2_FSCTL_PIPE_TRANSCEIVE)
+}
+
+// - MARK: DFS
+extension IOCtl.Command {
+    static let dfsGetReferrals = Self(SMB2_FSCTL_DFS_GET_REFERRALS)
+    static let dfsGetReferralsEx = Self(SMB2_FSCTL_DFS_GET_REFERRALS_EX)
+}
+
+// - MARK: Server-side Copy
+extension IOCtl.Command {
+    static let srvCopyChunk = Self(SMB2_FSCTL_SRV_COPYCHUNK)
+    static let srvCopyChunkWrite = Self(SMB2_FSCTL_SRV_COPYCHUNK_WRITE)
+    static let srvRequestResumeKey = Self(SMB2_FSCTL_SRV_REQUEST_RESUME_KEY)
+}
+
+extension IOCtl {
     struct SrvCopyChunk: IOCtlArgument {
         typealias Element = UInt8
-
+        
         let sourceOffset: UInt64
         let targetOffset: UInt64
         let length: UInt32
-
+        
         var regions: [Data] {
             [
                 .init(value: sourceOffset),
@@ -92,20 +105,20 @@ enum IOCtl {
                 .init(value: 0 as UInt32),
             ]
         }
-
+        
         init(sourceOffset: UInt64, targetOffset: UInt64, length: UInt32) {
             self.sourceOffset = sourceOffset
             self.targetOffset = targetOffset
             self.length = length
         }
     }
-
+    
     struct SrvCopyChunkCopy: IOCtlArgument {
         typealias Element = UInt8
-
+        
         let sourceKey: Data
         let chunks: [SrvCopyChunk]
-
+        
         var regions: [Data] {
             [
                 sourceKey,
@@ -113,16 +126,16 @@ enum IOCtl {
                 .init(value: 0 as UInt32),
             ] + chunks.flatMap(\.regions)
         }
-
+        
         init(sourceKey: Data, chunks: [SrvCopyChunk]) {
             self.sourceKey = sourceKey
             self.chunks = chunks
         }
     }
-
+    
     struct RequestResumeKey: IOCtlReply {
         let resumeKey: Data
-
+        
         init(data: Data) throws {
             guard data.count >= 24 else {
                 throw POSIXError(.ENODATA)
@@ -130,15 +143,31 @@ enum IOCtl {
             self.resumeKey = data.prefix(24)
         }
     }
+}
 
+// - MARK: Reparse Point
+extension IOCtl.Command {
+    static let getReparsePoint = Self(SMB2_FSCTL_GET_REPARSE_POINT)
+    static let setReparsePoint = Self(SMB2_FSCTL_SET_REPARSE_POINT)
+    static let deleteReparsePoint = Self(0x0009_00ac)
+}
+
+extension IOCtl {
     struct SymbolicLinkReparse: IOCtlReply, IOCtlArgument {
         typealias Element = UInt8
 
         private static let headerLength = 20
-        private let reparseTag: UInt32 = 0xa000_000c
+        private let reparseTag: UInt32 = SMB2_REPARSE_TAG_SYMLINK
         let substituteName: String
         let printName: String
         let isRelative: Bool
+        
+        init(path: String, printName: String? = nil, isRelative: Bool = false) {
+            let path = path.replacingOccurrences(of: "/", with: "\\")
+            self.substituteName = path
+            self.printName = printName ?? path
+            self.isRelative = isRelative
+        }
 
         init(data: Data) throws {
             guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
@@ -174,15 +203,15 @@ enum IOCtl {
             let printLen = UInt16(printData.count)
             return [
                 .init(value: reparseTag),
-                .init(value: substituteLen + printLen),
+                .init(value: UInt16(substituteData.count + printData.count)),
                 .init(value: 0 as UInt16), // reserved
-                .init(value: printLen), // substitute offset
+                .init(value: 0 as UInt16), // substitute offset
                 .init(value: substituteLen),
-                .init(value: 0 as UInt16),
+                .init(value: UInt16(substituteData.count)), // print offset
                 .init(value: printLen),
                 .init(value: UInt32(isRelative ? 1 : 0)),
-                .init(printData),
                 .init(substituteData),
+                .init(printData),
             ]
         }
 
@@ -190,6 +219,32 @@ enum IOCtl {
             self.substituteName = ""
             self.printName = ""
             self.isRelative = false
+        }
+    }
+    
+    struct SymbolicLinkGUIDReparse: IOCtlArgument {
+        typealias Element = UInt8
+
+        // This reparse data buffer MUST be used only with reparse tag values
+        // whose high bit is set to 0.
+        private let reparseTag: UInt32 = SMB2_REPARSE_TAG_SYMLINK & 0x7fff_ffff
+        let fileId: UUID
+        
+        init(fileId: UUID = .init()) {
+            self.fileId = fileId
+        }
+
+        var regions: [Data] {
+            [
+                .init(value: reparseTag),
+                .init(value: 0 as UInt16), // buffer length
+                .init(value: 0 as UInt16), // reserved
+                .init(value: fileId),
+            ]
+        }
+
+        private init() {
+            self.fileId = .init()
         }
     }
 
