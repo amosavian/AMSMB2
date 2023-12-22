@@ -772,7 +772,16 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     @objc(removeItemAtPath:completionHandler:)
     open func removeItem(atPath path: String, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
-            switch try Int32(context.stat(path).smb2_type) {
+            let stat: smb2_stat_64
+            do {
+                stat = try context.stat(path)
+            } catch POSIXError.ENOLINK {
+                // `libsmb2` can not read symlink attributes using `stat`, so if we get
+                // the related error, we simply open file as reparse point then use `fstat`.
+                let file = try SMB2FileHandle.open(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
+                stat = try file.fstat()
+            }
+            switch Int32(stat.smb2_type) {
             case SMB2_TYPE_DIRECTORY:
                 try self.removeDirectory(context: context, path: path, recursive: true)
             case SMB2_TYPE_FILE:
