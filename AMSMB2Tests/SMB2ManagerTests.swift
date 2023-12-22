@@ -187,6 +187,53 @@ class SMB2ManagerTests: XCTestCase {
             )
         }
     }
+    
+    func testCreateSymlink() async throws {
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let target = "testSymlinkTarget.dat"
+        let link = "testSymlink.dat"
+        let data = randomData(size: 0x000800)
+        
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: target)
+            try? await smb.removeFile(atPath: link)
+        }
+        
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: target, progress: nil)
+        try await smb.createSymbolicLink(atPath: link, withDestinationPath: target)
+        
+        let attribs = try await smb.attributesOfItem(atPath: link)
+        XCTAssertNotNil(attribs.contentModificationDate)
+        XCTAssertNotNil(attribs.creationDate)
+        XCTAssert(attribs.isSymbolicLink)
+        XCTAssertEqual(attribs.fileResourceType, URLFileResourceType.symbolicLink)
+        
+        let destination = try await smb.destinationOfSymbolicLink(atPath: link)
+        XCTAssertEqual(destination, target)
+    }
+    
+    func testRemoveSymlink() async throws {
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let target = "testRemoveSymlinkTarget.dat"
+        let link = "testRemoveSymlink.dat"
+        let data = randomData(size: 0x000800)
+        
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: target)
+            try? await smb.removeFile(atPath: link)
+        }
+        
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: target, progress: nil)
+        try await smb.createSymbolicLink(atPath: link, withDestinationPath: target)
+        try await smb.removeFile(atPath: link)
+        
+        do {
+            _ = try await smb.destinationOfSymbolicLink(atPath: link)
+            XCTAssert(false, "Destination should not exist")
+        } catch {}
+    }
 
     func testDirectoryOperation() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!

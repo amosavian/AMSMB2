@@ -490,30 +490,20 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: Any], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
+            let stat: smb2_stat_64
             do {
-                let stat = try context.stat(path)
-                var result = [URLResourceKey: Any]()
-                result[.nameKey] = path.fileURL().lastPathComponent
-                result[.pathKey] = path.fileURL(stat.isDirectory).path
-                stat.populateResourceValue(&result)
-                return result
+                stat = try context.stat(path)
             } catch POSIXError.ENOLINK {
-                // `libsmb2` can not read symlink attributes, so if we get
-                // the related error, we simply check if the given file is
-                // a symbolic link by `readlink`.
-                // If so, we set the attributes for a symbolic link.
-                _ = try context.readlink(path)
-                var result = [URLResourceKey: Any]()
-                result[.nameKey] = path.fileURL().lastPathComponent
-                result[.pathKey] = path.fileURL(false).path
-                result[.fileResourceTypeKey] = URLFileResourceType.symbolicLink
-                result[.isDirectoryKey] = NSNumber(false)
-                result[.isRegularFileKey] = NSNumber(false)
-                result[.isSymbolicLinkKey] = NSNumber(true)
-                return result
-            } catch {
-                throw error
+                // `libsmb2` can not read symlink attributes using `stat`, so if we get
+                // the related error, we simply open file as reparse point then use `fstat`.
+                let file = try SMB2FileHandle.open(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
+                stat = try file.fstat()
             }
+            var result = [URLResourceKey: Any]()
+            result[.nameKey] = path.fileURL().lastPathComponent
+            result[.pathKey] = path.fileURL(stat.isDirectory).path
+            stat.populateResourceValue(&result)
+            return result
         }
     }
 
@@ -751,7 +741,12 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     @objc(removeFileAtPath:completionHandler:)
     open func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
-            try context.unlink(path)
+            do {
+                try context.unlink(path)
+            } catch POSIXError.ENOLINK {
+                // Try to remove file as a symbolic link.
+                try context.unlink(path, flags: O_SYMLINK)
+            }
         }
     }
 
@@ -780,8 +775,10 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             switch try Int32(context.stat(path).smb2_type) {
             case SMB2_TYPE_DIRECTORY:
                 try self.removeDirectory(context: context, path: path, recursive: true)
-            case SMB2_TYPE_FILE, SMB2_TYPE_LINK:
+            case SMB2_TYPE_FILE:
                 try context.unlink(path)
+            case SMB2_TYPE_LINK:
+                try context.unlink(path, flags: O_SYMLINK)
             default:
                 break
             }

@@ -274,14 +274,7 @@ extension SMB2Context {
     }
     
     func symlink(_ path: String, to destination: String) throws {
-        let file = try SMB2FileHandle.using(
-            path: path,
-            desiredAccess: .init(bitPattern: SMB2_GENERIC_READ) | SMB2_GENERIC_WRITE,
-            shareAccess: SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE,
-            createDisposition: SMB2_FILE_CREATE,
-            createOptions: SMB2_FILE_OPEN_REPARSE_POINT,
-            on: self
-        )
+        let file = try SMB2FileHandle.open(path: path, flags: O_RDWR | O_CREAT | O_EXCL | O_SYMLINK, on: self)
         let reparse = IOCtl.SymbolicLinkReparse(path: destination, isRelative: true)
         try file.fcntl(command: .setReparsePoint, args: reparse)
     }
@@ -305,6 +298,27 @@ extension SMB2Context {
     func unlink(_ path: String) throws {
         try async_await { context, cbPtr -> Int32 in
             smb2_unlink_async(context, path.canonical, SMB2Context.generic_handler, cbPtr)
+        }
+    }
+    
+    func unlink(_ path: String, flags: Int32) throws {
+        let file = try SMB2FileHandle.open(path: path, flags: O_RDWR | flags, on: self)
+        var inputBuffer = [UInt8](repeating: 0, count: 8)
+        inputBuffer[0] = 0x01 // DeletePending set to true
+        try withExtendedLifetime(file) {
+            try inputBuffer.withUnsafeMutableBytes { buf in
+                var req = smb2_set_info_request(
+                    info_type: UInt8(SMB2_0_INFO_FILE),
+                    file_info_class: 0x0D,
+                    input_data: buf.baseAddress,
+                    additional_information: 0,
+                    file_id: file.fileId.uuid)
+                
+                try async_await_pdu(dataHandler: EmptyReply.init) {
+                    context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+                    smb2_cmd_set_info_async(context, &req, SMB2Context.generic_handler, cbPtr)
+                }
+            }
         }
     }
 

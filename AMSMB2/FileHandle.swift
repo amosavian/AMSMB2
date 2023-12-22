@@ -78,6 +78,57 @@ final class SMB2FileHandle {
 
         return result
     }
+    
+    static func open(path: String, flags: Int32, on context: SMB2Context) throws -> SMB2FileHandle {
+        let desiredAccess: Int32
+        let shareAccess: Int32
+        let createDisposition: Int32
+        var createOptions: Int32 = 0
+        
+        switch flags & O_ACCMODE {
+        case O_RDWR:
+            desiredAccess = .init(bitPattern: SMB2_GENERIC_READ) | SMB2_GENERIC_WRITE | SMB2_DELETE
+            shareAccess = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE
+        case O_WRONLY:
+            desiredAccess = SMB2_GENERIC_WRITE | SMB2_DELETE
+            shareAccess = SMB2_FILE_SHARE_WRITE
+        default:
+            desiredAccess = .init(bitPattern: SMB2_GENERIC_READ)
+            shareAccess = SMB2_FILE_SHARE_READ
+        }
+        
+        if (flags & O_CREAT) != 0 {
+            if (flags & O_EXCL) != 0 {
+                createDisposition = SMB2_FILE_CREATE
+            } else if(flags & O_TRUNC) != 0 {
+                createDisposition = SMB2_FILE_OVERWRITE_IF
+            } else {
+                createDisposition = SMB2_FILE_OPEN_IF
+            }
+        } else {
+            if (flags & O_TRUNC) != 0 {
+                createDisposition = SMB2_FILE_OVERWRITE
+            } else {
+                createDisposition = SMB2_FILE_OPEN
+            }
+        }
+        
+        if (flags & O_DIRECTORY) != 0 {
+            createOptions |= SMB2_FILE_DIRECTORY_FILE
+        }
+        if (flags & O_SYMLINK) != 0 {
+            createOptions |= SMB2_FILE_OPEN_REPARSE_POINT
+        }
+        
+        return try SMB2FileHandle.using(
+            path: path,
+            desiredAccess: desiredAccess,
+            shareAccess: shareAccess,
+            createDisposition: createDisposition,
+            createOptions: createOptions,
+            on: context
+        )
+    }
 
     init(fileDescriptor: smb2_file_id, on context: SMB2Context) throws {
         self.context = context

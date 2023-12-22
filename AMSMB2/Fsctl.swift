@@ -153,6 +153,39 @@ extension IOCtl.Command {
 }
 
 extension IOCtl {
+    struct Reparse: IOCtlReply, IOCtlArgument {
+        typealias Element = UInt8
+        private static let headerLength = 8
+        
+        let reparseTag: UInt32
+        let buffer: Data
+        
+        var regions:  [Data] {
+            return [
+                .init(value: reparseTag),
+                .init(value: UInt16(buffer.count)),
+                .init(value: 0 as UInt16), // reserved
+                .init(buffer),
+            ]
+        }
+        
+        init(reparseTag: UInt32, buffer: Data = .init()) {
+            self.reparseTag = reparseTag
+            self.buffer = buffer
+        }
+        
+        init(data: Data) throws {
+            guard data.count >= Self.headerLength else {
+                throw POSIXError(.EINVAL)
+            }
+            self.reparseTag = data.scanValue(offset: 0, as: UInt32.self) ?? SMB2_REPARSE_TAG_SYMLINK
+            
+            let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
+            guard count + 8 == data.count else { throw POSIXError(.EINVAL) }
+            self.buffer = data.dropFirst(Int(Self.headerLength))
+        }
+    }
+    
     struct SymbolicLinkReparse: IOCtlReply, IOCtlArgument {
         typealias Element = UInt8
 
