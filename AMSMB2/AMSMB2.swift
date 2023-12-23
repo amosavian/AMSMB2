@@ -400,8 +400,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Parameters:
        - atPath: path of directory to be enumerated.
-       - completionHandler: closure will be run after enumerating is completed.
        - recursive: subdirectories will enumerated if `true`.
+       - completionHandler: closure will be run after enumerating is completed.
        - result: An array of `[URLResourceKey: Any]` which holds files' attributes. file name is stored in `.nameKey`.
      */
     open func contentsOfDirectory(
@@ -418,7 +418,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Parameters:
        - atPath: path of directory to be enumerated.
-       - completionHandler: closure will be run after enumerating is completed.
        - recursive: subdirectories will enumerated if `true`.
      - Returns: An array of `[URLResourceKey: Any]` which holds files' attributes. file name is stored in `.nameKey`.
      */
@@ -467,7 +466,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Parameters:
        - forPath: Any pathname within the mounted file system.
-       - completionHandler: closure will be run after fetching attributes is completed.
      - Returns: A dictionary object that describes the attributes of the mounted file system on which path resides.
            See _File-System Attribute Keys_ for a description of the keys available in the dictionary.
      */
@@ -512,7 +510,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Parameters:
        - atPath: path of file to be enumerated.
-       - completionHandler: closure will be run after enumerating is completed.
      - Returns: An dictionary with `URLResourceKey` as key which holds file's attributes.
      */
     open func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
@@ -625,13 +622,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     }
 
     /**
-     Returns the path of the item pointed to by a symbolic link.
+     Creates a new symbolic link pointed to given destination.
 
      - Parameters:
-       - atPath: The path of a file or directory.
-       - completionHandler: closure will be run after reading link is completed.
-     - Returns: An String object containing the path of the directory or file to which the symbolic link path refers.
-                 If the symbolic link is specified as a relative path, that relative path is returned.
+       - path: The path of a file or directory.
+       - destination:  Item that symbolic link will point to.
      */
     func createSymbolicLink(atPath path: String, withDestinationPath destination: String) async throws {
         try await withCheckedThrowingContinuation { continuation in
@@ -662,7 +657,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Parameters:
        - atPath: The path of a file or directory.
-       - completionHandler: closure will be run after reading link is completed.
      - Returns: An String object containing the path of the directory or file to which the symbolic link path refers.
                  If the symbolic link is specified as a relative path, that relative path is returned.
      */

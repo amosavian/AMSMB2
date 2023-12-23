@@ -309,10 +309,11 @@ extension SMB2Context {
             try inputBuffer.withUnsafeMutableBytes { buf in
                 var req = smb2_set_info_request(
                     info_type: UInt8(SMB2_0_INFO_FILE),
-                    file_info_class: 0x0D,
+                    file_info_class: 0x0d,
                     input_data: buf.baseAddress,
                     additional_information: 0,
-                    file_id: file.fileId.uuid)
+                    file_id: file.fileId.uuid
+                )
                 
                 try async_await_pdu(dataHandler: EmptyReply.init) {
                     context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in

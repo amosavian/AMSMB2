@@ -100,7 +100,7 @@ final class SMB2FileHandle {
         if (flags & O_CREAT) != 0 {
             if (flags & O_EXCL) != 0 {
                 createDisposition = SMB2_FILE_CREATE
-            } else if(flags & O_TRUNC) != 0 {
+            } else if (flags & O_TRUNC) != 0 {
                 createDisposition = SMB2_FILE_OVERWRITE_IF
             } else {
                 createDisposition = SMB2_FILE_OPEN_IF

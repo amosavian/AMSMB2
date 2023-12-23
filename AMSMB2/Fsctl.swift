@@ -160,8 +160,8 @@ extension IOCtl {
         let reparseTag: UInt32
         let buffer: Data
         
-        var regions:  [Data] {
-            return [
+        var regions: [Data] {
+            [
                 .init(value: reparseTag),
                 .init(value: UInt16(buffer.count)),
                 .init(value: 0 as UInt16), // reserved
