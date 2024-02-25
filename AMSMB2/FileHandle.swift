@@ -12,9 +12,12 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
-final class SMB2FileHandle {
-    struct SeekWhence: RawRepresentable {
-        var rawValue: Int32
+final public class SMB2FileHandle {
+    public struct SeekWhence: RawRepresentable {
+        public let rawValue: Int32
+        public init(rawValue: Int32) {
+            self.rawValue = rawValue
+        }
 
         static let set = SeekWhence(rawValue: SEEK_SET)
         static let current = SeekWhence(rawValue: SEEK_CUR)
@@ -24,7 +27,7 @@ final class SMB2FileHandle {
     private var context: SMB2Context
     private var handle: smb2fh?
 
-    convenience init(forReadingAtPath path: String, on context: SMB2Context) throws {
+    public convenience init(forReadingAtPath path: String, on context: SMB2Context) throws {
         try self.init(path, flags: O_RDONLY, on: context)
     }
 
@@ -166,7 +169,7 @@ final class SMB2FileHandle {
         }
     }
 
-    func fstat() throws -> smb2_stat_64 {
+    public func fstat() throws -> smb2_stat_64 {
         let handle = try handle.unwrap()
         var st = smb2_stat_64()
         try context.async_await { context, cbPtr -> Int32 in
@@ -227,14 +230,14 @@ final class SMB2FileHandle {
     }
 
     @discardableResult
-    func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
+    public func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
         let handle = try handle.unwrap()
         let result = smb2_lseek(context.unsafe, handle, offset, whence.rawValue, nil)
         try POSIXError.throwIfError(result, description: context.error)
         return result
     }
 
-    func read(length: Int = 0) throws -> Data {
+    public func read(length: Int = 0) throws -> Data {
         precondition(
             length <= UInt32.max, "Length bigger than UInt32.max can't be handled by libsmb2."
         )
