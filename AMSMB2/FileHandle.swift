@@ -12,7 +12,7 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
-final public class SMB2FileHandle {
+public final class SMB2FileHandle {
     public struct SeekWhence: RawRepresentable {
         public let rawValue: Int32
         public init(rawValue: Int32) {
@@ -161,7 +161,7 @@ final public class SMB2FileHandle {
         .init(uuid: (try? smb2_get_file_id(handle.unwrap()).unwrap().pointee) ?? compound_file_id)
     }
 
-    func close() {
+    public func close() {
         guard let handle = handle else { return }
         self.handle = nil
         _ = try? context.withThreadSafeContext { context in
