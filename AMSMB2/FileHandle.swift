@@ -272,7 +272,7 @@ final class SMB2FileHandle {
     }
 
     var optimizedWriteSize: Int {
-        min(maxWriteSize, 1_048_576)
+        min(maxWriteSize, 32*1024)
     }
 
     func write<DataType: DataProtocol>(data: DataType) throws -> Int {
