@@ -16,6 +16,8 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable, @unche
     private var _context_lock = NSRecursiveLock()
     var timeout: TimeInterval
 
+    var minWriteSize: Int = 32 * 1024
+
     init(timeout: TimeInterval) throws {
         let _context = try smb2_init_context().unwrap()
         self.unsafe = _context
