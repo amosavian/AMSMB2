@@ -1,0 +1,3 @@
+[submodule "Dependencies/libsmb2"]
+	path = Dependencies/libsmb2
+	url = git@github.com:vhawley/libsmb2.git
