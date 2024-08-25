@@ -28,11 +28,11 @@ let package = Package(
                 "lib/CMakeLists.txt",
                 "lib/libsmb2.syms",
                 "lib/Makefile.am",
-                "lib/Makefile.DC_KOS",
-                "lib/Makefile.PS2_EE",
-                "lib/Makefile.PS2_IOP",
+                "lib/Makefile.AMIGA_OS3",
+                "lib/Makefile.AMIGA_AROS",
+                "lib/Makefile.AMIGA",
                 "lib/Makefile.PS3_PPU",
-                "lib/Makefile.PS4",
+                "lib/ps2"
             ],
             sources: [
                 "lib",
