@@ -1,4 +1,4 @@
-// swift-tools-version:5.8
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
@@ -33,6 +33,7 @@ let package = Package(
                 "lib/Makefile.PS2_IOP",
                 "lib/Makefile.PS3_PPU",
                 "lib/Makefile.PS4",
+                "lib/ps2",
             ],
             sources: [
                 "lib",
@@ -65,15 +66,12 @@ let package = Package(
             path: "AMSMB2Tests"
         ),
     ],
-    swiftLanguageVersions: [.v5]
+    swiftLanguageModes: [.v5]
 )
 
 for target in package.targets {
     var swiftSettings: [SwiftSetting] = [
-        .enableExperimentalFeature("StrictConcurrency=complete"),
+        .enableUpcomingFeature("ExistentialAny"),
     ]
-#if swift(>=5.9)
-    swiftSettings.append(.enableUpcomingFeature("ExistentialAny"))
-#endif
     target.swiftSettings = swiftSettings
 }

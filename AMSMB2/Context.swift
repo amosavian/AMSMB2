@@ -479,7 +479,7 @@ extension SMB2Context {
     typealias Security = smb2_sec
 }
 
-extension smb2_negotiate_version: Hashable {
+extension smb2_negotiate_version: Swift.Hashable {
     static let any = SMB2_VERSION_ANY
     static let v2 = SMB2_VERSION_ANY2
     static let v3 = SMB2_VERSION_ANY3

@@ -1,4 +1,4 @@
-// swift-tools-version:5.6
+// swift-tools-version:5.8
 import PackageDescription
 
 let package = Package(
@@ -33,6 +33,7 @@ let package = Package(
                 "lib/Makefile.PS2_IOP",
                 "lib/Makefile.PS3_PPU",
                 "lib/Makefile.PS4",
+                "lib/ps2",
             ],
             sources: [
                 "lib",
@@ -67,3 +68,13 @@ let package = Package(
     ],
     swiftLanguageVersions: [.v5]
 )
+
+for target in package.targets {
+    var swiftSettings: [SwiftSetting] = [
+        .enableExperimentalFeature("StrictConcurrency=complete"),
+    ]
+#if swift(>=5.9)
+    swiftSettings.append(.enableUpcomingFeature("ExistentialAny"))
+#endif
+    target.swiftSettings = swiftSettings
+}
