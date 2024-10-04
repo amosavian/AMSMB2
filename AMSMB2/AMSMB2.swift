@@ -1733,6 +1733,7 @@ extension SMB2Manager {
             if let offset {
                 try file.lseek(offset: offset, whence: .set)
                 try file.ftruncate(toLength: UInt64(offset))
+                totalWritten = UInt64(offset)
             }
            
             try stream.withOpenStream {
