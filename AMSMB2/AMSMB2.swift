@@ -919,7 +919,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Returns: a `Data` object which contains file contents.
      */
     open func contents<R: RangeExpression>(
-        atPath path: String, range: R? = Range<UInt64>?.none, progress: ReadProgressHandler
+        atPath path: String, range: R? = Range<UInt64>?.none, progress: ReadProgressHandler = nil
     ) async throws -> Data where R.Bound: FixedWidthInteger {
         try await withCheckedThrowingContinuation { continuation in
             contents(
@@ -1719,48 +1719,42 @@ extension SMB2Manager {
         context: SMB2Context, from stream: InputStream, toPath: String,
         offset: Int64? = nil, chunkSize: Int = 0, progress: WriteProgressHandler
     ) throws {
-        let file = offset == nil ? try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context) : try SMB2FileHandle(
-            forOutputAtPath: toPath,
-            on: context
-        )
+        let file: SMB2FileHandle
+        if let offset {
+            try context.truncate(toPath, toLength: .init(offset))
+            file = try SMB2FileHandle(forOutputAtPath: toPath, on: context)
+            try file.lseek(offset: offset, whence: .set)
+        } else {
+            file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
+        }
         let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
         var totalWritten: UInt64 = 0
 
-        do {
-            if let offset {
-                try file.lseek(offset: offset, whence: .set)
-                try file.ftruncate(toLength: UInt64(offset))
-            }
-           
-            try stream.withOpenStream {
-                while true {
-                    let segment = try stream.readData(maxLength: chunkSize)
-                    if segment.isEmpty {
-                        break
-                    }
-                    let written = try file.pwrite(data: segment, offset: UInt64(offset ?? 0) + totalWritten)
-                    if written != segment.count {
-                        throw POSIXError(
-                            .EIO, description: "Inconsistency in writing to SMB file handle."
-                        )
-                    }
+        try stream.withOpenStream {
+            while true {
+                let segment = try stream.readData(maxLength: chunkSize)
+                if segment.isEmpty {
+                    break
+                }
+                let written = try file.pwrite(data: segment, offset: UInt64(offset ?? 0) + totalWritten)
+                if written != segment.count {
+                    throw POSIXError(
+                        .EIO, description: "Inconsistency in writing to SMB file handle."
+                    )
+                }
 
-                    totalWritten += UInt64(segment.count)
-                    var offset = try file.lseek(offset: 0, whence: .current)
-                    if offset > totalWritten {
-                        offset = Int64(totalWritten)
-                    }
-                    if let shouldContinue = progress?(Int64(totalWritten)), !shouldContinue {
-                        break
-                    }
+                totalWritten += UInt64(segment.count)
+                var offset = try file.lseek(offset: 0, whence: .current)
+                if offset > totalWritten {
+                    offset = Int64(totalWritten)
+                }
+                if let shouldContinue = progress?(Int64(totalWritten)), !shouldContinue {
+                    break
                 }
             }
-
-            try file.fsync()
-        } catch {
-            try? context.unlink(toPath)
-            throw error
         }
+
+        try file.fsync()
     }
 }
 

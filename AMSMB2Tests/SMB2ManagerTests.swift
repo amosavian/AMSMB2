@@ -160,7 +160,46 @@ class SMB2ManagerTests: XCTestCase {
         XCTAssertEqual(initialAttribs.contentModificationDate, newAttribs.contentModificationDate)
         XCTAssertEqual(newAttribs.creationDate, Date(timeIntervalSinceReferenceDate: 0))
     }
+    
+    func testFileRename() async throws {
+        let file = "renametest.dat"
+        let renamedFile = "renamed.dat"
+        let size: Int = random(max: 0x000800)
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let data = randomData(size: size)
 
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: file)
+            try? await smb.removeFile(atPath: renamedFile)
+        }
+
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: file, progress: nil)
+        
+        try await smb.moveItem(atPath: file, toPath: renamedFile)
+        let renamedData = try await smb.contents(atPath: renamedFile)
+        XCTAssertEqual(data, renamedData)
+    }
+    
+    func testFileTruncate() async throws {
+        let file = "trunctest.dat"
+        let size: Int = random(max: 0x000800)
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let data = randomData(size: size)
+
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: file)
+        }
+
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: file, progress: nil)
+        
+        try await smb.truncateFile(atPath: file, atOffset: 0x000200)
+        let truncData = try await smb.contents(atPath: file)
+        XCTAssertEqual(truncData.count, 0x000200)
+        XCTAssertEqual(data.prefix(truncData.count), truncData)
+    }
+    
     func testListing() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
         try await smb.connectShare(name: share, encrypted: encrypted)
