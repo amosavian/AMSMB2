@@ -38,7 +38,7 @@ let package = Package(
             sources: [
                 "lib",
             ],
-            publicHeadersPath: ".",
+            publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("include"),
                 .headerSearchPath("include/apple"),

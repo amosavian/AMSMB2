@@ -38,7 +38,7 @@ let package = Package(
             sources: [
                 "lib",
             ],
-            publicHeadersPath: ".",
+            publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("include"),
                 .headerSearchPath("include/apple"),
@@ -70,7 +70,7 @@ let package = Package(
 )
 
 for target in package.targets {
-    var swiftSettings: [SwiftSetting] = [
+    let swiftSettings: [SwiftSetting] = [
         .enableUpcomingFeature("ExistentialAny"),
     ]
     target.swiftSettings = swiftSettings

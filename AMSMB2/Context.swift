@@ -2,8 +2,8 @@
 //  Context.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 12/15/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/20/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
@@ -228,9 +228,10 @@ extension SMB2Context {
 
 extension SMB2Context {
     func shareEnum() throws -> [SMB2Share] {
-        try async_await(dataHandler: [SMB2Share].init) { context, cbPtr -> Int32 in
-            smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
-        }.data
+//        try async_await(dataHandler: [SMB2Share].init) { context, cbPtr -> Int32 in
+//            smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
+//        }.data
+        try shareEnumSwift()
     }
 
     func shareEnumSwift() throws -> [SMB2Share] {
@@ -309,10 +310,12 @@ extension SMB2Context {
             try inputBuffer.withUnsafeMutableBytes { buf in
                 var req = smb2_set_info_request(
                     info_type: UInt8(SMB2_0_INFO_FILE),
-                    file_info_class: 0x0d,
-                    input_data: buf.baseAddress,
+                    file_info_class: UInt8(SMB2_FILE_DISPOSITION_INFORMATION),
+                    buffer_length: UInt32(buf.count),
+                    buffer_offset: 0,
                     additional_information: 0,
-                    file_id: file.fileId.uuid
+                    file_id: file.fileId.uuid,
+                    input_data: buf.baseAddress
                 )
                 
                 try async_await_pdu(dataHandler: EmptyReply.init) {

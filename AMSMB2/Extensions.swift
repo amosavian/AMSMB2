@@ -2,8 +2,8 @@
 //  Extensions.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/21/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 

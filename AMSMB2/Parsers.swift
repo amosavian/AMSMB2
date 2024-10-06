@@ -2,8 +2,8 @@
 //  Parsers.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 10/29/19.
+//  Copyright © 2019 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
@@ -22,26 +22,26 @@ extension String {
     }
 }
 
-extension Array where Element == SMB2Share {
-    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
-        defer { smb2_free_data(context.unsafe, dataPtr) }
-        let result = try dataPtr.unwrap().assumingMemoryBound(to: srvsvc_netshareenumall_rep.self)
-            .pointee
-        self = Array(result.ctr.pointee.ctr1)
-    }
-
-    init(_ ctr1: srvsvc_netsharectr1) {
-        self = [srvsvc_netshareinfo1](
-            UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count))
-        ).map {
-            SMB2Share(
-                name: .init(cString: $0.name),
-                props: .init(rawValue: $0.type),
-                comment: .init(cString: $0.comment)
-            )
-        }
-    }
-}
+// extension Array where Element == SMB2Share {
+//    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
+//        defer { smb2_free_data(context.unsafe, dataPtr) }
+//        let result = try dataPtr.unwrap().assumingMemoryBound(to: srvsvc_netshareenumall_rep.self)
+//            .pointee
+//        self = Array(result.ctr.pointee.ctr1)
+//    }
+//
+//    init(_ ctr1: srvsvc_netsharectr1) {
+//        self = [srvsvc_netshareinfo1](
+//            UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count))
+//        ).map {
+//            SMB2Share(
+//                name: .init(cString: $0.name),
+//                props: .init(rawValue: $0.type),
+//                comment: .init(cString: $0.comment)
+//            )
+//        }
+//    }
+// }
 
 extension OpaquePointer {
     init(_: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {

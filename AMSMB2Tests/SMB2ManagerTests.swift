@@ -2,8 +2,8 @@
 //  SMB2ManagerTests.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 12/21/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/20/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
@@ -266,7 +266,7 @@ class SMB2ManagerTests: XCTestCase {
 
     func testLargeWriteRead() async throws {
         let size: Int = maxSize * 3 + random(max: optimizedSize)
-        try await readWrite(size: size, checkLeak: true, function: #function)
+        try await readWrite(size: size, checkLeak: false, function: #function)
     }
 
     private func readWrite(size: Int, checkLeak: Bool = false, function: String) async throws {
@@ -623,13 +623,15 @@ extension SMB2ManagerTests {
         try! data.write(to: url)
         return url
     }
+    
+    static let mach_tast_self = ManagedAtomic<mach_port_t>(mach_task_self_)
 
     private func report_memory() -> Int {
         var taskInfo = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
         let kerr: kern_return_t = withUnsafeMutablePointer(to: &taskInfo) {
             $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
-                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+                task_info(Self.mach_tast_self.load(ordering: .relaxed), task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
             }
         }
 

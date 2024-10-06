@@ -2,16 +2,13 @@
 //  AMSMB2.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/20/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
 import Foundation
 import SMB2
-
-@available(*, deprecated, renamed: "SMB2Manager")
-public typealias AMSMB2 = SMB2Manager
 
 /// Implements SMB2 File operations.
 @objc(AMSMB2Manager)
@@ -129,7 +126,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     }
 
     public required init?(coder aDecoder: NSCoder) {
-        guard let url = aDecoder.decodeObject(of: NSURL.self, forKey: "url") as URL? else {
+        guard let url = aDecoder.decodeObject(of: NSURL.self, forKey: CodingKeys.url.stringValue) as URL? else {
             aDecoder.failWithError(
                 CocoaError(
                     .coderValueNotFound,
@@ -153,30 +150,30 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             label: "smb2_queue\(hostLabel)", qos: .default, attributes: .concurrent
         )
         self.url = url
-        self._domain = aDecoder.decodeObject(of: NSString.self, forKey: "domain") as String? ?? ""
+        self._domain = aDecoder.decodeObject(of: NSString.self, forKey: CodingKeys.domain.stringValue) as String? ?? ""
         self._workstation =
-            aDecoder.decodeObject(of: NSString.self, forKey: "workstation") as String? ?? ""
-        self._user = aDecoder.decodeObject(of: NSString.self, forKey: "user") as String? ?? "guest"
+            aDecoder.decodeObject(of: NSString.self, forKey: CodingKeys.workstation.stringValue) as String? ?? ""
+        self._user = aDecoder.decodeObject(of: NSString.self, forKey: CodingKeys.user.stringValue) as String? ?? "guest"
         self._password =
-            aDecoder.decodeObject(of: NSString.self, forKey: "password") as String? ?? ""
-        self._timeout = aDecoder.decodeDouble(forKey: "timeout")
+            aDecoder.decodeObject(of: NSString.self, forKey: CodingKeys.password.stringValue) as String? ?? ""
+        self._timeout = aDecoder.decodeDouble(forKey: CodingKeys.timeout.stringValue)
         super.init()
     }
 
     open func encode(with aCoder: NSCoder) {
-        aCoder.encode(url, forKey: "url")
-        aCoder.encode(_domain, forKey: "domain")
-        aCoder.encode(_workstation, forKey: "workstation")
-        aCoder.encode(_user, forKey: "user")
-        aCoder.encode(_password, forKey: "password")
-        aCoder.encode(timeout, forKey: "timeout")
+        aCoder.encode(url, forKey: CodingKeys.url.stringValue)
+        aCoder.encode(_domain, forKey: CodingKeys.domain.stringValue)
+        aCoder.encode(_workstation, forKey: CodingKeys.workstation.stringValue)
+        aCoder.encode(_user, forKey: CodingKeys.user.stringValue)
+        aCoder.encode(_password, forKey: CodingKeys.password.stringValue)
+        aCoder.encode(timeout, forKey: CodingKeys.timeout.stringValue)
     }
 
     public static var supportsSecureCoding: Bool {
         true
     }
 
-    enum CodingKeys: CodingKey {
+    enum CodingKeys: String, CodingKey {
         case url, domain, workstation
         case user, password, timeout
     }
@@ -538,7 +535,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: SimpleCompletionHandler
     ) {
         var stat = smb2_stat_64()
-        var smb2Attributes = SMB2FileAttributes()
+        var smb2Attributes = SMB2FileHandle.Attributes()
         for attribute in attributes {
             switch attribute.key {
             case .creationDateKey:
@@ -1737,33 +1734,28 @@ extension SMB2Manager {
            
             try stream.withOpenStream {
                 while true {
-                    var segment = try stream.readData(maxLength: chunkSize)
+                    let segment = try stream.readData(maxLength: chunkSize)
                     if segment.isEmpty {
                         break
                     }
-                    totalWritten += UInt64(segment.count)
-                    // For last part, we make it size equal with other chunks in order to prevent POLLHUP on some servers
-                    if segment.count < chunkSize {
-                        segment.count = chunkSize
-                    }
-                    let written = try file.write(data: segment)
+                    let written = try file.pwrite(data: segment, offset: UInt64(offset ?? 0) + totalWritten)
                     if written != segment.count {
                         throw POSIXError(
                             .EIO, description: "Inconsistency in writing to SMB file handle."
                         )
                     }
 
+                    totalWritten += UInt64(segment.count)
                     var offset = try file.lseek(offset: 0, whence: .current)
                     if offset > totalWritten {
                         offset = Int64(totalWritten)
                     }
-                    if let shouldContinue = progress?(offset), !shouldContinue {
+                    if let shouldContinue = progress?(Int64(totalWritten)), !shouldContinue {
                         break
                     }
                 }
             }
 
-            try file.ftruncate(toLength: totalWritten)
             try file.fsync()
         } catch {
             try? context.unlink(toPath)

@@ -2,8 +2,8 @@
 //  FileHandle.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 12/15/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/20/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
@@ -19,6 +19,82 @@ final class SMB2FileHandle {
         static let set = SeekWhence(rawValue: SEEK_SET)
         static let current = SeekWhence(rawValue: SEEK_CUR)
         static let end = SeekWhence(rawValue: SEEK_END)
+    }
+    
+    struct Attributes: OptionSet, Sendable {
+        var rawValue: UInt32
+        
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(rawValue: Int32) {
+            self.rawValue = .init(bitPattern: rawValue)
+        }
+        
+        static let readonly = Self(rawValue: SMB2_FILE_ATTRIBUTE_READONLY)
+        static let hidden = Self(rawValue: SMB2_FILE_ATTRIBUTE_HIDDEN)
+        static let system = Self(rawValue: SMB2_FILE_ATTRIBUTE_SYSTEM)
+        static let directory = Self(rawValue: SMB2_FILE_ATTRIBUTE_DIRECTORY)
+        static let archive = Self(rawValue: SMB2_FILE_ATTRIBUTE_ARCHIVE)
+        static let normal = Self(rawValue: SMB2_FILE_ATTRIBUTE_NORMAL)
+        static let temporary = Self(rawValue: SMB2_FILE_ATTRIBUTE_TEMPORARY)
+        static let sparseFile = Self(rawValue: SMB2_FILE_ATTRIBUTE_SPARSE_FILE)
+        static let reparsePoint = Self(rawValue: SMB2_FILE_ATTRIBUTE_REPARSE_POINT)
+        static let compressed = Self(rawValue: SMB2_FILE_ATTRIBUTE_COMPRESSED)
+        static let offline = Self(rawValue: SMB2_FILE_ATTRIBUTE_OFFLINE)
+        static let notContentIndexed = Self(rawValue: SMB2_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
+        static let encrypted = Self(rawValue: SMB2_FILE_ATTRIBUTE_ENCRYPTED)
+        static let integrityStream = Self(rawValue: SMB2_FILE_ATTRIBUTE_INTEGRITY_STREAM)
+        static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
+    }
+    
+    struct ChangeNotifyFilter: OptionSet {
+        var rawValue: UInt32
+        
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(rawValue: Int32) {
+            self.rawValue = .init(bitPattern: rawValue)
+        }
+        
+        // The client is notified if a file-name changes.
+        static let fileName: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_FILE_NAME)
+        
+        // The client is notified if a directory name changes.
+        static let directoryName: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_DIR_NAME)
+        
+        // The client is notified if a file's attributes change.
+        static let attributes: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_ATTRIBUTES)
+        
+        // The client is notified if a file's size changes.
+        static let size: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_SIZE)
+        
+        // The client is notified if the last write time of a file changes.
+        static let lastWriteDate: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_LAST_WRITE)
+        
+        // The client is notified if the last access time of a file changes.
+        static let lastAccessDate: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_LAST_ACCESS)
+        
+        // The client is notified if the creation time of a file changes.
+        static let creationDate: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_CREATION)
+        
+        // The client is notified if a file's extended attributes (EAs) change.
+        static let extendedAttributes: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_EA)
+        
+        // The client is notified of a file's access control list (ACL) settings change.
+        static let security: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_SECURITY)
+        
+        // The client is notified if a named stream is added to a file.
+        static let streamName: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_STREAM_NAME)
+        
+        // The client is notified if the size of a named stream is changed.
+        static let streamSize: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_STREAM_SIZE)
+        
+        // The client is notified if a named stream is modified.
+        static let streamWrite: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_STREAM_WRITE)
     }
 
     private var context: SMB2Context
@@ -175,7 +251,7 @@ final class SMB2FileHandle {
         return st
     }
     
-    func set(stat: smb2_stat_64, attributes: SMB2FileAttributes) throws {
+    func set(stat: smb2_stat_64, attributes: Attributes) throws {
         let handle = try handle.unwrap()
         try context.async_await_pdu(dataHandler: EmptyReply.init) {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
@@ -223,7 +299,7 @@ final class SMB2FileHandle {
 
     /// This value allows softer streaming
     var optimizedReadSize: Int {
-        min(maxReadSize, 1_048_576)
+        maxReadSize
     }
 
     @discardableResult
@@ -241,11 +317,13 @@ final class SMB2FileHandle {
 
         let handle = try handle.unwrap()
         let count = length > 0 ? length : optimizedReadSize
-        var buffer = [UInt8](repeating: 0, count: count)
-        let result = try context.async_await { context, cbPtr -> Int32 in
-            smb2_read_async(
-                context, handle, &buffer, .init(buffer.count), SMB2Context.generic_handler, cbPtr
-            )
+        var buffer = Data(repeating: 0, count: count)
+        let result = try buffer.withUnsafeMutableBytes { buffer in
+            try context.async_await { context, cbPtr -> Int32 in
+                smb2_read_async(
+                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Context.generic_handler, cbPtr
+                )
+            }
         }
         return Data(buffer.prefix(Int(result)))
     }
@@ -257,14 +335,16 @@ final class SMB2FileHandle {
 
         let handle = try handle.unwrap()
         let count = length > 0 ? length : optimizedReadSize
-        var buffer = [UInt8](repeating: 0, count: count)
-        let result = try context.async_await { context, cbPtr -> Int32 in
-            smb2_pread_async(
-                context, handle, &buffer, .init(buffer.count), offset, SMB2Context.generic_handler,
-                cbPtr
-            )
+        var buffer = Data(repeating: 0, count: count)
+        let result = try buffer.withUnsafeMutableBytes { buffer in
+            try context.async_await { context, cbPtr -> Int32 in
+                smb2_pread_async(
+                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Context.generic_handler,
+                    cbPtr
+                )
+            }
         }
-        return Data(buffer.prefix(Int(result)))
+        return buffer.prefix(Int(result))
     }
 
     var maxWriteSize: Int {
@@ -272,7 +352,7 @@ final class SMB2FileHandle {
     }
 
     var optimizedWriteSize: Int {
-        min(maxWriteSize, 1_048_576)
+        maxWriteSize
     }
 
     func write<DataType: DataProtocol>(data: DataType) throws -> Int {
@@ -281,11 +361,12 @@ final class SMB2FileHandle {
         )
 
         let handle = try handle.unwrap()
-        var buffer = Array(data)
-        let result = try context.async_await { context, cbPtr -> Int32 in
-            smb2_write_async(
-                context, handle, &buffer, .init(buffer.count), SMB2Context.generic_handler, cbPtr
-            )
+        let result = try Data(data).withUnsafeBytes { buffer in
+            try context.async_await { context, cbPtr -> Int32 in
+                smb2_write_async(
+                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Context.generic_handler, cbPtr
+                )
+            }
         }
 
         return Int(result)
@@ -297,12 +378,13 @@ final class SMB2FileHandle {
         )
 
         let handle = try handle.unwrap()
-        var buffer = Array(data)
-        let result = try context.async_await { context, cbPtr -> Int32 in
-            smb2_pwrite_async(
-                context, handle, &buffer, .init(buffer.count), offset, SMB2Context.generic_handler,
-                cbPtr
-            )
+        let result = try Data(data).withUnsafeBytes { buffer in
+            try context.async_await { context, cbPtr -> Int32 in
+                smb2_pwrite_async(
+                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Context.generic_handler,
+                    cbPtr
+                )
+            }
         }
 
         return Int(result)
@@ -314,6 +396,19 @@ final class SMB2FileHandle {
             smb2_fsync_async(context, handle, SMB2Context.generic_handler, cbPtr)
         }
     }
+    
+    func changeNotify(watchTree: Bool, filter: ChangeNotifyFilter) throws {
+        let handle = try handle.unwrap()
+        try context.async_await_pdu { context, cbPtr in
+            var request = smb2_change_notify_request(
+                flags: UInt16(watchTree ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
+                output_buffer_length: 0,
+                file_id: smb2_get_file_id(handle).pointee,
+                completion_filter: filter.rawValue
+            )
+            return smb2_cmd_change_notify_async(context, &request, SMB2Context.generic_handler, cbPtr)
+        }
+    }
 
     @discardableResult
     func fcntl<DataType: DataProtocol, R: IOCtlReply>(
@@ -322,8 +417,14 @@ final class SMB2FileHandle {
         var inputBuffer = [UInt8](args)
         return try inputBuffer.withUnsafeMutableBytes { buf in
             var req = smb2_ioctl_request(
-                ctl_code: command.rawValue, file_id: fileId.uuid, input_count: .init(buf.count),
-                input: buf.baseAddress, flags: .init(SMB2_0_IOCTL_IS_FSCTL)
+                ctl_code: command.rawValue,
+                file_id: fileId.uuid,
+                input_offset: 0, input_count: .init(buf.count),
+                max_input_response: 0,
+                output_offset: 0, output_count: .max,
+                max_output_response: 65535,
+                flags: .init(SMB2_0_IOCTL_IS_FSCTL),
+                input: buf.baseAddress
             )
             return try context.async_await_pdu(dataHandler: R.init) {
                 context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
@@ -343,32 +444,4 @@ final class SMB2FileHandle {
     func fcntl<R: IOCtlReply>(command: IOCtl.Command) throws -> R {
         try fcntl(command: command, args: [])
     }
-}
-
-struct SMB2FileAttributes: OptionSet, Sendable {
-    var rawValue: UInt32
-    
-    init(rawValue: UInt32) {
-        self.rawValue = rawValue
-    }
-    
-    init(rawValue: Int32) {
-        self.rawValue = .init(bitPattern: rawValue)
-    }
-    
-    static let readonly = Self(rawValue: SMB2_FILE_ATTRIBUTE_READONLY)
-    static let hidden = Self(rawValue: SMB2_FILE_ATTRIBUTE_HIDDEN)
-    static let system = Self(rawValue: SMB2_FILE_ATTRIBUTE_SYSTEM)
-    static let directory = Self(rawValue: SMB2_FILE_ATTRIBUTE_DIRECTORY)
-    static let archive = Self(rawValue: SMB2_FILE_ATTRIBUTE_ARCHIVE)
-    static let normal = Self(rawValue: SMB2_FILE_ATTRIBUTE_NORMAL)
-    static let temporary = Self(rawValue: SMB2_FILE_ATTRIBUTE_TEMPORARY)
-    static let sparseFile = Self(rawValue: SMB2_FILE_ATTRIBUTE_SPARSE_FILE)
-    static let reparsePoint = Self(rawValue: SMB2_FILE_ATTRIBUTE_REPARSE_POINT)
-    static let compressed = Self(rawValue: SMB2_FILE_ATTRIBUTE_COMPRESSED)
-    static let offline = Self(rawValue: SMB2_FILE_ATTRIBUTE_OFFLINE)
-    static let notContentIndexed = Self(rawValue: SMB2_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
-    static let encrypted = Self(rawValue: SMB2_FILE_ATTRIBUTE_ENCRYPTED)
-    static let integrityStream = Self(rawValue: SMB2_FILE_ATTRIBUTE_INTEGRITY_STREAM)
-    static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
 }

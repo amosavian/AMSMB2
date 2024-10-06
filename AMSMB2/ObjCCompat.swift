@@ -2,8 +2,8 @@
 //  ObjCCompat.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 4/27/19.
+//  Copyright © 2019 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
