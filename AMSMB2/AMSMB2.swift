@@ -8,10 +8,15 @@
 //
 
 import Foundation
+#if !canImport(Darwin)
+import FoundationNetworking
+#endif
 import SMB2
 
 /// Implements SMB2 File operations.
+#if canImport(Darwin)
 @objc(AMSMB2Manager)
+#endif
 public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflectable, @unchecked Sendable {
     public typealias SimpleCompletionHandler = (@Sendable (_ error: (any Error)?) -> Void)?
     public typealias ReadProgressHandler = (@Sendable (_ bytes: Int64, _ total: Int64) -> Bool)?
@@ -22,7 +27,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     fileprivate var context: SMB2Context?
 
     /// SMB2 Share URL.
-    @objc public let url: URL
+    public let url: URL
 
     fileprivate let _domain: String
     fileprivate var _workstation: String
@@ -37,7 +42,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
     /// The timeout interval to use when doing an operation until getting response. Default value is 60 seconds.
     /// Set this to 0 or negative value in order to disable it.
-    @objc open var timeout: TimeInterval {
+    open var timeout: TimeInterval {
         get {
             context?.timeout ?? _timeout
         }
@@ -63,6 +68,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         c.append((label: "timeout", value: _timeout))
         if _domain.isEmpty { c.append((label: "domain", value: _domain)) }
         if _workstation.isEmpty { c.append((label: "workstation", value: _workstation)) }
+        if _workstation.isEmpty { c.append((label: "workstation", value: _workstation)) }
         c.append((label: "user", value: _user))
         if let connectedShare = context?.share { c.append((label: "share", value: connectedShare)) }
 
@@ -82,7 +88,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - domain: User's domain, if applicable
        - credential: Username and password.
      */
-    @objc
     public init?(url: URL, domain: String = "", credential: URLCredential?) {
         guard url.scheme?.lowercased() == "smb", url.host != nil else {
             return nil
@@ -228,7 +233,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - encrypted: Enables SMB3 encryption if `true`, it fails with error in case server does not support encryption.
        - completionHandler: closure will be run after enumerating is completed.
      */
-    @objc(connectShareWithName:encrypted:completionHandler:)
     open func connectShare(
         name: String, encrypted: Bool = false, completionHandler: SimpleCompletionHandler
     ) {
@@ -274,7 +278,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Important: Disconnecting when an operation is in progress may cause disgraceful termination of operation.
      */
-    @objc(disconnectShareGracefully:completionHandler:)
     open func disconnectShare(
         gracefully: Bool = false, completionHandler: SimpleCompletionHandler = nil
     ) {
@@ -317,7 +320,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
 
      - Parameter completionHandler: closure will be run after echoing server is completed.
      */
-    @objc(echoWithCompletionHandler:)
     open func echo(completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
             try context.echo()
@@ -403,7 +405,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func contentsOfDirectory(
         atPath path: String, recursive: Bool = false,
-        completionHandler: @Sendable @escaping (_ result: Result<[[URLResourceKey: Any]], any Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[[URLResourceKey: any Sendable]], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             try self.listDirectory(context: context, path: path, recursive: recursive)
@@ -439,12 +441,12 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func attributesOfFileSystem(
         forPath path: String,
-        completionHandler: @Sendable @escaping (_ result: Result<[FileAttributeKey: Any], any Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[FileAttributeKey: any Sendable], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             // This exactly matches implementation of Swift Foundation.
             let stat = try context.statvfs(path)
-            var result = [FileAttributeKey: Any]()
+            var result = [FileAttributeKey: any Sendable]()
             let blockSize = UInt64(stat.f_bsize)
             // NSNumber allows to cast to any number type, but it is unsafe to cast to types with lower bitwidth
             result[.systemNumber] = NSNumber(value: stat.f_fsid)
@@ -482,7 +484,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      */
     open func attributesOfItem(
         atPath path: String,
-        completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: Any], any Error>) -> Void
+        completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: any Sendable], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { context in
             let stat: smb2_stat_64
@@ -494,7 +496,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                 let file = try SMB2FileHandle.open(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
                 stat = try file.fstat()
             }
-            var result = [URLResourceKey: Any]()
+            var result = [URLResourceKey: any Sendable]()
             result[.nameKey] = path.fileURL().lastPathComponent
             result[.pathKey] = path.fileURL(stat.isDirectory).path
             stat.populateResourceValue(&result)
@@ -509,7 +511,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - atPath: path of file to be enumerated.
      - Returns: An dictionary with `URLResourceKey` as key which holds file's attributes.
      */
-    open func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: Any] {
+    open func attributesOfItem(atPath path: String) async throws -> [URLResourceKey: any Sendable] {
         try await withCheckedThrowingContinuation { continuation in
             attributesOfItem(atPath: path, completionHandler: asyncHandler(continuation))
         }
@@ -670,7 +672,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - atPath: path of new directory to be created.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc(createDirectoryAtPath:completionHandler:)
     open func createDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
             try context.mkdir(path)
@@ -697,7 +698,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - recursive: children items will be deleted if `true`.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc(removeDirectoryAtPath:recursive:completionHandler:)
     open func removeDirectory(
         atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler
     ) {
@@ -729,7 +729,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - atPath: path of file to be removed.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc(removeFileAtPath:completionHandler:)
     open func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
             do {
@@ -760,7 +759,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - atPath: path of file or directory to be removed.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc(removeItemAtPath:completionHandler:)
     open func removeItem(atPath path: String, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
             let stat: smb2_stat_64
@@ -808,7 +806,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - atOffset: final size of truncated file.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc(truncateFileAtPath:atOffset:completionHandler:)
     open func truncateFile(
         atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler
     ) {
@@ -843,7 +840,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - toPath: new location of file.
        - completionHandler: closure will be run after operation is completed.
      */
-    @objc(moveItemAtPath:toPath:completionHandler:)
     open func moveItem(
         atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler
     ) {
@@ -943,7 +939,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - data: data portion which read from server.
        - completionHandler: closure will be run after reading data is completed.
      */
-    @objc(contentsAtPath:fromOffset:fetchedData:completionHandler:)
     open func contents(
         atPath path: String, offset: Int64 = 0,
         fetchedData: @Sendable @escaping (_ offset: Int64, _ total: Int64, _ data: Data) -> Bool,
@@ -1145,15 +1140,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - bytes: written bytes count.
        - completionHandler: closure will be run after writing is completed.
      */
-    @objc(writeStream:toPath:chunkSize:progress:completionHandler:)
-    open func write(
-        stream: InputStream, toPath path: String,
+    open func write<S>(
+        stream: S, toPath path: String,
         chunkSize: Int = 0, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
-    ) {
+    ) where S: AsyncSequence & Sendable, S.Element: DataProtocol {
         with(completionHandler: completionHandler) { context in
             try self.write(
-                context: context, from: stream, toPath: path, chunkSize: chunkSize,
+                context: context, from: AsyncInputStream(stream: stream), toPath: path, chunkSize: chunkSize,
                 progress: progress
             )
         }
@@ -1174,9 +1168,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
            User must return `true` if they want to continuing or `false` to abort writing.
        - bytes: written bytes count.
      */
-    open func write(
-        stream: InputStream, toPath path: String, progress: WriteProgressHandler
-    ) async throws {
+    open func write<S>(
+        stream: S, toPath path: String, progress: WriteProgressHandler
+    ) async throws where S: AsyncSequence & Sendable, S.Element: DataProtocol {
         try await withCheckedThrowingContinuation { continuation in
             write(
                 stream: stream, toPath: path, progress: progress,
@@ -1203,7 +1197,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         *, deprecated, message: "New method does server-side copy and is much faster.",
         renamed: "copyItem(atPath:toPath:recursive:progress:completionHandler:)"
     )
-    @objc(copyContentsOfItemAtPath:toPath:recursiveprogress::completionHandler:)
     open func copyContentsOfItem(
         atPath path: String, toPath: String, recursive: Bool,
         progress: ReadProgressHandler, completionHandler: SimpleCompletionHandler
@@ -1229,7 +1222,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - bytes: written bytes count.
        - completionHandler: closure will be run after copying is completed.
      */
-    @objc(copyItemAtPath:toPath:recursive:progress:completionHandler:)
     open func copyItem(
         atPath path: String, toPath: String, recursive: Bool,
         progress: ReadProgressHandler, completionHandler: SimpleCompletionHandler
@@ -1277,7 +1269,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
            User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
-    @objc(uploadItemAtURL:toPath:progress:completionHandler:)
     open func uploadItem(
         at url: URL, toPath: String, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
@@ -1333,7 +1324,6 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
            User must return `true` if they want to continuing or `false` to abort copying.
        - completionHandler: closure will be run after uploading is completed.
      */
-    @objc(downloadItemAtPath:toURL:progress:completionHandler:)
     open func downloadItem(
         atPath path: String, to url: URL, progress: ReadProgressHandler,
         completionHandler: SimpleCompletionHandler
@@ -1373,56 +1363,28 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             )
         }
     }
-
-    /**
-     Downloads file contents to a local url. With reporting progress on about every 1MiB.
-
-     - Note: if a file already exists on given url, This function will overwrite to that url.
-
-     - Note: given url must be local file url otherwise it will throw error.
-
-     - Important: Stream will be closed eventually if is not already opened.
-
-     - Parameters:
-       - atPath: path of file to be downloaded from.
-       - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so far and expected length of contents.
-         User must return `true` if they want to continuing or `false` to abort copying.
-       - completionHandler: closure will be run after uploading is completed.
-     */
-    @objc(downloadItemAtPath:toStream:progress:completionHandler:)
-    open func downloadItem(
-        atPath path: String, to stream: OutputStream, progress: ReadProgressHandler,
-        completionHandler: SimpleCompletionHandler
-    ) {
+    
+    /// Monitor file/folder for changes and calls `completionHandler` when a change occurs.
+    ///
+    /// - Parameters:
+    ///   - path: Path of file or folder to be monitored for changes.
+    ///   - filter: Change types that will be monitored.
+    ///   - completionHandler: closure will be run after a change in montored file/folder.
+    func monitorItem(atPath path: String, for filter: SMB2FileChangeType, completionHandler: SimpleCompletionHandler) {
         with(completionHandler: completionHandler) { context in
-            try self.read(context: context, path: path, to: stream, progress: progress)
+            let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+            try file.changeNotify(for: filter)
         }
     }
-
-    /**
-     Downloads file contents to a local url. With reporting progress on about every 1MiB.
-
-     - Note: if a file already exists on given url, This function will overwrite to that url.
-
-     - Note: given url must be local file url otherwise it will throw error.
-
-     - Important: Stream will be closed eventually if is not already opened.
-
-     - Parameters:
-       - atPath: path of file to be downloaded from.
-       - at: url of a local file to be written to.
-       - progress: reports progress of written bytes count so far and expected length of contents.
-         User must return `true` if they want to continuing or `false` to abort copying.
-     */
-    open func downloadItem(
-        atPath path: String, to stream: OutputStream, progress: ReadProgressHandler
-    ) async throws {
+    
+    /// Monitor file/folder for changes and returns when a change occurs.
+    ///
+    /// - Parameters:
+    ///   - path: Path of file or folder to be monitored for changes.
+    ///   - filter: Change types that will be monitored.
+    func monitorItem(atPath path: String, for filter: SMB2FileChangeType) async throws {
         try await withCheckedThrowingContinuation { continuation in
-            downloadItem(
-                atPath: path, to: stream, progress: progress,
-                completionHandler: asyncHandler(continuation)
-            )
+            monitorItem(atPath: path, for: filter, completionHandler: asyncHandler(continuation))
         }
     }
 }
@@ -1522,14 +1484,14 @@ extension SMB2Manager {
 
 extension SMB2Manager {
     private func listDirectory(context: SMB2Context, path: String, recursive: Bool) throws
-        -> [[URLResourceKey: Any]]
+        -> [[URLResourceKey: any Sendable]]
     {
-        var contents = [[URLResourceKey: Any]]()
+        var contents = [[URLResourceKey: any Sendable]]()
         let dir = try SMB2Directory(path.canonical, on: context)
         for ent in dir {
             let name = String(cString: ent.name)
             if [".", ".."].contains(name) { continue }
-            var result = [URLResourceKey: Any]()
+            var result = [URLResourceKey: any Sendable]()
             result[.nameKey] = name
             result[.pathKey] =
                 path.fileURL().appendingPathComponent(name, isDirectory: ent.st.isDirectory).path
@@ -1763,7 +1725,7 @@ extension smb2_stat_64 {
         smb2_type == SMB2_TYPE_DIRECTORY
     }
 
-    func populateResourceValue(_ dic: inout [URLResourceKey: Any]) {
+    func populateResourceValue(_ dic: inout [URLResourceKey: any Sendable]) {
         dic.reserveCapacity(11 + dic.count)
         dic[.fileSizeKey] = NSNumber(value: smb2_size)
         dic[.linkCountKey] = NSNumber(value: smb2_nlink)

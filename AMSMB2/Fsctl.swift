@@ -138,7 +138,7 @@ extension IOCtl {
         
         init(data: Data) throws {
             guard data.count >= 24 else {
-                throw POSIXError(.ENODATA)
+                throw POSIXError(.ENODATA, userInfo: [:])
             }
             self.resumeKey = data.prefix(24)
         }
@@ -176,12 +176,12 @@ extension IOCtl {
         
         init(data: Data) throws {
             guard data.count >= Self.headerLength else {
-                throw POSIXError(.EINVAL)
+                throw POSIXError(.EINVAL, userInfo: [:])
             }
             self.reparseTag = data.scanValue(offset: 0, as: UInt32.self) ?? SMB2_REPARSE_TAG_SYMLINK
             
             let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
-            guard count + 8 == data.count else { throw POSIXError(.EINVAL) }
+            guard count + 8 == data.count else { throw POSIXError(.EINVAL, userInfo: [:]) }
             self.buffer = data.dropFirst(Int(Self.headerLength))
         }
     }
@@ -204,10 +204,10 @@ extension IOCtl {
 
         init(data: Data) throws {
             guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
-                throw POSIXError(.EINVAL)
+                throw POSIXError(.EINVAL, userInfo: [:])
             }
             let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
-            guard count + 8 == data.count else { throw POSIXError(.EINVAL) }
+            guard count + 8 == data.count else { throw POSIXError(.EINVAL, userInfo: [:]) }
 
             let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()
             let substituteLen = try data.scanInt(offset: 10, as: UInt16.self).unwrap()
@@ -291,7 +291,7 @@ extension IOCtl {
 
         init(data: Data) throws {
             guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
-                throw POSIXError(.EINVAL)
+                throw POSIXError(.EINVAL, userInfo: [:])
             }
 
             let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()

@@ -60,7 +60,7 @@ enum MSRPC {
 
                 offset += 12
                 if offset + nameActualCount * 2 > data.count {
-                    throw POSIXError(.EBADRPC)
+                    throw POSIXError(.EINVAL, userInfo: [:])
                 }
 
                 // Getting utf16le data, omitting nul char
@@ -81,7 +81,7 @@ enum MSRPC {
 
                 offset += 12
                 if offset + commentActualCount * 2 > data.count {
-                    throw POSIXError(.EBADRPC)
+                    throw POSIXError(.EINVAL, userInfo: [:])
                 }
 
                 // Getting utf16le data, omitting nul char

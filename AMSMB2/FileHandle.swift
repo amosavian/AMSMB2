@@ -12,13 +12,35 @@ import SMB2
 
 typealias smb2fh = OpaquePointer
 
+#if os(Linux) || os(Android) || os(OpenBSD)
+let O_SYMLINK: Int32 = O_NOFOLLOW
+#endif
+
 final class SMB2FileHandle {
-    struct SeekWhence: RawRepresentable {
+    struct SeekWhence: RawRepresentable, Sendable {
         var rawValue: Int32
 
         static let set = SeekWhence(rawValue: SEEK_SET)
         static let current = SeekWhence(rawValue: SEEK_CUR)
         static let end = SeekWhence(rawValue: SEEK_END)
+    }
+    
+    struct LockOperation: OptionSet, Sendable {
+        var rawValue: Int32
+        
+        static let shared = LockOperation(rawValue: LOCK_SH)
+        static let exclusive = LockOperation(rawValue: LOCK_EX)
+        static let unlock = LockOperation(rawValue: LOCK_UN)
+        static let nonBlocking = LockOperation(rawValue: LOCK_NB)
+        
+        var smb2Flag: UInt32 {
+            var result: UInt32 = 0
+            if contains(.shared) { result |= 0x0000_0001 }
+            if contains(.exclusive) { result |= 0x0000_0002 }
+            if contains(.unlock) { result |= 0x0000_0004 }
+            if contains(.nonBlocking) { result |= 0x0000_0010 }
+            return result
+        }
     }
     
     struct Attributes: OptionSet, Sendable {
@@ -49,54 +71,6 @@ final class SMB2FileHandle {
         static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
     }
     
-    struct ChangeNotifyFilter: OptionSet {
-        var rawValue: UInt32
-        
-        init(rawValue: UInt32) {
-            self.rawValue = rawValue
-        }
-        
-        init(rawValue: Int32) {
-            self.rawValue = .init(bitPattern: rawValue)
-        }
-        
-        // The client is notified if a file-name changes.
-        static let fileName: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_FILE_NAME)
-        
-        // The client is notified if a directory name changes.
-        static let directoryName: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_DIR_NAME)
-        
-        // The client is notified if a file's attributes change.
-        static let attributes: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_ATTRIBUTES)
-        
-        // The client is notified if a file's size changes.
-        static let size: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_SIZE)
-        
-        // The client is notified if the last write time of a file changes.
-        static let lastWriteDate: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_LAST_WRITE)
-        
-        // The client is notified if the last access time of a file changes.
-        static let lastAccessDate: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_LAST_ACCESS)
-        
-        // The client is notified if the creation time of a file changes.
-        static let creationDate: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_CREATION)
-        
-        // The client is notified if a file's extended attributes (EAs) change.
-        static let extendedAttributes: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_EA)
-        
-        // The client is notified of a file's access control list (ACL) settings change.
-        static let security: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_SECURITY)
-        
-        // The client is notified if a named stream is added to a file.
-        static let streamName: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_STREAM_NAME)
-        
-        // The client is notified if the size of a named stream is changed.
-        static let streamSize: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_STREAM_SIZE)
-        
-        // The client is notified if a named stream is modified.
-        static let streamWrite: Self = .init(rawValue: SMB2_CHANGE_NOTIIFY_FILE_NOTIFY_CHANGE_STREAM_WRITE)
-    }
-
     private var context: SMB2Context
     private var handle: smb2fh?
 
@@ -397,14 +371,36 @@ final class SMB2FileHandle {
         }
     }
     
-    func changeNotify(watchTree: Bool, filter: ChangeNotifyFilter) throws {
+    func flock(_ op: LockOperation) throws {
+        let handle = try handle.unwrap()
+        try context.async_await_pdu { context, dataPtr in
+            var element = smb2_lock_element(
+                offset: 0,
+                length: 0,
+                flags: op.smb2Flag,
+                reserved: 0
+            )
+            return withUnsafeMutablePointer(to: &element) { element in
+                var request = smb2_lock_request(
+                    lock_count: 1,
+                    lock_sequence_number: 0,
+                    lock_sequence_index: 0,
+                    file_id: smb2_get_file_id(handle).pointee,
+                    locks: element
+                )
+                return smb2_cmd_lock_async(context, &request, SMB2Context.generic_handler, dataPtr)
+            }
+        }
+    }
+    
+    func changeNotify(for type: SMB2FileChangeType) throws {
         let handle = try handle.unwrap()
         try context.async_await_pdu { context, cbPtr in
             var request = smb2_change_notify_request(
-                flags: UInt16(watchTree ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
+                flags: UInt16(!type.intersection([.recursive]).isEmpty ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
                 output_buffer_length: 0,
                 file_id: smb2_get_file_id(handle).pointee,
-                completion_filter: filter.rawValue
+                completion_filter: type.rawValue & 0x00ff_ffff
             )
             return smb2_cmd_change_notify_async(context, &request, SMB2Context.generic_handler, cbPtr)
         }

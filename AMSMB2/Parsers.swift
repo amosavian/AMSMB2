@@ -64,13 +64,15 @@ extension IOCtlReply {
             self = try Self(data: .init())
             return
         }
-        // Check memory validity in order to prevent crash on invalid pointers
+// Check memory validity in order to prevent crash on invalid pointers
+#if canImport(Darwin)
         let pageSize = sysconf(_SC_PAGESIZE)
         let base = UnsafeMutableRawPointer(bitPattern: (size_t(bitPattern: output) / pageSize) * pageSize)
         if msync(base, pageSize, MS_ASYNC) != 0 {
             self = try Self(data: .init())
             return
         }
+#endif
         defer { smb2_free_data(context.unsafe, output) }
         let data = Data(bytes: output, count: Int(reply.output_count))
         self = try Self(data: data)
