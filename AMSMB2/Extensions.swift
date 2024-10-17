@@ -63,7 +63,7 @@ extension POSIXError {
 
     init(_ code: POSIXError.Code, description: String?) {
         let userInfo: [String: Any] =
-            description.map { [NSLocalizedFailureReasonErrorKey: $0] } ?? [:]
+            description.map { [NSLocalizedDescriptionKey: $0] } ?? [:]
         self = POSIXError(code, userInfo: userInfo)
     }
 }

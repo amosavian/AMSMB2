@@ -73,7 +73,7 @@ extension IOCtlReply {
             return
         }
 #endif
-        defer { smb2_free_data(context.unsafe, output) }
+        defer { smb2_free_data(context.unsafeContext, output) }
         let data = Data(bytes: output, count: Int(reply.output_count))
         self = try Self(data: data)
     }

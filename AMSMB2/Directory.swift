@@ -14,17 +14,20 @@ typealias smb2dir = OpaquePointer
 
 /// - Note: This class is NOT thread-safe.
 final class SMB2Directory: Collection {
-    private var context: SMB2Context
-    private var handle: smb2dir
+    private let context: SMB2Context
+    private let handle: smb2dir
 
     init(_ path: String, on context: SMB2Context) throws {
-        let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) {
-            context, cbPtr -> Int32 in
-            smb2_opendir_async(context, path, SMB2Context.generic_handler, cbPtr)
+        // Due to a unexpected free in closedir, async version is not usable.
+        let handle = try context.withThreadSafeContext { context in
+            smb2_opendir(context, path)
         }
-
-        self.context = context
+        guard let handle = handle, unsafeBitCast(handle, to: UInt.self) & 0xffffff00 != 0 else {
+            throw POSIXError(context.ntError.posixErrorCode, description: context.error)
+        }
+        
         self.handle = handle
+        self.context = context
     }
 
     deinit {
@@ -35,11 +38,11 @@ final class SMB2Directory: Collection {
     }
 
     func makeIterator() -> AnyIterator<smb2dirent> {
-        let context = context.unsafe
+        let context = context.unsafeContext
         let handle = handle
         smb2_rewinddir(context, handle)
         return AnyIterator {
-            smb2_readdir(context, self.handle)?.pointee
+            smb2_readdir(context, handle)?.pointee
         }
     }
 
@@ -52,7 +55,7 @@ final class SMB2Directory: Collection {
     }
 
     var count: Int {
-        let context = context.unsafe
+        let context = context.unsafeContext
         let handle = handle
         let currentPos = smb2_telldir(context, handle)
         defer {
@@ -68,14 +71,14 @@ final class SMB2Directory: Collection {
     }
 
     subscript(_: Int) -> smb2dirent {
-        let context = context.unsafe
+        let context = context.unsafeContext
         let handle = handle
         let currentPos = smb2_telldir(context, handle)
         smb2_seekdir(context, handle, 0)
         defer {
             smb2_seekdir(context, handle, currentPos)
         }
-        return smb2_readdir(context, handle).move()
+        return smb2_readdir(context, handle).pointee
     }
 
     func index(after i: Int) -> Int {

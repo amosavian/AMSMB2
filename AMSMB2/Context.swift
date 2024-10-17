@@ -12,13 +12,13 @@ import SMB2
 
 /// Provides synchronous operation on SMB2
 final class SMB2Context: CustomDebugStringConvertible, CustomReflectable, @unchecked Sendable {
-    var unsafe: UnsafeMutablePointer<smb2_context>?
+    var unsafeContext: UnsafeMutablePointer<smb2_context>?
     private var _context_lock = NSRecursiveLock()
     var timeout: TimeInterval
 
     init(timeout: TimeInterval) throws {
         let _context = try smb2_init_context().unwrap()
-        self.unsafe = _context
+        self.unsafeContext = _context
         self.timeout = timeout
     }
 
@@ -27,7 +27,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable, @unche
             try? self.disconnect()
         }
         try? withThreadSafeContext { context in
-            self.unsafe = nil
+            self.unsafeContext = nil
             smb2_destroy_context(context)
         }
     }
@@ -39,7 +39,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable, @unche
         defer {
             _context_lock.unlock()
         }
-        return try handler(unsafe.unwrap())
+        return try handler(unsafeContext.unwrap())
     }
 
     public var debugDescription: String {
@@ -48,7 +48,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable, @unche
 
     public var customMirror: Mirror {
         var c: [(label: String?, value: Any)] = []
-        if unsafe != nil {
+        if unsafeContext != nil {
             c.append((label: "server", value: server!))
             c.append((label: "securityMode", value: securityMode))
             c.append((label: "authentication", value: authentication))
@@ -69,7 +69,7 @@ final class SMB2Context: CustomDebugStringConvertible, CustomReflectable, @unche
 extension SMB2Context {
     var workstation: String {
         get {
-            (unsafe?.pointee.workstation).map(String.init(cString:)) ?? ""
+            (unsafeContext?.pointee.workstation).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { context in
@@ -80,7 +80,7 @@ extension SMB2Context {
 
     var domain: String {
         get {
-            (unsafe?.pointee.domain).map(String.init(cString:)) ?? ""
+            (unsafeContext?.pointee.domain).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { context in
@@ -91,7 +91,7 @@ extension SMB2Context {
 
     var user: String {
         get {
-            (unsafe?.pointee.user).map(String.init(cString:)) ?? ""
+            (unsafeContext?.pointee.user).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { context in
@@ -102,7 +102,7 @@ extension SMB2Context {
 
     var password: String {
         get {
-            (unsafe?.pointee.password).map(String.init(cString:)) ?? ""
+            (unsafeContext?.pointee.password).map(String.init(cString:)) ?? ""
         }
         set {
             try? withThreadSafeContext { context in
@@ -113,7 +113,7 @@ extension SMB2Context {
 
     var securityMode: NegotiateSigning {
         get {
-            (unsafe?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
+            (unsafeContext?.pointee.security_mode).flatMap(NegotiateSigning.init(rawValue:)) ?? []
         }
         set {
             try? withThreadSafeContext { context in
@@ -124,7 +124,7 @@ extension SMB2Context {
 
     var seal: Bool {
         get {
-            unsafe?.pointee.seal ?? 0 != 0
+            unsafeContext?.pointee.seal ?? 0 != 0
         }
         set {
             try? withThreadSafeContext { context in
@@ -135,7 +135,7 @@ extension SMB2Context {
 
     var authentication: Security {
         get {
-            unsafe?.pointee.sec ?? SMB2_SEC_UNDEFINED
+            unsafeContext?.pointee.sec ?? SMB2_SEC_UNDEFINED
         }
         set {
             try? withThreadSafeContext { context in
@@ -145,7 +145,7 @@ extension SMB2Context {
     }
 
     var clientGuid: UUID? {
-        guard let guid = try? smb2_get_client_guid(unsafe.unwrap()) else {
+        guard let guid = try? smb2_get_client_guid(unsafeContext.unwrap()) else {
             return nil
         }
         let uuid = UnsafeRawPointer(guid).assumingMemoryBound(to: uuid_t.self).pointee
@@ -153,15 +153,15 @@ extension SMB2Context {
     }
 
     var server: String? {
-        unsafe?.pointee.server.map(String.init(cString:))
+        unsafeContext?.pointee.server.map(String.init(cString:))
     }
 
     var share: String? {
-        unsafe?.pointee.share.map(String.init(cString:))
+        unsafeContext?.pointee.share.map(String.init(cString:))
     }
 
     var version: Version {
-        (unsafe?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
+        (unsafeContext?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
     }
 
     var isConnected: Bool {
@@ -170,28 +170,39 @@ extension SMB2Context {
 
     var fileDescriptor: Int32 {
         do {
-            return try smb2_get_fd(unsafe.unwrap())
+            return try smb2_get_fd(unsafeContext.unwrap())
         } catch {
             return -1
         }
     }
 
     var error: String? {
-        let errorStr = smb2_get_error(unsafe)
-        return errorStr.map(String.init(cString:))
+        smb2_get_error(unsafeContext).map(String.init(cString:))
+    }
+    
+    var ntError: NTStatus {
+        .init(rawValue: smb2_get_nterror(unsafeContext))
+    }
+    
+    var errno: Int32 {
+        ntError.posixErrorCode.rawValue
+    }
+    
+    var maximumTransactionSize: Int {
+        (unsafeContext?.pointee.max_transact_size).map(Int.init) ?? 65535
     }
 
     func whichEvents() throws -> Int16 {
-        try Int16(truncatingIfNeeded: smb2_which_events(unsafe.unwrap()))
+        try Int16(truncatingIfNeeded: smb2_which_events(unsafeContext.unwrap()))
     }
 
     func service(revents: Int32) throws {
-        let result = smb2_service(unsafe, revents)
+        let result = smb2_service(unsafeContext, revents)
         if result < 0 {
-            unsafe = nil
-            smb2_destroy_context(unsafe)
+            smb2_destroy_context(unsafeContext)
+            unsafeContext = nil
+            try POSIXError.throwIfError(result, description: error)
         }
-        try POSIXError.throwIfError(result, description: error)
     }
 }
 
@@ -474,15 +485,15 @@ extension SMB2Context {
     struct NegotiateSigning: OptionSet {
         var rawValue: UInt16
 
-        static let enabled = NegotiateSigning(.init(SMB2_NEGOTIATE_SIGNING_ENABLED))
-        static let required = NegotiateSigning(.init(SMB2_NEGOTIATE_SIGNING_REQUIRED))
+        static let enabled = NegotiateSigning(rawValue: SMB2_NEGOTIATE_SIGNING_ENABLED)
+        static let required = NegotiateSigning(rawValue: SMB2_NEGOTIATE_SIGNING_REQUIRED)
     }
 
     typealias Version = smb2_negotiate_version
     typealias Security = smb2_sec
 }
 
-extension smb2_negotiate_version: Swift.Hashable {
+extension SMB2.smb2_negotiate_version: Swift.Hashable {
     static let any = SMB2_VERSION_ANY
     static let v2 = SMB2_VERSION_ANY2
     static let v3 = SMB2_VERSION_ANY3
@@ -501,7 +512,7 @@ extension smb2_negotiate_version: Swift.Hashable {
     }
 }
 
-extension smb2_sec {
+extension SMB2.smb2_sec: Swift.Hashable {
     static let undefined = SMB2_SEC_UNDEFINED
     static let ntlmSsp = SMB2_SEC_NTLMSSP
     static let kerberos5 = SMB2_SEC_KRB5
@@ -537,5 +548,25 @@ struct ShareProperties: RawRepresentable {
 
     var isHidden: Bool {
         rawValue & SHARE_TYPE_HIDDEN != 0
+    }
+}
+
+struct NTStatus: LocalizedError {
+    let rawValue: UInt32
+    
+    init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
+    
+    init(rawValue: Int32) {
+        self.rawValue = .init(bitPattern: rawValue)
+    }
+    
+    var errorDescription: String? {
+        nterror_to_str(rawValue).map(String.init(cString:))
+    }
+    
+    var posixErrorCode: POSIXErrorCode {
+        .init(nterror_to_errno(rawValue))
     }
 }

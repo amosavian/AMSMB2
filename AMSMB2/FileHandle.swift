@@ -17,60 +17,6 @@ let O_SYMLINK: Int32 = O_NOFOLLOW
 #endif
 
 final class SMB2FileHandle {
-    struct SeekWhence: RawRepresentable, Sendable {
-        var rawValue: Int32
-
-        static let set = SeekWhence(rawValue: SEEK_SET)
-        static let current = SeekWhence(rawValue: SEEK_CUR)
-        static let end = SeekWhence(rawValue: SEEK_END)
-    }
-    
-    struct LockOperation: OptionSet, Sendable {
-        var rawValue: Int32
-        
-        static let shared = LockOperation(rawValue: LOCK_SH)
-        static let exclusive = LockOperation(rawValue: LOCK_EX)
-        static let unlock = LockOperation(rawValue: LOCK_UN)
-        static let nonBlocking = LockOperation(rawValue: LOCK_NB)
-        
-        var smb2Flag: UInt32 {
-            var result: UInt32 = 0
-            if contains(.shared) { result |= 0x0000_0001 }
-            if contains(.exclusive) { result |= 0x0000_0002 }
-            if contains(.unlock) { result |= 0x0000_0004 }
-            if contains(.nonBlocking) { result |= 0x0000_0010 }
-            return result
-        }
-    }
-    
-    struct Attributes: OptionSet, Sendable {
-        var rawValue: UInt32
-        
-        init(rawValue: UInt32) {
-            self.rawValue = rawValue
-        }
-        
-        init(rawValue: Int32) {
-            self.rawValue = .init(bitPattern: rawValue)
-        }
-        
-        static let readonly = Self(rawValue: SMB2_FILE_ATTRIBUTE_READONLY)
-        static let hidden = Self(rawValue: SMB2_FILE_ATTRIBUTE_HIDDEN)
-        static let system = Self(rawValue: SMB2_FILE_ATTRIBUTE_SYSTEM)
-        static let directory = Self(rawValue: SMB2_FILE_ATTRIBUTE_DIRECTORY)
-        static let archive = Self(rawValue: SMB2_FILE_ATTRIBUTE_ARCHIVE)
-        static let normal = Self(rawValue: SMB2_FILE_ATTRIBUTE_NORMAL)
-        static let temporary = Self(rawValue: SMB2_FILE_ATTRIBUTE_TEMPORARY)
-        static let sparseFile = Self(rawValue: SMB2_FILE_ATTRIBUTE_SPARSE_FILE)
-        static let reparsePoint = Self(rawValue: SMB2_FILE_ATTRIBUTE_REPARSE_POINT)
-        static let compressed = Self(rawValue: SMB2_FILE_ATTRIBUTE_COMPRESSED)
-        static let offline = Self(rawValue: SMB2_FILE_ATTRIBUTE_OFFLINE)
-        static let notContentIndexed = Self(rawValue: SMB2_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
-        static let encrypted = Self(rawValue: SMB2_FILE_ATTRIBUTE_ENCRYPTED)
-        static let integrityStream = Self(rawValue: SMB2_FILE_ATTRIBUTE_INTEGRITY_STREAM)
-        static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
-    }
-    
     private var context: SMB2Context
     private var handle: smb2fh?
 
@@ -100,27 +46,28 @@ final class SMB2FileHandle {
 
     static func using(
         path: String,
-        opLock: Int32 = SMB2_OPLOCK_LEVEL_NONE,
-        impersonation: Int32 = SMB2_IMPERSONATION_IMPERSONATION,
-        desiredAccess: Int32 = SMB2_FILE_READ_DATA | SMB2_FILE_WRITE_DATA | SMB2_FILE_APPEND_DATA
-            | SMB2_FILE_READ_EA | SMB2_FILE_READ_ATTRIBUTES | SMB2_FILE_WRITE_EA
-            | SMB2_FILE_WRITE_ATTRIBUTES | SMB2_READ_CONTROL | SMB2_SYNCHRONIZE,
-        fileAttributes: Int32 = 0,
-        shareAccess: Int32 = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE | SMB2_FILE_SHARE_DELETE,
-        createDisposition: Int32 = SMB2_FILE_OPEN,
-        createOptions: Int32 = 0, on context: SMB2Context
+        opLock: OpLock = .none,
+        impersonation: ImpersonationLevel = .impersonation,
+        desiredAccess: Access = [
+            .readData, .writeData, .appendData, .fileReadEA, .fileReadAttributes, .fileWriteEA,
+            .fileWriteAttributes, .readControl, .synchronize
+        ],
+        fileAttributes: Attributes = [],
+        shareAccess: ShareAccess = [.read, .write, .delete],
+        createDisposition: CreateDisposition = .open,
+        createOptions: CreateOptions = [], on context: SMB2Context
     ) throws -> SMB2FileHandle {
         let (_, result) = try context.async_await_pdu(dataHandler: SMB2FileHandle.init) {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
             path.replacingOccurrences(of: "/", with: "\\").withCString { path in
                 var req = smb2_create_request()
-                req.requested_oplock_level = .init(bitPattern: .init(opLock))
-                req.impersonation_level = .init(bitPattern: impersonation)
-                req.desired_access = .init(bitPattern: desiredAccess)
-                req.file_attributes = .init(bitPattern: fileAttributes)
-                req.share_access = .init(bitPattern: shareAccess)
-                req.create_disposition = .init(bitPattern: createDisposition)
-                req.create_options = .init(bitPattern: createOptions)
+                req.requested_oplock_level = opLock.rawValue
+                req.impersonation_level = impersonation.rawValue
+                req.desired_access = desiredAccess.rawValue
+                req.file_attributes = fileAttributes.rawValue
+                req.share_access = shareAccess.rawValue
+                req.create_disposition = createDisposition.rawValue
+                req.create_options = createOptions.rawValue
                 req.name = path
                 return smb2_cmd_create_async(context, &req, SMB2Context.generic_handler, cbPtr)
             }
@@ -130,44 +77,44 @@ final class SMB2FileHandle {
     }
     
     static func open(path: String, flags: Int32, on context: SMB2Context) throws -> SMB2FileHandle {
-        let desiredAccess: Int32
-        let shareAccess: Int32
-        let createDisposition: Int32
-        var createOptions: Int32 = 0
+        let desiredAccess: Access
+        let shareAccess: ShareAccess
+        let createDisposition: CreateDisposition
+        var createOptions: CreateOptions = []
         
         switch flags & O_ACCMODE {
         case O_RDWR:
-            desiredAccess = .init(bitPattern: SMB2_GENERIC_READ) | SMB2_GENERIC_WRITE | SMB2_DELETE
-            shareAccess = SMB2_FILE_SHARE_READ | SMB2_FILE_SHARE_WRITE
+            desiredAccess = [.genericRead, .genericWrite, .delete]
+            shareAccess = [.read, .write]
         case O_WRONLY:
-            desiredAccess = SMB2_GENERIC_WRITE | SMB2_DELETE
-            shareAccess = SMB2_FILE_SHARE_WRITE
+            desiredAccess = [.genericWrite, .delete]
+            shareAccess = [.write]
         default:
-            desiredAccess = .init(bitPattern: SMB2_GENERIC_READ)
-            shareAccess = SMB2_FILE_SHARE_READ
+            desiredAccess = [.genericRead]
+            shareAccess = [.read]
         }
         
         if (flags & O_CREAT) != 0 {
             if (flags & O_EXCL) != 0 {
-                createDisposition = SMB2_FILE_CREATE
+                createDisposition = .create
             } else if (flags & O_TRUNC) != 0 {
-                createDisposition = SMB2_FILE_OVERWRITE_IF
+                createDisposition = .overwriteIfExists
             } else {
-                createDisposition = SMB2_FILE_OPEN_IF
+                createDisposition = .openIfExists
             }
         } else {
             if (flags & O_TRUNC) != 0 {
-                createDisposition = SMB2_FILE_OVERWRITE
+                createDisposition = .overwrite
             } else {
-                createDisposition = SMB2_FILE_OPEN
+                createDisposition = .open
             }
         }
         
         if (flags & O_DIRECTORY) != 0 {
-            createOptions |= SMB2_FILE_DIRECTORY_FILE
+            createOptions.insert(.directoryFile)
         }
         if (flags & O_SYMLINK) != 0 {
-            createOptions |= SMB2_FILE_OPEN_REPARSE_POINT
+            createOptions.insert(.openReparsePoint)
         }
         
         return try SMB2FileHandle.using(
@@ -183,7 +130,7 @@ final class SMB2FileHandle {
     init(fileDescriptor: smb2_file_id, on context: SMB2Context) throws {
         self.context = context
         var fileDescriptor = fileDescriptor
-        self.handle = smb2_fh_from_file_id(context.unsafe, &fileDescriptor)
+        self.handle = smb2_fh_from_file_id(context.unsafeContext, &fileDescriptor)
     }
 
     private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
@@ -279,7 +226,7 @@ final class SMB2FileHandle {
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
         let handle = try handle.unwrap()
-        let result = smb2_lseek(context.unsafe, handle, offset, whence.rawValue, nil)
+        let result = smb2_lseek(context.unsafeContext, handle, offset, whence.rawValue, nil)
         try POSIXError.throwIfError(result, description: context.error)
         return result
     }
@@ -417,7 +364,7 @@ final class SMB2FileHandle {
                 file_id: fileId.uuid,
                 input_offset: 0, input_count: .init(buf.count),
                 max_input_response: 0,
-                output_offset: 0, output_count: .max,
+                output_offset: 0, output_count: UInt32(context.maximumTransactionSize),
                 max_output_response: 65535,
                 flags: .init(SMB2_0_IOCTL_IS_FSCTL),
                 input: buf.baseAddress
@@ -439,5 +386,163 @@ final class SMB2FileHandle {
 
     func fcntl<R: IOCtlReply>(command: IOCtl.Command) throws -> R {
         try fcntl(command: command, args: [])
+    }
+}
+
+extension SMB2FileHandle {
+    struct SeekWhence: RawRepresentable, Sendable {
+        var rawValue: Int32
+
+        static let set = SeekWhence(rawValue: SEEK_SET)
+        static let current = SeekWhence(rawValue: SEEK_CUR)
+        static let end = SeekWhence(rawValue: SEEK_END)
+    }
+    
+    struct LockOperation: OptionSet, Sendable {
+        var rawValue: Int32
+        
+        static let shared = LockOperation(rawValue: LOCK_SH)
+        static let exclusive = LockOperation(rawValue: LOCK_EX)
+        static let unlock = LockOperation(rawValue: LOCK_UN)
+        static let nonBlocking = LockOperation(rawValue: LOCK_NB)
+        
+        var smb2Flag: UInt32 {
+            var result: UInt32 = 0
+            if contains(.shared) { result |= 0x0000_0001 }
+            if contains(.exclusive) { result |= 0x0000_0002 }
+            if contains(.unlock) { result |= 0x0000_0004 }
+            if contains(.nonBlocking) { result |= 0x0000_0010 }
+            return result
+        }
+    }
+    
+    struct Attributes: OptionSet, Sendable {
+        var rawValue: UInt32
+        
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        static let readonly = Self(rawValue: SMB2_FILE_ATTRIBUTE_READONLY)
+        static let hidden = Self(rawValue: SMB2_FILE_ATTRIBUTE_HIDDEN)
+        static let system = Self(rawValue: SMB2_FILE_ATTRIBUTE_SYSTEM)
+        static let directory = Self(rawValue: SMB2_FILE_ATTRIBUTE_DIRECTORY)
+        static let archive = Self(rawValue: SMB2_FILE_ATTRIBUTE_ARCHIVE)
+        static let normal = Self(rawValue: SMB2_FILE_ATTRIBUTE_NORMAL)
+        static let temporary = Self(rawValue: SMB2_FILE_ATTRIBUTE_TEMPORARY)
+        static let sparseFile = Self(rawValue: SMB2_FILE_ATTRIBUTE_SPARSE_FILE)
+        static let reparsePoint = Self(rawValue: SMB2_FILE_ATTRIBUTE_REPARSE_POINT)
+        static let compressed = Self(rawValue: SMB2_FILE_ATTRIBUTE_COMPRESSED)
+        static let offline = Self(rawValue: SMB2_FILE_ATTRIBUTE_OFFLINE)
+        static let notContentIndexed = Self(rawValue: SMB2_FILE_ATTRIBUTE_NOT_CONTENT_INDEXED)
+        static let encrypted = Self(rawValue: SMB2_FILE_ATTRIBUTE_ENCRYPTED)
+        static let integrityStream = Self(rawValue: SMB2_FILE_ATTRIBUTE_INTEGRITY_STREAM)
+        static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
+    }
+    
+    struct OpLock: OptionSet, Sendable {
+        var rawValue: UInt8
+        
+        static let none = Self(rawValue: SMB2_OPLOCK_LEVEL_NONE)
+        static let ii = Self(rawValue: SMB2_OPLOCK_LEVEL_II)
+        static let exclusive = Self(rawValue: SMB2_OPLOCK_LEVEL_EXCLUSIVE)
+        static let batch = Self(rawValue: SMB2_OPLOCK_LEVEL_BATCH)
+        static let lease = Self(rawValue: SMB2_OPLOCK_LEVEL_LEASE)
+    }
+    
+    enum ImpersonationLevel: UInt32, Hashable, Sendable {
+        case anonymous = 0x00000000
+        case identification = 0x00000001
+        case impersonation = 0x00000002
+        case delegate = 0x00000003
+    }
+    
+    struct Access: OptionSet, Sendable {
+        var rawValue: UInt32
+        
+        /* Access mask common to all objects */
+        static let fileReadEA = Self(rawValue: SMB2_FILE_READ_EA)
+        static let fileWriteEA = Self(rawValue: SMB2_FILE_WRITE_EA)
+        static let fileDeleteChild = Self(rawValue: SMB2_FILE_DELETE_CHILD)
+        static let fileReadAttributes = Self(rawValue: SMB2_FILE_READ_ATTRIBUTES)
+        static let fileWriteAttributes = Self(rawValue: SMB2_FILE_WRITE_ATTRIBUTES)
+        static let delete = Self(rawValue: SMB2_DELETE)
+        static let readControl = Self(rawValue: SMB2_READ_CONTROL)
+        static let writeDACL = Self(rawValue: SMB2_WRITE_DACL)
+        static let writeOwner = Self(rawValue: SMB2_WRITE_OWNER)
+        static let synchronize = Self(rawValue: SMB2_SYNCHRONIZE)
+        static let acessSystemSecurity = Self(rawValue: SMB2_ACCESS_SYSTEM_SECURITY)
+        static let maximumAllowed = Self(rawValue: SMB2_MAXIMUM_ALLOWED)
+        static let genericAll = Self(rawValue: SMB2_GENERIC_ALL)
+        static let genericExecute = Self(rawValue: SMB2_GENERIC_EXECUTE)
+        static let genericWrite = Self(rawValue: SMB2_GENERIC_WRITE)
+        static let genericRead = Self(rawValue: SMB2_GENERIC_READ)
+        
+        /* Access mask unique for file/pipe/printer */
+        static let readData = Self(rawValue: SMB2_FILE_READ_DATA)
+        static let writeData = Self(rawValue: SMB2_FILE_WRITE_DATA)
+        static let appendData = Self(rawValue: SMB2_FILE_APPEND_DATA)
+        static let execute = Self(rawValue: SMB2_FILE_EXECUTE)
+        
+        /* Access mask unique for directories */
+        static let listDirectory = Self(rawValue: SMB2_FILE_LIST_DIRECTORY)
+        static let addFile = Self(rawValue: SMB2_FILE_ADD_FILE)
+        static let addSubdirectory = Self(rawValue: SMB2_FILE_ADD_SUBDIRECTORY)
+        static let traverse = Self(rawValue: SMB2_FILE_TRAVERSE)
+    }
+    
+    struct ShareAccess: OptionSet, Sendable {
+        var rawValue: UInt32
+        
+        static let read = Self(rawValue: SMB2_FILE_SHARE_READ)
+        static let write = Self(rawValue: SMB2_FILE_SHARE_WRITE)
+        static let delete = Self(rawValue: SMB2_FILE_SHARE_DELETE)
+    }
+    
+    enum CreateDisposition: UInt32, Sendable {        
+        case supersede = 0x00000000 // SMB2_FILE_SUPERSEDE
+        case open = 0x00000001 // SMB2_FILE_OPEN
+        case create = 0x00000002 // SMB2_FILE_CREATE
+        case openIfExists = 0x00000003 // SMB2_FILE_OPEN_IF
+        case overwrite = 0x00000004 // SMB2_FILE_OVERWRITE
+        case overwriteIfExists = 0x00000005 // SMB2_FILE_OVERWRITE_IF
+    }
+    
+    struct CreateOptions: OptionSet, Sendable {
+        var rawValue: UInt32
+        
+        static let directoryFile = Self(rawValue: SMB2_FILE_DIRECTORY_FILE)
+        static let writeThrough = Self(rawValue: SMB2_FILE_WRITE_THROUGH)
+        static let sequentialOnly = Self(rawValue: SMB2_FILE_SEQUENTIAL_ONLY)
+        static let noIntermediateBuffering = Self(rawValue: SMB2_FILE_NO_INTERMEDIATE_BUFFERING)
+        static let synchronousIOAlert = Self(rawValue: SMB2_FILE_SYNCHRONOUS_IO_ALERT)
+        static let synchronousIONonAlert = Self(rawValue: SMB2_FILE_SYNCHRONOUS_IO_NONALERT)
+        static let nonDirectoryFile = Self(rawValue: SMB2_FILE_NON_DIRECTORY_FILE)
+        static let completeIfOplocked = Self(rawValue: SMB2_FILE_COMPLETE_IF_OPLOCKED)
+        static let noEAKnowledge = Self(rawValue: SMB2_FILE_NO_EA_KNOWLEDGE)
+        static let randomAccess = Self(rawValue: SMB2_FILE_RANDOM_ACCESS)
+        static let deleteOnClose = Self(rawValue: SMB2_FILE_DELETE_ON_CLOSE)
+        static let openByFileID = Self(rawValue: SMB2_FILE_OPEN_BY_FILE_ID)
+        static let openForBackupIntent = Self(rawValue: SMB2_FILE_OPEN_FOR_BACKUP_INTENT)
+        static let noCompression = Self(rawValue: SMB2_FILE_NO_COMPRESSION)
+        static let openRemoteInstance = Self(rawValue: SMB2_FILE_OPEN_REMOTE_INSTANCE)
+        static let openRequiringOplock = Self(rawValue: SMB2_FILE_OPEN_REQUIRING_OPLOCK)
+        static let disallowExclusive = Self(rawValue: SMB2_FILE_DISALLOW_EXCLUSIVE)
+        static let reserveOpfilter = Self(rawValue: SMB2_FILE_RESERVE_OPFILTER)
+        static let openReparsePoint = Self(rawValue: SMB2_FILE_OPEN_REPARSE_POINT)
+        static let openNoRecall = Self(rawValue: SMB2_FILE_OPEN_NO_RECALL)
+        static let openForFreeSpaceQuery = Self(rawValue: SMB2_FILE_OPEN_FOR_FREE_SPACE_QUERY)
+    }
+}
+
+extension RawRepresentable where RawValue == UInt32 {
+    init(rawValue: Int32) {
+        self.init(rawValue: .init(bitPattern: rawValue))!
+    }
+}
+
+extension RawRepresentable where RawValue: BinaryInteger {
+    init(rawValue: Int32) {
+        self.init(rawValue: .init(truncatingIfNeeded: rawValue))!
     }
 }

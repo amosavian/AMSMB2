@@ -733,7 +733,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         with(completionHandler: completionHandler) { context in
             do {
                 try context.unlink(path)
-            } catch POSIXError.ENOLINK {
+            } catch POSIXError.ENOLINK, POSIXError.ENETRESET {
                 // Try to remove file as a symbolic link.
                 try context.unlink(path, flags: O_SYMLINK)
             }
