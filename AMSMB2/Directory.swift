@@ -14,15 +14,15 @@ typealias smb2dir = OpaquePointer
 
 /// - Note: This class is NOT thread-safe.
 final class SMB2Directory: Collection {
-    private let context: SMB2Context
+    private let context: SMB2Client
     private let handle: smb2dir
 
-    init(_ path: String, on context: SMB2Context) throws {
+    init(_ path: String, on context: SMB2Client) throws {
         // Due to a unexpected free in closedir, async version is not usable.
         let handle = try context.withThreadSafeContext { context in
             smb2_opendir(context, path)
         }
-        guard let handle = handle, unsafeBitCast(handle, to: UInt.self) & 0xffffff00 != 0 else {
+        guard let handle = handle, unsafeBitCast(handle, to: UInt.self) & 0xffff_ff00 != 0 else {
             throw POSIXError(context.ntError.posixErrorCode, description: context.error)
         }
         
@@ -38,7 +38,7 @@ final class SMB2Directory: Collection {
     }
 
     func makeIterator() -> AnyIterator<smb2dirent> {
-        let context = context.unsafeContext
+        let context = context.context
         let handle = handle
         smb2_rewinddir(context, handle)
         return AnyIterator {
@@ -55,7 +55,7 @@ final class SMB2Directory: Collection {
     }
 
     var count: Int {
-        let context = context.unsafeContext
+        let context = context.context
         let handle = handle
         let currentPos = smb2_telldir(context, handle)
         defer {
@@ -71,7 +71,7 @@ final class SMB2Directory: Collection {
     }
 
     subscript(_: Int) -> smb2dirent {
-        let context = context.unsafeContext
+        let context = context.context
         let handle = handle
         let currentPos = smb2_telldir(context, handle)
         smb2_seekdir(context, handle, 0)

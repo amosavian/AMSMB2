@@ -24,7 +24,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     fileprivate typealias CopyProgressHandler = (@Sendable
         (_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Int64?)?
 
-    fileprivate var context: SMB2Context?
+    fileprivate var context: SMB2Client?
 
     /// SMB2 Share URL.
     public let url: URL
@@ -493,7 +493,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             } catch POSIXError.ENOLINK {
                 // `libsmb2` can not read symlink attributes using `stat`, so if we get
                 // the related error, we simply open file as reparse point then use `fstat`.
-                let file = try SMB2FileHandle.open(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
+                let file = try SMB2FileHandle(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
                 stat = try file.fstat()
             }
             var result = [URLResourceKey: any Sendable]()
@@ -767,15 +767,15 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             } catch POSIXError.ENOLINK {
                 // `libsmb2` can not read symlink attributes using `stat`, so if we get
                 // the related error, we simply open file as reparse point then use `fstat`.
-                let file = try SMB2FileHandle.open(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
+                let file = try SMB2FileHandle(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
                 stat = try file.fstat()
             }
-            switch Int32(stat.smb2_type) {
-            case SMB2_TYPE_DIRECTORY:
+            switch stat.resourceType {
+            case .directory:
                 try self.removeDirectory(context: context, path: path, recursive: true)
-            case SMB2_TYPE_FILE:
+            case .file:
                 try context.unlink(path)
-            case SMB2_TYPE_LINK:
+            case .link:
                 try context.unlink(path, flags: O_SYMLINK)
             default:
                 break
@@ -1403,7 +1403,7 @@ extension SMB2Manager {
         }
     }
 
-    private func initContext(_ context: SMB2Context, encrypted: Bool) {
+    private func initContext(_ context: SMB2Client, encrypted: Bool) {
         context.securityMode = [.enabled]
         context.authentication = .ntlmSsp
         context.seal = encrypted
@@ -1415,8 +1415,8 @@ extension SMB2Manager {
         context.timeout = _timeout
     }
 
-    private func connect(shareName: String, encrypted: Bool) throws -> SMB2Context {
-        let context = try SMB2Context(timeout: _timeout)
+    private func connect(shareName: String, encrypted: Bool) throws -> SMB2Client {
+        let context = try SMB2Client(timeout: _timeout)
         self.context = context
         initContext(context, encrypted: encrypted)
         let server = url.host! + (url.port.map { ":\($0)" } ?? "")
@@ -1439,7 +1439,7 @@ extension SMB2Manager {
 
     private func with(
         completionHandler: SimpleCompletionHandler,
-        handler: @Sendable @escaping (_ context: SMB2Context) throws -> Void
+        handler: @Sendable @escaping (_ context: SMB2Client) throws -> Void
     ) {
         queue {
             do {
@@ -1453,7 +1453,7 @@ extension SMB2Manager {
 
     private func with<T>(
         completionHandler: @Sendable @escaping (Result<T, any Error>) -> Void,
-        handler: @Sendable @escaping (_ context: SMB2Context) throws -> T
+        handler: @Sendable @escaping (_ context: SMB2Client) throws -> T
     ) {
         queue {
             completionHandler(
@@ -1466,7 +1466,7 @@ extension SMB2Manager {
 
     private func with<T>(
         shareName: String, encrypted: Bool, completionHandler: @Sendable @escaping (Result<T, any Error>) -> Void,
-        handler: @Sendable @escaping (_ context: SMB2Context) throws -> T
+        handler: @Sendable @escaping (_ context: SMB2Client) throws -> T
     ) {
         queue {
             do {
@@ -1483,7 +1483,7 @@ extension SMB2Manager {
 }
 
 extension SMB2Manager {
-    private func listDirectory(context: SMB2Context, path: String, recursive: Bool) throws
+    private func listDirectory(context: SMB2Client, path: String, recursive: Bool) throws
         -> [[URLResourceKey: any Sendable]]
     {
         var contents = [[URLResourceKey: any Sendable]]()
@@ -1515,10 +1515,10 @@ extension SMB2Manager {
     }
 
     private func recursiveCopyIterator(
-        context: SMB2Context, fromPath path: String, toPath: String, recursive: Bool,
+        context: SMB2Client, fromPath path: String, toPath: String, recursive: Bool,
         progress: ReadProgressHandler,
         handle: (
-            _ context: SMB2Context, _ path: String, _ toPath: String,
+            _ context: SMB2Client, _ path: String, _ toPath: String,
             _ progress: CopyProgressHandler
         ) throws -> Int64?
     ) throws {
@@ -1568,7 +1568,7 @@ extension SMB2Manager {
     }
 
     private func copyFile(
-        context: SMB2Context, fromPath path: String, toPath: String, progress: CopyProgressHandler
+        context: SMB2Client, fromPath path: String, toPath: String, progress: CopyProgressHandler
     ) throws -> Int64? {
         let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileSource.fstat().smb2_size)
@@ -1599,7 +1599,7 @@ extension SMB2Manager {
     }
 
     private func copyContentsOfFile(
-        context: SMB2Context, fromPath path: String, toPath: String, progress: CopyProgressHandler
+        context: SMB2Client, fromPath path: String, toPath: String, progress: CopyProgressHandler
     ) throws -> Int64? {
         let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
         let size = try Int64(fileRead.fstat().smb2_size)
@@ -1619,7 +1619,7 @@ extension SMB2Manager {
         return shouldContinue ? Int64(written) : nil
     }
 
-    private func removeDirectory(context: SMB2Context, path: String, recursive: Bool) throws {
+    private func removeDirectory(context: SMB2Client, path: String, recursive: Bool) throws {
         if recursive {
             // To delete directory recursively, first we list directory contents recursively,
             // Then sort path descending which will put child files before containing directory,
@@ -1643,7 +1643,7 @@ extension SMB2Manager {
     }
 
     private func read(
-        context: SMB2Context, path: String, range: Range<Int64> = 0..<Int64.max,
+        context: SMB2Client, path: String, range: Range<Int64> = 0..<Int64.max,
         to stream: OutputStream, progress: ReadProgressHandler
     ) throws {
         let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
@@ -1678,7 +1678,7 @@ extension SMB2Manager {
     }
 
     private func write(
-        context: SMB2Context, from stream: InputStream, toPath: String,
+        context: SMB2Client, from stream: InputStream, toPath: String,
         offset: Int64? = nil, chunkSize: Int = 0, progress: WriteProgressHandler
     ) throws {
         let file: SMB2FileHandle
@@ -1717,45 +1717,5 @@ extension SMB2Manager {
         }
 
         try file.fsync()
-    }
-}
-
-extension smb2_stat_64 {
-    var isDirectory: Bool {
-        smb2_type == SMB2_TYPE_DIRECTORY
-    }
-
-    func populateResourceValue(_ dic: inout [URLResourceKey: any Sendable]) {
-        dic.reserveCapacity(11 + dic.count)
-        dic[.fileSizeKey] = NSNumber(value: smb2_size)
-        dic[.linkCountKey] = NSNumber(value: smb2_nlink)
-        dic[.documentIdentifierKey] = NSNumber(value: smb2_ino)
-
-        switch Int32(smb2_type) {
-        case SMB2_TYPE_DIRECTORY:
-            dic[.fileResourceTypeKey] = URLFileResourceType.directory
-        case SMB2_TYPE_FILE:
-            dic[.fileResourceTypeKey] = URLFileResourceType.regular
-        case SMB2_TYPE_LINK:
-            dic[.fileResourceTypeKey] = URLFileResourceType.symbolicLink
-        default:
-            dic[.fileResourceTypeKey] = URLFileResourceType.unknown
-        }
-        dic[.isDirectoryKey] = NSNumber(value: smb2_type == SMB2_TYPE_DIRECTORY)
-        dic[.isRegularFileKey] = NSNumber(value: smb2_type == SMB2_TYPE_FILE)
-        dic[.isSymbolicLinkKey] = NSNumber(value: smb2_type == SMB2_TYPE_LINK)
-
-        dic[.contentModificationDateKey] = Date(
-            timespec(tv_sec: Int(smb2_mtime), tv_nsec: Int(smb2_mtime_nsec))
-        )
-        dic[.attributeModificationDateKey] = Date(
-            timespec(tv_sec: Int(smb2_ctime), tv_nsec: Int(smb2_ctime_nsec))
-        )
-        dic[.contentAccessDateKey] = Date(
-            timespec(tv_sec: Int(smb2_atime), tv_nsec: Int(smb2_atime_nsec))
-        )
-        dic[.creationDateKey] = Date(
-            timespec(tv_sec: Int(smb2_btime), tv_nsec: Int(smb2_btime_nsec))
-        )
     }
 }

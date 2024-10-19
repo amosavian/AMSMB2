@@ -45,7 +45,7 @@ extension IOCtlArgument {
 
 protocol IOCtlReply {
     init(data: Data) throws
-    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws
+    init(_ context: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws
 }
 
 struct AnyIOCtlReply: IOCtlReply {

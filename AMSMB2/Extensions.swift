@@ -24,8 +24,8 @@ extension Optional {
     }
 }
 
-extension Optional where Wrapped: SMB2Context {
-    func unwrap() throws -> SMB2Context {
+extension Optional where Wrapped: SMB2Client {
+    func unwrap() throws -> SMB2Client {
         guard let self = self, self.fileDescriptor >= 0 else {
             throw POSIXError(.ENOTCONN, description: "SMB2 server not connected.")
         }
@@ -53,11 +53,12 @@ extension POSIXError {
         throw POSIXError(.init(errno), description: errorDesc)
     }
 
-    static func throwIfErrorStatus(_ status: UInt32) throws {
-        if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
-            let errorNo = nterror_to_errno(status)
-            let description = nterror_to_str(status).map(String.init(cString:)) ?? "Unknown"
-            throw POSIXError(.init(errorNo), description: "Error 0x\(String(status, radix: 16, uppercase: true)): \(description)")
+    static func throwIfErrorStatus(_ status: NTStatus) throws {
+        if status.severity == .error {
+            throw POSIXError(
+                status.posixErrorCode,
+                description: "Error 0x\(String(status.rawValue, radix: 16, uppercase: true)): \(status.localizedDescription)"
+            )
         }
     }
 

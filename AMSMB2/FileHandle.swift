@@ -17,47 +17,44 @@ let O_SYMLINK: Int32 = O_NOFOLLOW
 #endif
 
 final class SMB2FileHandle {
-    private var context: SMB2Context
+    private var context: SMB2Client
     private var handle: smb2fh?
 
-    convenience init(forReadingAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forReadingAtPath path: String, on context: SMB2Client) throws {
         try self.init(path, flags: O_RDONLY, on: context)
     }
 
-    convenience init(forWritingAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forWritingAtPath path: String, on context: SMB2Client) throws {
         try self.init(path, flags: O_WRONLY, on: context)
     }
 
-    convenience init(forUpdatingAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forUpdatingAtPath path: String, on context: SMB2Client) throws {
         try self.init(path, flags: O_RDWR | O_APPEND, on: context)
     }
 
-    convenience init(forOverwritingAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forOverwritingAtPath path: String, on context: SMB2Client) throws {
         try self.init(path, flags: O_WRONLY | O_CREAT | O_TRUNC, on: context)
     }
 
-    convenience init(forOutputAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forOutputAtPath path: String, on context: SMB2Client) throws {
         try self.init(path, flags: O_WRONLY | O_CREAT, on: context)
     }
     
-    convenience init(forCreatingIfNotExistsAtPath path: String, on context: SMB2Context) throws {
+    convenience init(forCreatingIfNotExistsAtPath path: String, on context: SMB2Client) throws {
         try self.init(path, flags: O_RDWR | O_CREAT | O_EXCL, on: context)
     }
 
-    static func using(
+    convenience init(
         path: String,
         opLock: OpLock = .none,
         impersonation: ImpersonationLevel = .impersonation,
-        desiredAccess: Access = [
-            .readData, .writeData, .appendData, .fileReadEA, .fileReadAttributes, .fileWriteEA,
-            .fileWriteAttributes, .readControl, .synchronize
-        ],
+        desiredAccess: Access = [.read, .write, .synchronize],
         fileAttributes: Attributes = [],
-        shareAccess: ShareAccess = [.read, .write, .delete],
-        createDisposition: CreateDisposition = .open,
-        createOptions: CreateOptions = [], on context: SMB2Context
-    ) throws -> SMB2FileHandle {
-        let (_, result) = try context.async_await_pdu(dataHandler: SMB2FileHandle.init) {
+        shareAccess: ShareAccess = [.read, .write],
+        createDisposition: CreateDisposition,
+        createOptions: CreateOptions = [], on context: SMB2Client
+    ) throws {
+        let (_, result) = try context.async_await_pdu(dataHandler: SMB2FileID.init) {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
             path.replacingOccurrences(of: "/", with: "\\").withCString { path in
                 var req = smb2_create_request()
@@ -69,28 +66,27 @@ final class SMB2FileHandle {
                 req.create_disposition = createDisposition.rawValue
                 req.create_options = createOptions.rawValue
                 req.name = path
-                return smb2_cmd_create_async(context, &req, SMB2Context.generic_handler, cbPtr)
+                return smb2_cmd_create_async(context, &req, SMB2Client.generic_handler, cbPtr)
             }
         }
-
-        return result
+        try self.init(fileDescriptor: result.rawValue, on: context)
     }
     
-    static func open(path: String, flags: Int32, on context: SMB2Context) throws -> SMB2FileHandle {
-        let desiredAccess: Access
+    convenience init(path: String, flags: Int32, on context: SMB2Client) throws {
+        var desiredAccess: Access
         let shareAccess: ShareAccess
         let createDisposition: CreateDisposition
         var createOptions: CreateOptions = []
         
         switch flags & O_ACCMODE {
         case O_RDWR:
-            desiredAccess = [.genericRead, .genericWrite, .delete]
+            desiredAccess = [.read, .write, .delete]
             shareAccess = [.read, .write]
         case O_WRONLY:
-            desiredAccess = [.genericWrite, .delete]
+            desiredAccess = [.write, .delete]
             shareAccess = [.write]
         default:
-            desiredAccess = [.genericRead]
+            desiredAccess = [.read]
             shareAccess = [.read]
         }
         
@@ -110,6 +106,10 @@ final class SMB2FileHandle {
             }
         }
         
+        if (flags & O_SYNC) != 0 {
+            desiredAccess.insert(.synchronize)
+            createOptions.insert(.noIntermediateBuffering)
+        }
         if (flags & O_DIRECTORY) != 0 {
             createOptions.insert(.directoryFile)
         }
@@ -117,7 +117,7 @@ final class SMB2FileHandle {
             createOptions.insert(.openReparsePoint)
         }
         
-        return try SMB2FileHandle.using(
+        try self.init(
             path: path,
             desiredAccess: desiredAccess,
             shareAccess: shareAccess,
@@ -127,16 +127,17 @@ final class SMB2FileHandle {
         )
     }
 
-    init(fileDescriptor: smb2_file_id, on context: SMB2Context) throws {
+    init(fileDescriptor: smb2_file_id, on context: SMB2Client) throws {
         self.context = context
         var fileDescriptor = fileDescriptor
-        self.handle = smb2_fh_from_file_id(context.unsafeContext, &fileDescriptor)
+        self.handle = smb2_fh_from_file_id(context.context, &fileDescriptor)
     }
 
-    private init(_ path: String, flags: Int32, on context: SMB2Context) throws {
+    // This initializer does not support O_DIRECTORY and O_SYMLINK.
+    private init(_ path: String, flags: Int32, on context: SMB2Client) throws {
         let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) {
             context, cbPtr -> Int32 in
-            smb2_open_async(context, path.canonical, flags, SMB2Context.generic_handler, cbPtr)
+            smb2_open_async(context, path.canonical, flags, SMB2Client.generic_handler, cbPtr)
         }
         self.context = context
         self.handle = handle
@@ -146,7 +147,7 @@ final class SMB2FileHandle {
         do {
             let handle = try self.handle.unwrap()
             try context.async_await { context, cbPtr -> Int32 in
-                smb2_close_async(context, handle, SMB2Context.generic_handler, cbPtr)
+                smb2_close_async(context, handle, SMB2Client.generic_handler, cbPtr)
             }
         } catch {}
     }
@@ -167,7 +168,7 @@ final class SMB2FileHandle {
         let handle = try handle.unwrap()
         var st = smb2_stat_64()
         try context.async_await { context, cbPtr -> Int32 in
-            smb2_fstat_async(context, handle, &st, SMB2Context.generic_handler, cbPtr)
+            smb2_fstat_async(context, handle, &st, SMB2Client.generic_handler, cbPtr)
         }
         return st
     }
@@ -202,7 +203,7 @@ final class SMB2FileHandle {
             req.file_info_class = .init(SMB2_FILE_BASIC_INFORMATION)
             return withUnsafeMutablePointer(to: &bfi) { bfi in
                 req.input_data = .init(bfi)
-                return smb2_cmd_set_info_async(context, &req, SMB2Context.generic_handler, cbPtr)
+                return smb2_cmd_set_info_async(context, &req, SMB2Client.generic_handler, cbPtr)
             }
         }
     }
@@ -210,7 +211,7 @@ final class SMB2FileHandle {
     func ftruncate(toLength: UInt64) throws {
         let handle = try handle.unwrap()
         try context.async_await { context, cbPtr -> Int32 in
-            smb2_ftruncate_async(context, handle, toLength, SMB2Context.generic_handler, cbPtr)
+            smb2_ftruncate_async(context, handle, toLength, SMB2Client.generic_handler, cbPtr)
         }
     }
 
@@ -226,7 +227,7 @@ final class SMB2FileHandle {
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
         let handle = try handle.unwrap()
-        let result = smb2_lseek(context.unsafeContext, handle, offset, whence.rawValue, nil)
+        let result = smb2_lseek(context.context, handle, offset, whence.rawValue, nil)
         try POSIXError.throwIfError(result, description: context.error)
         return result
     }
@@ -242,7 +243,7 @@ final class SMB2FileHandle {
         let result = try buffer.withUnsafeMutableBytes { buffer in
             try context.async_await { context, cbPtr -> Int32 in
                 smb2_read_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Context.generic_handler, cbPtr
+                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Client.generic_handler, cbPtr
                 )
             }
         }
@@ -260,7 +261,7 @@ final class SMB2FileHandle {
         let result = try buffer.withUnsafeMutableBytes { buffer in
             try context.async_await { context, cbPtr -> Int32 in
                 smb2_pread_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Context.generic_handler,
+                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Client.generic_handler,
                     cbPtr
                 )
             }
@@ -285,7 +286,7 @@ final class SMB2FileHandle {
         let result = try Data(data).withUnsafeBytes { buffer in
             try context.async_await { context, cbPtr -> Int32 in
                 smb2_write_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Context.generic_handler, cbPtr
+                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Client.generic_handler, cbPtr
                 )
             }
         }
@@ -302,7 +303,7 @@ final class SMB2FileHandle {
         let result = try Data(data).withUnsafeBytes { buffer in
             try context.async_await { context, cbPtr -> Int32 in
                 smb2_pwrite_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Context.generic_handler,
+                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Client.generic_handler,
                     cbPtr
                 )
             }
@@ -314,7 +315,7 @@ final class SMB2FileHandle {
     func fsync() throws {
         let handle = try handle.unwrap()
         try context.async_await { context, cbPtr -> Int32 in
-            smb2_fsync_async(context, handle, SMB2Context.generic_handler, cbPtr)
+            smb2_fsync_async(context, handle, SMB2Client.generic_handler, cbPtr)
         }
     }
     
@@ -335,7 +336,7 @@ final class SMB2FileHandle {
                     file_id: smb2_get_file_id(handle).pointee,
                     locks: element
                 )
-                return smb2_cmd_lock_async(context, &request, SMB2Context.generic_handler, dataPtr)
+                return smb2_cmd_lock_async(context, &request, SMB2Client.generic_handler, dataPtr)
             }
         }
     }
@@ -344,12 +345,12 @@ final class SMB2FileHandle {
         let handle = try handle.unwrap()
         try context.async_await_pdu { context, cbPtr in
             var request = smb2_change_notify_request(
-                flags: UInt16(!type.intersection([.recursive]).isEmpty ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
+                flags: UInt16(type.contains([.recursive]) ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
                 output_buffer_length: 0,
                 file_id: smb2_get_file_id(handle).pointee,
                 completion_filter: type.rawValue & 0x00ff_ffff
             )
-            return smb2_cmd_change_notify_async(context, &request, SMB2Context.generic_handler, cbPtr)
+            return smb2_cmd_change_notify_async(context, &request, SMB2Client.generic_handler, cbPtr)
         }
     }
 
@@ -371,7 +372,7 @@ final class SMB2FileHandle {
             )
             return try context.async_await_pdu(dataHandler: R.init) {
                 context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-                smb2_cmd_ioctl_async(context, &req, SMB2Context.generic_handler, cbPtr)
+                smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
             }.data
         }
     }
@@ -450,11 +451,13 @@ extension SMB2FileHandle {
         static let lease = Self(rawValue: SMB2_OPLOCK_LEVEL_LEASE)
     }
     
-    enum ImpersonationLevel: UInt32, Hashable, Sendable {
-        case anonymous = 0x00000000
-        case identification = 0x00000001
-        case impersonation = 0x00000002
-        case delegate = 0x00000003
+    struct ImpersonationLevel: RawRepresentable, Hashable, Sendable {
+        var rawValue: UInt32
+        
+        static let anonymous = Self(rawValue: SMB2_IMPERSONATION_ANONYMOUS)
+        static let identification = Self(rawValue: SMB2_IMPERSONATION_IDENTIFICATION)
+        static let impersonation = Self(rawValue: SMB2_IMPERSONATION_IMPERSONATION)
+        static let delegate = Self(rawValue: SMB2_IMPERSONATION_DELEGATE)
     }
     
     struct Access: OptionSet, Sendable {
@@ -489,6 +492,10 @@ extension SMB2FileHandle {
         static let addFile = Self(rawValue: SMB2_FILE_ADD_FILE)
         static let addSubdirectory = Self(rawValue: SMB2_FILE_ADD_SUBDIRECTORY)
         static let traverse = Self(rawValue: SMB2_FILE_TRAVERSE)
+        
+        static let read: Access = [.readData, .fileReadAttributes, .fileReadEA, .readControl]
+        static let write: Access = [.writeData, .appendData, .fileWriteAttributes, .fileWriteEA, .readControl]
+        static let executeList: Access = [.execute, .fileReadAttributes, .fileReadEA, .readControl]
     }
     
     struct ShareAccess: OptionSet, Sendable {
@@ -499,13 +506,31 @@ extension SMB2FileHandle {
         static let delete = Self(rawValue: SMB2_FILE_SHARE_DELETE)
     }
     
-    enum CreateDisposition: UInt32, Sendable {        
-        case supersede = 0x00000000 // SMB2_FILE_SUPERSEDE
-        case open = 0x00000001 // SMB2_FILE_OPEN
-        case create = 0x00000002 // SMB2_FILE_CREATE
-        case openIfExists = 0x00000003 // SMB2_FILE_OPEN_IF
-        case overwrite = 0x00000004 // SMB2_FILE_OVERWRITE
-        case overwriteIfExists = 0x00000005 // SMB2_FILE_OVERWRITE_IF
+    struct CreateDisposition: RawRepresentable, Sendable {
+        var rawValue: UInt32
+        
+        /// If the file already exists, supersede it. Otherwise, create the file.
+        /// This value SHOULD NOT be used for a printer object.
+        static let supersede = Self(rawValue: SMB2_FILE_SUPERSEDE)
+        
+        /// If the file already exists, return success; otherwise, fail the operation.
+        /// MUST NOT be used for a printer object.
+        static let open = Self(rawValue: SMB2_FILE_OPEN)
+        
+        /// If the file already exists, fail the operation; otherwise, create the file.
+        static let create = Self(rawValue: SMB2_FILE_CREATE)
+        
+        /// Open the file if it already exists; otherwise, create the file.
+        /// This value SHOULD NOT be used for a printer object.
+        static let openIfExists = Self(rawValue: SMB2_FILE_OPEN_IF)
+        
+        /// Overwrite the file if it already exists; otherwise, fail the operation.
+        /// MUST NOT be used for a printer object.
+        static let overwrite = Self(rawValue: SMB2_FILE_OVERWRITE)
+        
+        /// Overwrite the file if it already exists; otherwise, create the file.
+        /// This value SHOULD NOT be used for a printer object.
+        static let overwriteIfExists = Self(rawValue: SMB2_FILE_OVERWRITE_IF)
     }
     
     struct CreateOptions: OptionSet, Sendable {
@@ -544,5 +569,60 @@ extension RawRepresentable where RawValue == UInt32 {
 extension RawRepresentable where RawValue: BinaryInteger {
     init(rawValue: Int32) {
         self.init(rawValue: .init(truncatingIfNeeded: rawValue))!
+    }
+}
+
+extension smb2_stat_64 {
+    struct ResourceType: RawRepresentable, Hashable, Sendable {
+        var rawValue: UInt32
+        
+        static let file = Self(rawValue: SMB2_TYPE_FILE)
+        static let directory = Self(rawValue: SMB2_TYPE_DIRECTORY)
+        static let link = Self(rawValue: SMB2_TYPE_LINK)
+        
+        var urlResourceType: URLFileResourceType {
+            switch self {
+            case .directory:
+                .directory
+            case .file:
+                .regular
+            case .link:
+                .symbolicLink
+            default:
+                .unknown
+            }
+        }
+    }
+    
+    var resourceType: ResourceType {
+        .init(rawValue: smb2_type)
+    }
+    
+    var isDirectory: Bool {
+        resourceType == .directory
+    }
+
+    func populateResourceValue(_ dic: inout [URLResourceKey: any Sendable]) {
+        dic.reserveCapacity(11 + dic.count)
+        dic[.fileSizeKey] = NSNumber(value: smb2_size)
+        dic[.linkCountKey] = NSNumber(value: smb2_nlink)
+        dic[.documentIdentifierKey] = NSNumber(value: smb2_ino)
+        dic[.fileResourceTypeKey] = resourceType.urlResourceType
+        dic[.isDirectoryKey] = NSNumber(value: resourceType == .directory)
+        dic[.isRegularFileKey] = NSNumber(value: resourceType == .file)
+        dic[.isSymbolicLinkKey] = NSNumber(value: resourceType == .link)
+
+        dic[.contentModificationDateKey] = Date(
+            timespec(tv_sec: Int(smb2_mtime), tv_nsec: Int(smb2_mtime_nsec))
+        )
+        dic[.attributeModificationDateKey] = Date(
+            timespec(tv_sec: Int(smb2_ctime), tv_nsec: Int(smb2_ctime_nsec))
+        )
+        dic[.contentAccessDateKey] = Date(
+            timespec(tv_sec: Int(smb2_atime), tv_nsec: Int(smb2_atime_nsec))
+        )
+        dic[.creationDateKey] = Date(
+            timespec(tv_sec: Int(smb2_btime), tv_nsec: Int(smb2_btime_nsec))
+        )
     }
 }
