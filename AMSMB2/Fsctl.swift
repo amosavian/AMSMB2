@@ -10,9 +10,9 @@
 import Foundation
 import SMB2
 
-protocol IOCtlArgument: ContiguousBytes & DataProtocol where Index == Int, Element == UInt8 {}
+protocol EncodableArgument: ContiguousBytes & DataProtocol where Index == Int, Element == UInt8 {}
 
-extension IOCtlArgument {
+extension EncodableArgument {
     var startIndex: Int {
         0
     }
@@ -43,12 +43,12 @@ extension IOCtlArgument {
     }
 }
 
-protocol IOCtlReply {
+protocol DecodableResponse {
     init(data: Data) throws
-    init(_ context: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws
+    init(_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws
 }
 
-struct AnyIOCtlReply: IOCtlReply {
+struct AnyDecodableResponse: DecodableResponse {
     private let data: Data
 
     init(data: Data) {
@@ -90,7 +90,7 @@ extension IOCtl.Command {
 }
 
 extension IOCtl {
-    struct SrvCopyChunk: IOCtlArgument {
+    struct SrvCopyChunk: EncodableArgument {
         typealias Element = UInt8
         
         let sourceOffset: UInt64
@@ -113,7 +113,7 @@ extension IOCtl {
         }
     }
     
-    struct SrvCopyChunkCopy: IOCtlArgument {
+    struct SrvCopyChunkCopy: EncodableArgument {
         typealias Element = UInt8
         
         let sourceKey: Data
@@ -133,7 +133,7 @@ extension IOCtl {
         }
     }
     
-    struct RequestResumeKey: IOCtlReply {
+    struct RequestResumeKey: DecodableResponse {
         let resumeKey: Data
         
         init(data: Data) throws {
@@ -153,7 +153,7 @@ extension IOCtl.Command {
 }
 
 extension IOCtl {
-    struct Reparse: IOCtlReply, IOCtlArgument {
+    struct Reparse: DecodableResponse, EncodableArgument {
         typealias Element = UInt8
         private static let headerLength = 8
         
@@ -186,7 +186,7 @@ extension IOCtl {
         }
     }
     
-    struct SymbolicLinkReparse: IOCtlReply, IOCtlArgument {
+    struct SymbolicLinkReparse: DecodableResponse, EncodableArgument {
         typealias Element = UInt8
 
         private static let headerLength = 20
@@ -255,7 +255,7 @@ extension IOCtl {
         }
     }
     
-    struct SymbolicLinkGUIDReparse: IOCtlArgument {
+    struct SymbolicLinkGUIDReparse: EncodableArgument {
         typealias Element = UInt8
 
         // This reparse data buffer MUST be used only with reparse tag values
@@ -281,7 +281,7 @@ extension IOCtl {
         }
     }
 
-    struct MountPointReparse: IOCtlReply, IOCtlArgument {
+    struct MountPointReparse: DecodableResponse, EncodableArgument {
         typealias Element = UInt8
 
         private static let headerLength = 16

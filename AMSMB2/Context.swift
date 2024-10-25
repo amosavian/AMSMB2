@@ -162,6 +162,17 @@ extension SMB2Client {
     var version: Version {
         (context?.pointee.dialect).map { Version(rawValue: UInt32($0)) } ?? .any
     }
+    
+    var passthrough: Bool {
+        get {
+            var result: Int32 = 0
+            smb2_get_passthrough(context, &result)
+            return result != 0
+        }
+        set {
+            smb2_set_passthrough(context, newValue ? 1 : 0)
+        }
+    }
 
     var isConnected: Bool {
         fileDescriptor != -1
@@ -238,10 +249,9 @@ extension SMB2Client {
 
 extension SMB2Client {
     func shareEnum() throws -> [SMB2Share] {
-//        try async_await(dataHandler: [SMB2Share].init) { context, cbPtr -> Int32 in
-//            smb2_share_enum_async(context, SMB2Context.generic_handler, cbPtr)
-//        }.data
-        try shareEnumSwift()
+        try async_await(dataHandler: [SMB2Share].init) { context, cbPtr -> Int32 in
+            smb2_share_enum_async(context, SHARE_INFO_1, SMB2Client.generic_handler, cbPtr)
+        }.data
     }
 
     func shareEnumSwift() throws -> [SMB2Share] {
@@ -285,7 +295,7 @@ extension SMB2Client {
     }
     
     func symlink(_ path: String, to destination: String) throws {
-        let file = try SMB2FileHandle(path: path, flags: O_RDWR | O_CREAT | O_EXCL | O_SYMLINK, on: self)
+        let file = try SMB2FileHandle(path: path, flags: O_RDWR | O_CREAT | O_EXCL | O_SYMLINK | O_SYNC, on: self)
         let reparse = IOCtl.SymbolicLinkReparse(path: destination, isRelative: true)
         try file.fcntl(command: .setReparsePoint, args: reparse)
     }
@@ -316,7 +326,7 @@ extension SMB2Client {
         let file = try SMB2FileHandle(path: path, flags: O_RDWR | flags, on: self)
         var inputBuffer = [UInt8](repeating: 0, count: 8)
         inputBuffer[0] = 0x01 // DeletePending set to true
-        try withExtendedLifetime(file) {
+        try withExtendedLifetime(file) { file in
             try inputBuffer.withUnsafeMutableBytes { buf in
                 var req = smb2_set_info_request(
                     info_type: UInt8(SMB2_0_INFO_FILE),
@@ -399,7 +409,7 @@ extension SMB2Client {
         } catch {}
     }
 
-    typealias ContextHandler<R> = (_ context: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?)
+    typealias ContextHandler<R> = (_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?)
         throws -> R
     typealias UnsafeContextHandler<R> = (
         _ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?

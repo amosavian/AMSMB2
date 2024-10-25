@@ -11,7 +11,7 @@ import Foundation
 import SMB2
 import SMB2.Raw
 
-struct EmptyReply: IOCtlReply {
+struct EmptyReply: DecodableResponse {
     init(data _: Data) throws {}
     init(_: SMB2Client, _: UnsafeMutableRawPointer?) throws {}
 }
@@ -22,26 +22,25 @@ extension String {
     }
 }
 
-// extension Array where Element == SMB2Share {
-//    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws {
-//        defer { smb2_free_data(context.unsafe, dataPtr) }
-//        let result = try dataPtr.unwrap().assumingMemoryBound(to: srvsvc_netshareenumall_rep.self)
-//            .pointee
-//        self = Array(result.ctr.pointee.ctr1)
-//    }
-//
-//    init(_ ctr1: srvsvc_netsharectr1) {
-//        self = [srvsvc_netshareinfo1](
-//            UnsafeBufferPointer(start: ctr1.array, count: Int(ctr1.count))
-//        ).map {
-//            SMB2Share(
-//                name: .init(cString: $0.name),
-//                props: .init(rawValue: $0.type),
-//                comment: .init(cString: $0.comment)
-//            )
-//        }
-//    }
-// }
+ extension Array where Element == SMB2Share {
+     init(_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
+         defer { smb2_free_data(client.context, dataPtr) }
+         let result = try dataPtr.unwrap().assumingMemoryBound(to: srvsvc_NetrShareEnum_rep.self).pointee
+         self = Array(result.ses.ShareInfo.Level1.Buffer.pointee)
+    }
+
+     init(_ ctr1: srvsvc_SHARE_INFO_1_carray) {
+        self = [srvsvc_SHARE_INFO_1](
+            UnsafeBufferPointer(start: ctr1.share_info_1, count: Int(ctr1.max_count))
+        ).map {
+            SMB2Share(
+                name: .init(cString: $0.netname.utf8),
+                props: .init(rawValue: $0.type),
+                comment: .init(cString: $0.remark.utf8)
+            )
+        }
+    }
+ }
 
 extension OpaquePointer {
     init(_: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
@@ -62,8 +61,8 @@ struct SMB2FileID: RawRepresentable {
     }
 }
 
-extension IOCtlReply {
-    init(_ context: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
+extension DecodableResponse {
+    init(_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
         let reply = try dataPtr.unwrap().assumingMemoryBound(to: smb2_ioctl_reply.self).pointee
         guard reply.output_count > 0, let output = reply.output else {
             self = try Self(data: .init())
@@ -78,7 +77,7 @@ extension IOCtlReply {
             return
         }
 #endif
-        defer { smb2_free_data(context.context, output) }
+        defer { smb2_free_data(client.context, output) }
         let data = Data(bytes: output, count: Int(reply.output_count))
         self = try Self(data: data)
     }

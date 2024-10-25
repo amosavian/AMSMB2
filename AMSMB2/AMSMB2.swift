@@ -24,7 +24,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     fileprivate typealias CopyProgressHandler = (@Sendable
         (_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Int64?)?
 
-    fileprivate var context: SMB2Client?
+    fileprivate var client: SMB2Client?
 
     /// SMB2 Share URL.
     public let url: URL
@@ -44,11 +44,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     /// Set this to 0 or negative value in order to disable it.
     open var timeout: TimeInterval {
         get {
-            context?.timeout ?? _timeout
+            client?.timeout ?? _timeout
         }
         set {
             _timeout = newValue
-            context?.timeout = newValue
+            client?.timeout = newValue
         }
     }
 
@@ -64,13 +64,13 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         var c: [(label: String?, value: Any)] = []
 
         c.append((label: "url", value: url))
-        c.append((label: "isConnected", value: (context?.isConnected ?? false)))
+        c.append((label: "isConnected", value: (client?.isConnected ?? false)))
         c.append((label: "timeout", value: _timeout))
         if _domain.isEmpty { c.append((label: "domain", value: _domain)) }
         if _workstation.isEmpty { c.append((label: "workstation", value: _workstation)) }
         if _workstation.isEmpty { c.append((label: "workstation", value: _workstation)) }
         c.append((label: "user", value: _user))
-        if let connectedShare = context?.share { c.append((label: "share", value: connectedShare)) }
+        if let connectedShare = client?.share { c.append((label: "share", value: connectedShare)) }
 
         let m = Mirror(self, children: c, displayStyle: .class)
         return m
@@ -239,17 +239,17 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         with(completionHandler: completionHandler) {
             self.connectLock.lock()
             defer { self.connectLock.unlock() }
-            if self.context == nil || self.context?.fileDescriptor == -1
-                || self.context?.share != name
+            if self.client == nil || self.client?.fileDescriptor == -1
+                || self.client?.share != name
             {
-                self.context = try self.connect(shareName: name, encrypted: encrypted)
+                self.client = try self.connect(shareName: name, encrypted: encrypted)
             }
 
             // Workaround disgraceful disconnect issue (e.g. server timeout)
             do {
-                try self.context!.echo()
+                try self.client!.echo()
             } catch {
-                self.context = try self.connect(shareName: name, encrypted: encrypted)
+                self.client = try self.connect(shareName: name, encrypted: encrypted)
             }
         }
     }
@@ -292,8 +292,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                     }
                     self.operationLock.unlock()
                 }
-                try self.context?.disconnect()
-                self.context = nil
+                try self.client?.disconnect()
+                self.client = nil
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -321,8 +321,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
      - Parameter completionHandler: closure will be run after echoing server is completed.
      */
     open func echo(completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) { context in
-            try context.echo()
+        with(completionHandler: completionHandler) { client in
+            try client.echo()
         }
     }
 
@@ -348,8 +348,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], any Error>) -> Void
     ) {
         // Connecting to Interprocess Communication share
-        with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
-            try context.shareEnum().map(enumerateHidden: enumerateHidden)
+        with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { client in
+            try client.shareEnum().map(enumerateHidden: enumerateHidden)
         }
     }
 
@@ -378,8 +378,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         enumerateHidden: Bool = false,
         completionHandler: @Sendable @escaping (_ result: Result<[(name: String, comment: String)], any Error>) -> Void
     ) {
-        with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { context in
-            try context.shareEnumSwift().map(enumerateHidden: enumerateHidden)
+        with(shareName: "IPC$", encrypted: false, completionHandler: completionHandler) { client in
+            try client.shareEnumSwift().map(enumerateHidden: enumerateHidden)
         }
     }
 
@@ -407,8 +407,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String, recursive: Bool = false,
         completionHandler: @Sendable @escaping (_ result: Result<[[URLResourceKey: any Sendable]], any Error>) -> Void
     ) {
-        with(completionHandler: completionHandler) { context in
-            try self.listDirectory(context: context, path: path, recursive: recursive)
+        with(completionHandler: completionHandler) { client in
+            try self.listDirectory(client: client, path: path, recursive: recursive)
         }
     }
 
@@ -443,9 +443,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         forPath path: String,
         completionHandler: @Sendable @escaping (_ result: Result<[FileAttributeKey: any Sendable], any Error>) -> Void
     ) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             // This exactly matches implementation of Swift Foundation.
-            let stat = try context.statvfs(path)
+            let stat = try client.statvfs(path)
             var result = [FileAttributeKey: any Sendable]()
             let blockSize = UInt64(stat.f_bsize)
             // NSNumber allows to cast to any number type, but it is unsafe to cast to types with lower bitwidth
@@ -486,14 +486,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String,
         completionHandler: @Sendable @escaping (_ result: Result<[URLResourceKey: any Sendable], any Error>) -> Void
     ) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             let stat: smb2_stat_64
             do {
-                stat = try context.stat(path)
+                stat = try client.stat(path)
             } catch POSIXError.ENOLINK {
                 // `libsmb2` can not read symlink attributes using `stat`, so if we get
                 // the related error, we simply open file as reparse point then use `fstat`.
-                let file = try SMB2FileHandle(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
+                let file = try SMB2FileHandle(path: path, flags: O_RDONLY | O_SYMLINK, on: client)
                 stat = try file.fstat()
             }
             var result = [URLResourceKey: any Sendable]()
@@ -578,8 +578,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             smb2Attributes.remove(.normal)
         }
         
-        with(completionHandler: completionHandler) { [stat, smb2Attributes] context in
-            let file = try SMB2FileHandle(forUpdatingAtPath: path, on: context)
+        with(completionHandler: completionHandler) { [stat, smb2Attributes] client in
+            let file = try SMB2FileHandle(forUpdatingAtPath: path, on: client)
             try file.set(stat: stat, attributes: smb2Attributes)
         }
     }
@@ -615,8 +615,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String, withDestinationPath destination: String,
         completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
-            try context.symlink(path, to: destination)
+        with(completionHandler: completionHandler) { client in
+            try client.symlink(path, to: destination)
         }
     }
 
@@ -646,8 +646,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String,
         completionHandler: @Sendable @escaping (_ result: Result<String, any Error>) -> Void
     ) {
-        with(completionHandler: completionHandler) { context in
-            try context.readlink(path)
+        with(completionHandler: completionHandler) { client in
+            try client.readlink(path)
         }
     }
 
@@ -673,8 +673,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - completionHandler: closure will be run after operation is completed.
      */
     open func createDirectory(atPath path: String, completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) { context in
-            try context.mkdir(path)
+        with(completionHandler: completionHandler) { client in
+            try client.mkdir(path)
         }
     }
 
@@ -701,8 +701,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func removeDirectory(
         atPath path: String, recursive: Bool, completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
-            try self.removeDirectory(context: context, path: path, recursive: recursive)
+        with(completionHandler: completionHandler) { client in
+            try self.removeDirectory(client: client, path: path, recursive: recursive)
         }
     }
 
@@ -730,12 +730,12 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - completionHandler: closure will be run after operation is completed.
      */
     open func removeFile(atPath path: String, completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             do {
-                try context.unlink(path)
+                try client.unlink(path)
             } catch POSIXError.ENOLINK, POSIXError.ENETRESET {
                 // Try to remove file as a symbolic link.
-                try context.unlink(path, flags: O_SYMLINK)
+                try client.unlink(path, flags: O_SYMLINK)
             }
         }
     }
@@ -760,23 +760,23 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
        - completionHandler: closure will be run after operation is completed.
      */
     open func removeItem(atPath path: String, completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             let stat: smb2_stat_64
             do {
-                stat = try context.stat(path)
+                stat = try client.stat(path)
             } catch POSIXError.ENOLINK {
                 // `libsmb2` can not read symlink attributes using `stat`, so if we get
                 // the related error, we simply open file as reparse point then use `fstat`.
-                let file = try SMB2FileHandle(path: path, flags: O_RDONLY | O_SYMLINK, on: context)
+                let file = try SMB2FileHandle(path: path, flags: O_RDONLY | O_SYMLINK, on: client)
                 stat = try file.fstat()
             }
             switch stat.resourceType {
             case .directory:
-                try self.removeDirectory(context: context, path: path, recursive: true)
+                try self.removeDirectory(client: client, path: path, recursive: true)
             case .file:
-                try context.unlink(path)
+                try client.unlink(path)
             case .link:
-                try context.unlink(path, flags: O_SYMLINK)
+                try client.unlink(path, flags: O_SYMLINK)
             default:
                 break
             }
@@ -809,8 +809,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func truncateFile(
         atPath path: String, atOffset: UInt64, completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
-            try context.truncate(path, toLength: atOffset)
+        with(completionHandler: completionHandler) { client in
+            try client.truncate(path, toLength: atOffset)
         }
     }
 
@@ -843,8 +843,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     open func moveItem(
         atPath path: String, toPath: String, completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
-            try context.rename(path, to: toPath)
+        with(completionHandler: completionHandler) { client in
+            try client.rename(path, to: toPath)
         }
     }
 
@@ -884,14 +884,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: @Sendable @escaping (_ result: Result<Data, any Error>) -> Void
     ) where R.Bound: FixedWidthInteger {
         let range = range?.int64Range ?? 0..<Int64.max
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             guard !range.isEmpty else {
                 return Data()
             }
 
             let stream = OutputStream.toMemory()
             try self.read(
-                context: context, path: path, range: range, to: stream, progress: progress
+                client: client, path: path, range: range, to: stream, progress: progress
             )
             return try (stream.property(forKey: .dataWrittenToMemoryStreamKey) as? Data).unwrap()
         }
@@ -944,8 +944,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         fetchedData: @Sendable @escaping (_ offset: Int64, _ total: Int64, _ data: Data) -> Bool,
         completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
-            let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        with(completionHandler: completionHandler) { client in
+            let file = try SMB2FileHandle(forReadingAtPath: path, on: client)
             let size = try Int64(file.fstat().smb2_size)
 
             var shouldContinue = true
@@ -994,11 +994,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         let range = range?.int64Range ?? 0..<Int64.max
         let (result, continuation) = AsyncThrowingStream<Data, any Error>.makeStream(bufferingPolicy: .unbounded)
         
-        queue { [context] in
-            guard let context = context else { return }
+        queue { [client] in
+            guard let client = client else { return }
             var offset = range.lowerBound
             do {
-                let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+                let file = try SMB2FileHandle(forReadingAtPath: path, on: client)
                 try file.lseek(offset: range.lowerBound, whence: .set)
                 while offset < range.upperBound {
                     let data = try file.read()
@@ -1034,9 +1034,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: SimpleCompletionHandler
     ) {
         let data = Data(data)
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             try self.write(
-                context: context, from: InputStream(data: data), toPath: path,
+                client: client, from: InputStream(data: data), toPath: path,
                 progress: progress
             )
         }
@@ -1088,9 +1088,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: SimpleCompletionHandler
     ) {
         let data = Data(data)
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             try self.write(
-                context: context, from: InputStream(data: data), toPath: path,
+                client: client, from: InputStream(data: data), toPath: path,
                 offset: offset, progress: progress
             )
         }
@@ -1145,9 +1145,9 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         chunkSize: Int = 0, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
     ) where S: AsyncSequence & Sendable, S.Element: DataProtocol {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             try self.write(
-                context: context, from: AsyncInputStream(stream: stream), toPath: path, chunkSize: chunkSize,
+                client: client, from: AsyncInputStream(stream: stream), toPath: path, chunkSize: chunkSize,
                 progress: progress
             )
         }
@@ -1201,11 +1201,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String, toPath: String, recursive: Bool,
         progress: ReadProgressHandler, completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             try self.recursiveCopyIterator(
-                context: context, fromPath: path, toPath: toPath, recursive: recursive,
+                client: client, fromPath: path, toPath: toPath, recursive: recursive,
                 progress: progress,
-                handle: self.copyContentsOfFile(context:fromPath:toPath:progress:)
+                handle: self.copyContentsOfFile(client:fromPath:toPath:progress:)
             )
         }
     }
@@ -1226,11 +1226,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String, toPath: String, recursive: Bool,
         progress: ReadProgressHandler, completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             try self.recursiveCopyIterator(
-                context: context, fromPath: path, toPath: toPath, recursive: recursive,
+                client: client, fromPath: path, toPath: toPath, recursive: recursive,
                 progress: progress,
-                handle: self.copyFile(context:fromPath:toPath:progress:)
+                handle: self.copyFile(client:fromPath:toPath:progress:)
             )
         }
     }
@@ -1273,7 +1273,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         at url: URL, toPath: String, progress: WriteProgressHandler,
         completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             guard try url.checkResourceIsReachable(), url.isFileURL,
                   let stream = InputStream(url: url)
             else {
@@ -1284,7 +1284,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                 )
             }
 
-            try self.write(context: context, from: stream, toPath: toPath, progress: progress)
+            try self.write(client: client, from: stream, toPath: toPath, progress: progress)
         }
     }
 
@@ -1328,7 +1328,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         atPath path: String, to url: URL, progress: ReadProgressHandler,
         completionHandler: SimpleCompletionHandler
     ) {
-        with(completionHandler: completionHandler) { context in
+        with(completionHandler: completionHandler) { client in
             guard url.isFileURL, let stream = OutputStream(url: url, append: false) else {
                 throw POSIXError(
                     .EIO,
@@ -1336,7 +1336,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                     "Could not create Stream from given URL, or given URL is not a local file."
                 )
             }
-            try self.read(context: context, path: path, to: stream, progress: progress)
+            try self.read(client: client, path: path, to: stream, progress: progress)
         }
     }
 
@@ -1371,8 +1371,17 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     ///   - filter: Change types that will be monitored.
     ///   - completionHandler: closure will be run after a change in montored file/folder.
     func monitorItem(atPath path: String, for filter: SMB2FileChangeType, completionHandler: SimpleCompletionHandler) {
-        with(completionHandler: completionHandler) { context in
-            let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        with(completionHandler: completionHandler) { client in
+            var flags = O_RDONLY | O_SYNC
+            switch try client.stat(path).resourceType {
+            case .directory:
+                flags |= O_DIRECTORY
+            case .link:
+                flags |= O_SYMLINK
+            default:
+                break
+            }
+            let file = try SMB2FileHandle(path: path, flags: flags, on: client)
             try file.changeNotify(for: filter)
         }
     }
@@ -1403,25 +1412,25 @@ extension SMB2Manager {
         }
     }
 
-    private func initContext(_ context: SMB2Client, encrypted: Bool) {
-        context.securityMode = [.enabled]
-        context.authentication = .ntlmSsp
-        context.seal = encrypted
+    private func initClient(_ client: SMB2Client, encrypted: Bool) {
+        client.securityMode = [.enabled]
+        client.authentication = .ntlmSsp
+        client.seal = encrypted
 
-        context.domain = _domain
-        context.workstation = _workstation
-        context.user = _user
-        context.password = _password
-        context.timeout = _timeout
+        client.domain = _domain
+        client.workstation = _workstation
+        client.user = _user
+        client.password = _password
+        client.timeout = _timeout
     }
 
     private func connect(shareName: String, encrypted: Bool) throws -> SMB2Client {
-        let context = try SMB2Client(timeout: _timeout)
-        self.context = context
-        initContext(context, encrypted: encrypted)
+        let client = try SMB2Client(timeout: _timeout)
+        self.client = client
+        initClient(client, encrypted: encrypted)
         let server = url.host! + (url.port.map { ":\($0)" } ?? "")
-        try context.connect(server: server, share: shareName, user: _user)
-        return context
+        try client.connect(server: server, share: shareName, user: _user)
+        return client
     }
 
     private func with(
@@ -1439,11 +1448,11 @@ extension SMB2Manager {
 
     private func with(
         completionHandler: SimpleCompletionHandler,
-        handler: @Sendable @escaping (_ context: SMB2Client) throws -> Void
+        handler: @Sendable @escaping (_ client: SMB2Client) throws -> Void
     ) {
         queue {
             do {
-                try handler(self.context.unwrap())
+                try handler(self.client.unwrap())
                 completionHandler?(nil)
             } catch {
                 completionHandler?(error)
@@ -1453,12 +1462,12 @@ extension SMB2Manager {
 
     private func with<T>(
         completionHandler: @Sendable @escaping (Result<T, any Error>) -> Void,
-        handler: @Sendable @escaping (_ context: SMB2Client) throws -> T
+        handler: @Sendable @escaping (_ client: SMB2Client) throws -> T
     ) {
         queue {
             completionHandler(
                 .init(catching: { () -> T in
-                    try handler(self.context.unwrap())
+                    try handler(self.client.unwrap())
                 })
             )
         }
@@ -1466,14 +1475,14 @@ extension SMB2Manager {
 
     private func with<T>(
         shareName: String, encrypted: Bool, completionHandler: @Sendable @escaping (Result<T, any Error>) -> Void,
-        handler: @Sendable @escaping (_ context: SMB2Client) throws -> T
+        handler: @Sendable @escaping (_ client: SMB2Client) throws -> T
     ) {
         queue {
             do {
-                let context = try self.connect(shareName: shareName, encrypted: encrypted)
-                defer { try? context.disconnect() }
+                let client = try self.connect(shareName: shareName, encrypted: encrypted)
+                defer { try? client.disconnect() }
 
-                let result = try handler(context)
+                let result = try handler(client)
                 completionHandler(.success(result))
             } catch {
                 completionHandler(.failure(error))
@@ -1483,11 +1492,11 @@ extension SMB2Manager {
 }
 
 extension SMB2Manager {
-    private func listDirectory(context: SMB2Client, path: String, recursive: Bool) throws
+    private func listDirectory(client: SMB2Client, path: String, recursive: Bool) throws
         -> [[URLResourceKey: any Sendable]]
     {
         var contents = [[URLResourceKey: any Sendable]]()
-        let dir = try SMB2Directory(path.canonical, on: context)
+        let dir = try SMB2Directory(path.canonical, on: client)
         for ent in dir {
             let name = String(cString: ent.name)
             if [".", ".."].contains(name) { continue }
@@ -1505,7 +1514,7 @@ extension SMB2Manager {
             for subDir in subDirectories {
                 try contents.append(
                     contentsOf: listDirectory(
-                        context: context, path: subDir.path.unwrap(), recursive: true
+                        client: client, path: subDir.path.unwrap(), recursive: true
                     )
                 )
             }
@@ -1515,18 +1524,18 @@ extension SMB2Manager {
     }
 
     private func recursiveCopyIterator(
-        context: SMB2Client, fromPath path: String, toPath: String, recursive: Bool,
+        client: SMB2Client, fromPath path: String, toPath: String, recursive: Bool,
         progress: ReadProgressHandler,
         handle: (
-            _ context: SMB2Client, _ path: String, _ toPath: String,
+            _ client: SMB2Client, _ path: String, _ toPath: String,
             _ progress: CopyProgressHandler
         ) throws -> Int64?
     ) throws {
-        let stat = try context.stat(path)
+        let stat = try client.stat(path)
         if stat.isDirectory {
-            try context.mkdir(toPath)
+            try client.mkdir(toPath)
 
-            let list = try listDirectory(context: context, path: path, recursive: recursive)
+            let list = try listDirectory(client: client, path: path, recursive: recursive)
                 .sortedByPath(.orderedAscending)
             let overallSize = list.overallSize
 
@@ -1536,10 +1545,10 @@ extension SMB2Manager {
                 let destPath = itemPath.canonical
                     .replacingOccurrences(of: path, with: toPath, options: .anchored)
                 if item.isDirectory {
-                    try context.mkdir(destPath)
+                    try client.mkdir(destPath)
                 } else {
                     let bytes = try handle(
-                        context, itemPath, destPath
+                        client, itemPath, destPath
                     ) { [totalCopied] bytes, _, _ -> Int64? in
                         if let progress {
                             return progress(totalCopied + Int64(bytes), overallSize) ? bytes : nil
@@ -1556,7 +1565,7 @@ extension SMB2Manager {
             }
         } else {
             _ = try handle(
-                context, path, toPath
+                client, path, toPath
             ) { bytes, soFar, total -> Int64? in
                 if let progress {
                     return progress(soFar, total) ? bytes : nil
@@ -1568,9 +1577,9 @@ extension SMB2Manager {
     }
 
     private func copyFile(
-        context: SMB2Client, fromPath path: String, toPath: String, progress: CopyProgressHandler
+        client: SMB2Client, fromPath path: String, toPath: String, progress: CopyProgressHandler
     ) throws -> Int64? {
-        let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let fileSource = try SMB2FileHandle(forReadingAtPath: path, on: client)
         let size = try Int64(fileSource.fstat().smb2_size)
         let sourceKey: IOCtl.RequestResumeKey = try fileSource.fcntl(command: .srvRequestResumeKey)
         // TODO: Get chunk size from server
@@ -1581,7 +1590,7 @@ extension SMB2Manager {
                 length: min(UInt32(UInt64(size) - $0), UInt32(chunkSize))
             )
         }
-        let fileDest = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
+        let fileDest = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: client)
         var shouldContinue = true
         for chunk in chunkArray {
             let chunkCopy = IOCtl.SrvCopyChunkCopy(sourceKey: sourceKey.resumeKey, chunks: [chunk])
@@ -1599,11 +1608,11 @@ extension SMB2Manager {
     }
 
     private func copyContentsOfFile(
-        context: SMB2Client, fromPath path: String, toPath: String, progress: CopyProgressHandler
+        client: SMB2Client, fromPath path: String, toPath: String, progress: CopyProgressHandler
     ) throws -> Int64? {
-        let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let fileRead = try SMB2FileHandle(forReadingAtPath: path, on: client)
         let size = try Int64(fileRead.fstat().smb2_size)
-        let fileWrite = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
+        let fileWrite = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: client)
         var shouldContinue = true
         var written = 0
         while shouldContinue {
@@ -1619,34 +1628,34 @@ extension SMB2Manager {
         return shouldContinue ? Int64(written) : nil
     }
 
-    private func removeDirectory(context: SMB2Client, path: String, recursive: Bool) throws {
+    private func removeDirectory(client: SMB2Client, path: String, recursive: Bool) throws {
         if recursive {
             // To delete directory recursively, first we list directory contents recursively,
             // Then sort path descending which will put child files before containing directory,
             // Then we will unlink/rmdir every entry.
             //
             // This block will only delete children of directory, the path itself will removed after if block.
-            let list = try listDirectory(context: context, path: path, recursive: true)
+            let list = try listDirectory(client: client, path: path, recursive: true)
                 .sortedByPath(.orderedDescending)
 
             for item in list {
                 let itemPath = try item.path.unwrap()
                 if item.isDirectory {
-                    try context.rmdir(itemPath)
+                    try client.rmdir(itemPath)
                 } else {
-                    try context.unlink(itemPath)
+                    try client.unlink(itemPath)
                 }
             }
         }
 
-        try context.rmdir(path)
+        try client.rmdir(path)
     }
 
     private func read(
-        context: SMB2Client, path: String, range: Range<Int64> = 0..<Int64.max,
+        client: SMB2Client, path: String, range: Range<Int64> = 0..<Int64.max,
         to stream: OutputStream, progress: ReadProgressHandler
     ) throws {
-        let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let file = try SMB2FileHandle(forReadingAtPath: path, on: client)
         let filesize = try Int64(file.fstat().smb2_size)
         let length = range.upperBound - range.lowerBound
         let size = min(length, filesize - range.lowerBound)
@@ -1678,16 +1687,16 @@ extension SMB2Manager {
     }
 
     private func write(
-        context: SMB2Client, from stream: InputStream, toPath: String,
+        client: SMB2Client, from stream: InputStream, toPath: String,
         offset: Int64? = nil, chunkSize: Int = 0, progress: WriteProgressHandler
     ) throws {
         let file: SMB2FileHandle
         if let offset {
-            try context.truncate(toPath, toLength: .init(offset))
-            file = try SMB2FileHandle(forOutputAtPath: toPath, on: context)
+            try client.truncate(toPath, toLength: .init(offset))
+            file = try SMB2FileHandle(forOutputAtPath: toPath, on: client)
             try file.lseek(offset: offset, whence: .set)
         } else {
-            file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: context)
+            file = try SMB2FileHandle(forCreatingIfNotExistsAtPath: toPath, on: client)
         }
         let chunkSize = chunkSize > 0 ? chunkSize : file.optimizedWriteSize
         var totalWritten: UInt64 = 0

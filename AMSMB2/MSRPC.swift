@@ -10,7 +10,7 @@
 import Foundation
 
 enum MSRPC {
-    struct NetShareEnumAllLevel1: IOCtlReply {
+    struct NetShareEnumAllLevel1: DecodableResponse {
         let shares: [SMB2Share]
 
         init(shares: [SMB2Share]) {
@@ -113,7 +113,7 @@ enum MSRPC {
         }
     }
 
-    struct DCEHeader: IOCtlArgument {
+    struct DCEHeader: EncodableArgument {
         enum Command: UInt8 {
             case request = 0x00
             case bind = 0x0b
@@ -155,7 +155,7 @@ enum MSRPC {
         }
     }
 
-    struct SrvsvcBindData: IOCtlArgument {
+    struct SrvsvcBindData: EncodableArgument {
         typealias Element = UInt8
 
         var regions: [Data] {
@@ -189,7 +189,7 @@ enum MSRPC {
         }
     }
 
-    struct NetShareEnumAllRequest: IOCtlArgument {
+    struct NetShareEnumAllRequest: EncodableArgument {
         typealias Element = UInt8
 
         let serverName: String

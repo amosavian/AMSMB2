@@ -9,6 +9,7 @@
 
 import Foundation
 import SMB2
+import SMB2.Raw
 
 typealias smb2fh = OpaquePointer
 
@@ -16,32 +17,32 @@ typealias smb2fh = OpaquePointer
 let O_SYMLINK: Int32 = O_NOFOLLOW
 #endif
 
-final class SMB2FileHandle {
-    private var context: SMB2Client
+final class SMB2FileHandle: @unchecked Sendable {
+    private var client: SMB2Client
     private var handle: smb2fh?
 
-    convenience init(forReadingAtPath path: String, on context: SMB2Client) throws {
-        try self.init(path, flags: O_RDONLY, on: context)
+    convenience init(forReadingAtPath path: String, on client: SMB2Client) throws {
+        try self.init(path, flags: O_RDONLY, on: client)
     }
 
-    convenience init(forWritingAtPath path: String, on context: SMB2Client) throws {
-        try self.init(path, flags: O_WRONLY, on: context)
+    convenience init(forWritingAtPath path: String, on client: SMB2Client) throws {
+        try self.init(path, flags: O_WRONLY, on: client)
     }
 
-    convenience init(forUpdatingAtPath path: String, on context: SMB2Client) throws {
-        try self.init(path, flags: O_RDWR | O_APPEND, on: context)
+    convenience init(forUpdatingAtPath path: String, on client: SMB2Client) throws {
+        try self.init(path, flags: O_RDWR | O_APPEND, on: client)
     }
 
-    convenience init(forOverwritingAtPath path: String, on context: SMB2Client) throws {
-        try self.init(path, flags: O_WRONLY | O_CREAT | O_TRUNC, on: context)
+    convenience init(forOverwritingAtPath path: String, on client: SMB2Client) throws {
+        try self.init(path, flags: O_WRONLY | O_CREAT | O_TRUNC, on: client)
     }
 
-    convenience init(forOutputAtPath path: String, on context: SMB2Client) throws {
-        try self.init(path, flags: O_WRONLY | O_CREAT, on: context)
+    convenience init(forOutputAtPath path: String, on client: SMB2Client) throws {
+        try self.init(path, flags: O_WRONLY | O_CREAT, on: client)
     }
     
-    convenience init(forCreatingIfNotExistsAtPath path: String, on context: SMB2Client) throws {
-        try self.init(path, flags: O_RDWR | O_CREAT | O_EXCL, on: context)
+    convenience init(forCreatingIfNotExistsAtPath path: String, on client: SMB2Client) throws {
+        try self.init(path, flags: O_RDWR | O_CREAT | O_EXCL, on: client)
     }
 
     convenience init(
@@ -52,27 +53,35 @@ final class SMB2FileHandle {
         fileAttributes: Attributes = [],
         shareAccess: ShareAccess = [.read, .write],
         createDisposition: CreateDisposition,
-        createOptions: CreateOptions = [], on context: SMB2Client
+        createOptions: CreateOptions = [], on client: SMB2Client
     ) throws {
-        let (_, result) = try context.async_await_pdu(dataHandler: SMB2FileID.init) {
-            context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-            path.replacingOccurrences(of: "/", with: "\\").withCString { path in
-                var req = smb2_create_request()
-                req.requested_oplock_level = opLock.rawValue
-                req.impersonation_level = impersonation.rawValue
-                req.desired_access = desiredAccess.rawValue
-                req.file_attributes = fileAttributes.rawValue
-                req.share_access = shareAccess.rawValue
-                req.create_disposition = createDisposition.rawValue
-                req.create_options = createOptions.rawValue
-                req.name = path
-                return smb2_cmd_create_async(context, &req, SMB2Client.generic_handler, cbPtr)
+        var leaseData = opLock.leaseContext.map { Data($0.regions.joined()) } ?? .init()
+        
+        let (_, result) = try withExtendedLifetime(leaseData) {
+            try path.replacingOccurrences(of: "/", with: "\\").withCString { path in
+                try client.async_await_pdu(dataHandler: SMB2FileID.init) {
+                    context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+                    var req = smb2_create_request()
+                    req.requested_oplock_level = opLock.lockLevel
+                    req.impersonation_level = impersonation.rawValue
+                    req.desired_access = desiredAccess.rawValue
+                    req.file_attributes = fileAttributes.rawValue
+                    req.share_access = shareAccess.rawValue
+                    req.create_disposition = createDisposition.rawValue
+                    req.create_options = createOptions.rawValue
+                    req.name = path
+                    leaseData.withUnsafeMutableBytes {
+                        req.create_context = $0.count > 0 ? $0.baseAddress?.assumingMemoryBound(to: UInt8.self) : nil
+                        req.create_context_length = UInt32($0.count)
+                    }
+                    return smb2_cmd_create_async(context, &req, SMB2Client.generic_handler, cbPtr)
+                }
             }
         }
-        try self.init(fileDescriptor: result.rawValue, on: context)
+        try self.init(fileDescriptor: result.rawValue, on: client)
     }
     
-    convenience init(path: String, flags: Int32, on context: SMB2Client) throws {
+    convenience init(path: String, flags: Int32, lock: OpLock = .none, on client: SMB2Client) throws {
         var desiredAccess: Access
         let shareAccess: ShareAccess
         let createDisposition: CreateDisposition
@@ -123,30 +132,37 @@ final class SMB2FileHandle {
             shareAccess: shareAccess,
             createDisposition: createDisposition,
             createOptions: createOptions,
-            on: context
+            on: client
         )
     }
 
-    init(fileDescriptor: smb2_file_id, on context: SMB2Client) throws {
-        self.context = context
+    init(fileDescriptor: smb2_file_id, on client: SMB2Client) throws {
+        self.client = client
         var fileDescriptor = fileDescriptor
-        self.handle = smb2_fh_from_file_id(context.context, &fileDescriptor)
+        self.handle = smb2_fh_from_file_id(client.context, &fileDescriptor)
     }
 
     // This initializer does not support O_DIRECTORY and O_SYMLINK.
-    private init(_ path: String, flags: Int32, on context: SMB2Client) throws {
-        let (_, handle) = try context.async_await(dataHandler: OpaquePointer.init) {
+    private init(_ path: String, flags: Int32, lock: OpLock = .none, on client: SMB2Client) throws {
+        let (_, handle) = try client.async_await(dataHandler: OpaquePointer.init) {
             context, cbPtr -> Int32 in
-            smb2_open_async(context, path.canonical, flags, SMB2Client.generic_handler, cbPtr)
+            var leaseKey = lock.leaseContext.map { Data(value: $0.key) } ?? Data()
+            return leaseKey.withUnsafeMutableBytes {
+                smb2_open_async_with_oplock_or_lease(
+                    context, path.canonical, flags,
+                    lock.lockLevel, lock.leaseState.rawValue,
+                    $0.count > 0 ? $0.baseAddress : nil,
+                    SMB2Client.generic_handler, cbPtr)
+            }
         }
-        self.context = context
+        self.client = client
         self.handle = handle
     }
 
     deinit {
         do {
             let handle = try self.handle.unwrap()
-            try context.async_await { context, cbPtr -> Int32 in
+            try client.async_await { context, cbPtr -> Int32 in
                 smb2_close_async(context, handle, SMB2Client.generic_handler, cbPtr)
             }
         } catch {}
@@ -159,7 +175,7 @@ final class SMB2FileHandle {
     func close() {
         guard let handle = handle else { return }
         self.handle = nil
-        _ = try? context.withThreadSafeContext { context in
+        _ = try? client.withThreadSafeContext { context in
             smb2_close(context, handle)
         }
     }
@@ -167,7 +183,7 @@ final class SMB2FileHandle {
     func fstat() throws -> smb2_stat_64 {
         let handle = try handle.unwrap()
         var st = smb2_stat_64()
-        try context.async_await { context, cbPtr -> Int32 in
+        try client.async_await { context, cbPtr -> Int32 in
             smb2_fstat_async(context, handle, &st, SMB2Client.generic_handler, cbPtr)
         }
         return st
@@ -175,7 +191,7 @@ final class SMB2FileHandle {
     
     func set(stat: smb2_stat_64, attributes: Attributes) throws {
         let handle = try handle.unwrap()
-        try context.async_await_pdu(dataHandler: EmptyReply.init) {
+        try client.async_await_pdu(dataHandler: EmptyReply.init) {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
             var bfi = smb2_file_basic_info(
                 creation_time: smb2_timeval(
@@ -210,13 +226,13 @@ final class SMB2FileHandle {
 
     func ftruncate(toLength: UInt64) throws {
         let handle = try handle.unwrap()
-        try context.async_await { context, cbPtr -> Int32 in
+        try client.async_await { context, cbPtr -> Int32 in
             smb2_ftruncate_async(context, handle, toLength, SMB2Client.generic_handler, cbPtr)
         }
     }
 
     var maxReadSize: Int {
-        (try? Int(context.withThreadSafeContext(smb2_get_max_read_size))) ?? -1
+        (try? Int(client.withThreadSafeContext(smb2_get_max_read_size))) ?? -1
     }
 
     /// This value allows softer streaming
@@ -227,8 +243,8 @@ final class SMB2FileHandle {
     @discardableResult
     func lseek(offset: Int64, whence: SeekWhence) throws -> Int64 {
         let handle = try handle.unwrap()
-        let result = smb2_lseek(context.context, handle, offset, whence.rawValue, nil)
-        try POSIXError.throwIfError(result, description: context.error)
+        let result = smb2_lseek(client.context, handle, offset, whence.rawValue, nil)
+        try POSIXError.throwIfError(result, description: client.error)
         return result
     }
 
@@ -241,7 +257,7 @@ final class SMB2FileHandle {
         let count = length > 0 ? length : optimizedReadSize
         var buffer = Data(repeating: 0, count: count)
         let result = try buffer.withUnsafeMutableBytes { buffer in
-            try context.async_await { context, cbPtr -> Int32 in
+            try client.async_await { context, cbPtr -> Int32 in
                 smb2_read_async(
                     context, handle, buffer.baseAddress, .init(buffer.count), SMB2Client.generic_handler, cbPtr
                 )
@@ -259,7 +275,7 @@ final class SMB2FileHandle {
         let count = length > 0 ? length : optimizedReadSize
         var buffer = Data(repeating: 0, count: count)
         let result = try buffer.withUnsafeMutableBytes { buffer in
-            try context.async_await { context, cbPtr -> Int32 in
+            try client.async_await { context, cbPtr -> Int32 in
                 smb2_pread_async(
                     context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Client.generic_handler,
                     cbPtr
@@ -270,7 +286,7 @@ final class SMB2FileHandle {
     }
 
     var maxWriteSize: Int {
-        (try? Int(context.withThreadSafeContext(smb2_get_max_write_size))) ?? -1
+        (try? Int(client.withThreadSafeContext(smb2_get_max_write_size))) ?? -1
     }
 
     var optimizedWriteSize: Int {
@@ -284,7 +300,7 @@ final class SMB2FileHandle {
 
         let handle = try handle.unwrap()
         let result = try Data(data).withUnsafeBytes { buffer in
-            try context.async_await { context, cbPtr -> Int32 in
+            try client.async_await { context, cbPtr -> Int32 in
                 smb2_write_async(
                     context, handle, buffer.baseAddress, .init(buffer.count), SMB2Client.generic_handler, cbPtr
                 )
@@ -301,7 +317,7 @@ final class SMB2FileHandle {
 
         let handle = try handle.unwrap()
         let result = try Data(data).withUnsafeBytes { buffer in
-            try context.async_await { context, cbPtr -> Int32 in
+            try client.async_await { context, cbPtr -> Int32 in
                 smb2_pwrite_async(
                     context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Client.generic_handler,
                     cbPtr
@@ -314,14 +330,14 @@ final class SMB2FileHandle {
 
     func fsync() throws {
         let handle = try handle.unwrap()
-        try context.async_await { context, cbPtr -> Int32 in
+        try client.async_await { context, cbPtr -> Int32 in
             smb2_fsync_async(context, handle, SMB2Client.generic_handler, cbPtr)
         }
     }
     
     func flock(_ op: LockOperation) throws {
         let handle = try handle.unwrap()
-        try context.async_await_pdu { context, dataPtr in
+        try client.async_await_pdu { context, dataPtr in
             var element = smb2_lock_element(
                 offset: 0,
                 length: 0,
@@ -343,50 +359,44 @@ final class SMB2FileHandle {
     
     func changeNotify(for type: SMB2FileChangeType) throws {
         let handle = try handle.unwrap()
-        try context.async_await_pdu { context, cbPtr in
+        try client.async_await_pdu { context, cbPtr in
             var request = smb2_change_notify_request(
                 flags: UInt16(type.contains([.recursive]) ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
-                output_buffer_length: 0,
+                output_buffer_length: 32768,
                 file_id: smb2_get_file_id(handle).pointee,
-                completion_filter: type.rawValue & 0x00ff_ffff
+                completion_filter: type.completionFilter
             )
             return smb2_cmd_change_notify_async(context, &request, SMB2Client.generic_handler, cbPtr)
         }
     }
 
     @discardableResult
-    func fcntl<DataType: DataProtocol, R: IOCtlReply>(
-        command: IOCtl.Command, args: DataType, needsReply _: Bool = true
+    func fcntl<DataType: DataProtocol, R: DecodableResponse>(
+        command: IOCtl.Command, args: DataType = Data()
     ) throws -> R {
-        var inputBuffer = [UInt8](args)
-        return try inputBuffer.withUnsafeMutableBytes { buf in
-            var req = smb2_ioctl_request(
-                ctl_code: command.rawValue,
-                file_id: fileId.uuid,
-                input_offset: 0, input_count: .init(buf.count),
-                max_input_response: 0,
-                output_offset: 0, output_count: UInt32(context.maximumTransactionSize),
-                max_output_response: 65535,
-                flags: .init(SMB2_0_IOCTL_IS_FSCTL),
-                input: buf.baseAddress
-            )
-            return try context.async_await_pdu(dataHandler: R.init) {
-                context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-                smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
-            }.data
+        try withExtendedLifetime(args) { args in
+            var inputBuffer = [UInt8](args)
+            return try inputBuffer.withUnsafeMutableBytes { buf in
+                var req = smb2_ioctl_request(
+                    ctl_code: command.rawValue,
+                    file_id: fileId.uuid,
+                    input_offset: 0, input_count: .init(buf.count),
+                    max_input_response: 0,
+                    output_offset: 0, output_count: UInt32(client.maximumTransactionSize),
+                    max_output_response: 65535,
+                    flags: .init(SMB2_0_IOCTL_IS_FSCTL),
+                    input: buf.baseAddress
+                )
+                return try client.async_await_pdu(dataHandler: R.init) {
+                    context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+                    smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
+                }.data
+            }
         }
     }
-
-    func fcntl(command: IOCtl.Command) throws {
-        let _: AnyIOCtlReply = try fcntl(command: command, args: Data(), needsReply: false)
-    }
-
-    func fcntl<DataType: DataProtocol>(command: IOCtl.Command, args: DataType) throws {
-        let _: AnyIOCtlReply = try fcntl(command: command, args: args, needsReply: false)
-    }
-
-    func fcntl<R: IOCtlReply>(command: IOCtl.Command) throws -> R {
-        try fcntl(command: command, args: [])
+    
+    func fcntl<DataType: DataProtocol>(command: IOCtl.Command, args: DataType = Data()) throws {
+        let _: AnyDecodableResponse = try fcntl(command: command, args: args)
     }
 }
 
@@ -441,14 +451,58 @@ extension SMB2FileHandle {
         static let noScrubData = Self(rawValue: SMB2_FILE_ATTRIBUTE_NO_SCRUB_DATA)
     }
     
-    struct OpLock: OptionSet, Sendable {
-        var rawValue: UInt8
+    struct LeaseState: OptionSet, Sendable {
+        var rawValue: UInt32
         
-        static let none = Self(rawValue: SMB2_OPLOCK_LEVEL_NONE)
-        static let ii = Self(rawValue: SMB2_OPLOCK_LEVEL_II)
-        static let exclusive = Self(rawValue: SMB2_OPLOCK_LEVEL_EXCLUSIVE)
-        static let batch = Self(rawValue: SMB2_OPLOCK_LEVEL_BATCH)
-        static let lease = Self(rawValue: SMB2_OPLOCK_LEVEL_LEASE)
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        static let none = Self(rawValue: SMB2_LEASE_NONE)
+        static let readCaching = Self(rawValue: SMB2_LEASE_READ_CACHING)
+        static let handleCaching = Self(rawValue: SMB2_LEASE_HANDLE_CACHING)
+        static let writeCaching = Self(rawValue: SMB2_LEASE_WRITE_CACHING)
+    }
+    
+    enum OpLock: Sendable {
+        case none
+        case ii
+        case exclusive
+        case batch
+        case lease(state: LeaseState, key: UUID)
+        
+        var lockLevel: UInt8 {
+            switch self {
+            case .none:
+                .init(SMB2_OPLOCK_LEVEL_NONE)
+            case .ii:
+                .init(SMB2_OPLOCK_LEVEL_II)
+            case .exclusive:
+                .init(SMB2_OPLOCK_LEVEL_EXCLUSIVE)
+            case .batch:
+                .init(SMB2_OPLOCK_LEVEL_BATCH)
+            case .lease:
+                .init(SMB2_OPLOCK_LEVEL_LEASE)
+            }
+        }
+        
+        var leaseState: LeaseState {
+            switch self {
+            case .lease(let state, _):
+                state
+            default:
+                .none
+            }
+        }
+        
+        var leaseContext: CreateLeaseContext? {
+            switch self {
+            case .lease(let state, let key):
+                .init(state: state, key: key)
+            default:
+                nil
+            }
+        }
     }
     
     struct ImpersonationLevel: RawRepresentable, Hashable, Sendable {
@@ -557,6 +611,45 @@ extension SMB2FileHandle {
         static let openReparsePoint = Self(rawValue: SMB2_FILE_OPEN_REPARSE_POINT)
         static let openNoRecall = Self(rawValue: SMB2_FILE_OPEN_NO_RECALL)
         static let openForFreeSpaceQuery = Self(rawValue: SMB2_FILE_OPEN_FOR_FREE_SPACE_QUERY)
+    }
+    
+    struct CreateLeaseContext: EncodableArgument {
+        typealias Element = UInt8
+        
+        private static let headerLength = 24
+        private static let leaseLength = UInt32(SMB2_CREATE_REQUEST_LEASE_SIZE)
+        
+        var state: LeaseState
+        var key: UUID
+        var parentKey: UUID?
+        
+        private static let zeroUUID = UUID(uuid: uuid_t(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        
+        var regions: [Data] {
+            [
+                .init(value: 0 as UInt32), // chain offset
+                .init(value: 16 as UInt16), // tag offset
+                .init(value: 4 as UInt16), // tag length lo
+                .init(value: 0 as UInt16), // tag length up
+                .init(value: UInt16(Self.headerLength)), // context offset
+                .init(value: UInt32(Self.leaseLength)), // context length
+                .init(value: 0x5271_4c73 as UInt32),
+                .init(value: 0 as UInt32),
+                .init(value: key),
+                .init(value: state.rawValue),
+                .init(value: parentKey != nil ? 0x0000_0004 : 0 as UInt32), // Flags
+                .init(value: 0 as UInt64), // LeaseDuration
+                .init(value: parentKey ?? Self.zeroUUID),
+                .init(value: 4 as UInt16), // Epoch
+                .init(value: 0 as UInt16), // Reserved
+            ]
+        }
+        
+        init(state: LeaseState, key: UUID, parentKey: UUID? = nil) {
+            self.state = state
+            self.key = key
+            self.parentKey = parentKey
+        }
     }
 }
 

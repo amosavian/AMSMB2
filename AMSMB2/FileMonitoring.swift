@@ -13,6 +13,10 @@ import SMB2
 struct SMB2FileChangeType: OptionSet, Sendable {
     public var rawValue: UInt32
     
+    var completionFilter: UInt32 {
+        rawValue & 0x00ff_ffff
+    }
+    
     public init(rawValue: UInt32) {
         self.rawValue = rawValue
     }
