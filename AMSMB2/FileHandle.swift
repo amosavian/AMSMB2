@@ -82,56 +82,13 @@ final class SMB2FileHandle: @unchecked Sendable {
     }
     
     convenience init(path: String, flags: Int32, lock: OpLock = .none, on client: SMB2Client) throws {
-        var desiredAccess: Access
-        let shareAccess: ShareAccess
-        let createDisposition: CreateDisposition
-        var createOptions: CreateOptions = []
-        
-        switch flags & O_ACCMODE {
-        case O_RDWR:
-            desiredAccess = [.read, .write, .delete]
-            shareAccess = [.read, .write]
-        case O_WRONLY:
-            desiredAccess = [.write, .delete]
-            shareAccess = [.write]
-        default:
-            desiredAccess = [.read]
-            shareAccess = [.read]
-        }
-        
-        if (flags & O_CREAT) != 0 {
-            if (flags & O_EXCL) != 0 {
-                createDisposition = .create
-            } else if (flags & O_TRUNC) != 0 {
-                createDisposition = .overwriteIfExists
-            } else {
-                createDisposition = .openIfExists
-            }
-        } else {
-            if (flags & O_TRUNC) != 0 {
-                createDisposition = .overwrite
-            } else {
-                createDisposition = .open
-            }
-        }
-        
-        if (flags & O_SYNC) != 0 {
-            desiredAccess.insert(.synchronize)
-            createOptions.insert(.noIntermediateBuffering)
-        }
-        if (flags & O_DIRECTORY) != 0 {
-            createOptions.insert(.directoryFile)
-        }
-        if (flags & O_SYMLINK) != 0 {
-            createOptions.insert(.openReparsePoint)
-        }
-        
         try self.init(
             path: path,
-            desiredAccess: desiredAccess,
-            shareAccess: shareAccess,
-            createDisposition: createDisposition,
-            createOptions: createOptions,
+            opLock: lock,
+            desiredAccess: .init(flags: flags),
+            shareAccess: .init(flags: flags),
+            createDisposition: .init(flags: flags),
+            createOptions: .init(flags: flags),
             on: client
         )
     }
@@ -151,8 +108,9 @@ final class SMB2FileHandle: @unchecked Sendable {
                 smb2_open_async_with_oplock_or_lease(
                     context, path.canonical, flags,
                     lock.lockLevel, lock.leaseState.rawValue,
-                    $0.count > 0 ? $0.baseAddress : nil,
-                    SMB2Client.generic_handler, cbPtr)
+                    !$0.isEmpty ? $0.baseAddress : nil,
+                    SMB2Client.generic_handler, cbPtr
+                )
             }
         }
         self.client = client
@@ -190,7 +148,6 @@ final class SMB2FileHandle: @unchecked Sendable {
     }
     
     func set(stat: smb2_stat_64, attributes: Attributes) throws {
-        let handle = try handle.unwrap()
         try client.async_await_pdu(dataHandler: EmptyReply.init) {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
             var bfi = smb2_file_basic_info(
@@ -214,7 +171,7 @@ final class SMB2FileHandle: @unchecked Sendable {
             )
             
             var req = smb2_set_info_request()
-            req.file_id = smb2_get_file_id(handle).pointee
+            req.file_id = fileId.uuid
             req.info_type = .init(SMB2_0_INFO_FILE)
             req.file_info_class = .init(SMB2_FILE_BASIC_INFORMATION)
             return withUnsafeMutablePointer(to: &bfi) { bfi in
@@ -336,7 +293,6 @@ final class SMB2FileHandle: @unchecked Sendable {
     }
     
     func flock(_ op: LockOperation) throws {
-        let handle = try handle.unwrap()
         try client.async_await_pdu { context, dataPtr in
             var element = smb2_lock_element(
                 offset: 0,
@@ -349,7 +305,7 @@ final class SMB2FileHandle: @unchecked Sendable {
                     lock_count: 1,
                     lock_sequence_number: 0,
                     lock_sequence_index: 0,
-                    file_id: smb2_get_file_id(handle).pointee,
+                    file_id: fileId.uuid,
                     locks: element
                 )
                 return smb2_cmd_lock_async(context, &request, SMB2Client.generic_handler, dataPtr)
@@ -358,12 +314,11 @@ final class SMB2FileHandle: @unchecked Sendable {
     }
     
     func changeNotify(for type: SMB2FileChangeType) throws {
-        let handle = try handle.unwrap()
         try client.async_await_pdu { context, cbPtr in
             var request = smb2_change_notify_request(
                 flags: UInt16(type.contains([.recursive]) ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
                 output_buffer_length: 32768,
-                file_id: smb2_get_file_id(handle).pointee,
+                file_id: fileId.uuid,
                 completion_filter: type.completionFilter
             )
             return smb2_cmd_change_notify_async(context, &request, SMB2Client.generic_handler, cbPtr)
@@ -517,6 +472,24 @@ extension SMB2FileHandle {
     struct Access: OptionSet, Sendable {
         var rawValue: UInt32
         
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(flags: Int32) {
+            switch flags & O_ACCMODE {
+            case O_RDWR:
+                self = [.read, .write, .delete]
+            case O_WRONLY:
+                self = [.write, .delete]
+            default:
+                self = [.read]
+            }
+            if (flags & O_SYNC) != 0 {
+                insert(.synchronize)
+            }
+        }
+        
         /* Access mask common to all objects */
         static let fileReadEA = Self(rawValue: SMB2_FILE_READ_EA)
         static let fileWriteEA = Self(rawValue: SMB2_FILE_WRITE_EA)
@@ -555,6 +528,21 @@ extension SMB2FileHandle {
     struct ShareAccess: OptionSet, Sendable {
         var rawValue: UInt32
         
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(flags: Int32) {
+            switch flags & O_ACCMODE {
+            case O_RDWR:
+                self = [.read, .write]
+            case O_WRONLY:
+                self = [.write]
+            default:
+                self = [.read]
+            }
+        }
+        
         static let read = Self(rawValue: SMB2_FILE_SHARE_READ)
         static let write = Self(rawValue: SMB2_FILE_SHARE_WRITE)
         static let delete = Self(rawValue: SMB2_FILE_SHARE_DELETE)
@@ -562,6 +550,28 @@ extension SMB2FileHandle {
     
     struct CreateDisposition: RawRepresentable, Sendable {
         var rawValue: UInt32
+        
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(flags: Int32) {
+            if (flags & O_CREAT) != 0 {
+                if (flags & O_EXCL) != 0 {
+                    self = .create
+                } else if (flags & O_TRUNC) != 0 {
+                    self = .overwriteIfExists
+                } else {
+                    self = .openIfExists
+                }
+            } else {
+                if (flags & O_TRUNC) != 0 {
+                    self = .overwrite
+                } else {
+                    self = .open
+                }
+            }
+        }
         
         /// If the file already exists, supersede it. Otherwise, create the file.
         /// This value SHOULD NOT be used for a printer object.
@@ -589,6 +599,23 @@ extension SMB2FileHandle {
     
     struct CreateOptions: OptionSet, Sendable {
         var rawValue: UInt32
+        
+        init(rawValue: UInt32) {
+            self.rawValue = rawValue
+        }
+        
+        init(flags: Int32) {
+            self = []
+            if (flags & O_SYNC) != 0 {
+                insert(.noIntermediateBuffering)
+            }
+            if (flags & O_DIRECTORY) != 0 {
+                insert(.directoryFile)
+            }
+            if (flags & O_SYMLINK) != 0 {
+                insert(.openReparsePoint)
+            }
+        }
         
         static let directoryFile = Self(rawValue: SMB2_FILE_DIRECTORY_FILE)
         static let writeThrough = Self(rawValue: SMB2_FILE_WRITE_THROUGH)
@@ -622,9 +649,7 @@ extension SMB2FileHandle {
         var state: LeaseState
         var key: UUID
         var parentKey: UUID?
-        
-        private static let zeroUUID = UUID(uuid: uuid_t(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
-        
+                
         var regions: [Data] {
             [
                 .init(value: 0 as UInt32), // chain offset
@@ -639,7 +664,7 @@ extension SMB2FileHandle {
                 .init(value: state.rawValue),
                 .init(value: parentKey != nil ? 0x0000_0004 : 0 as UInt32), // Flags
                 .init(value: 0 as UInt64), // LeaseDuration
-                .init(value: parentKey ?? Self.zeroUUID),
+                .init(value: parentKey ?? .zero),
                 .init(value: 4 as UInt16), // Epoch
                 .init(value: 0 as UInt16), // Reserved
             ]
@@ -718,4 +743,8 @@ extension smb2_stat_64 {
             timespec(tv_sec: Int(smb2_btime), tv_nsec: Int(smb2_btime_nsec))
         )
     }
+}
+
+extension UUID {
+    static let zero = UUID(uuid: uuid_t(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 }

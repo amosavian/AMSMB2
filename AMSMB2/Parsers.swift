@@ -22,14 +22,14 @@ extension String {
     }
 }
 
- extension Array where Element == SMB2Share {
-     init(_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
-         defer { smb2_free_data(client.context, dataPtr) }
-         let result = try dataPtr.unwrap().assumingMemoryBound(to: srvsvc_NetrShareEnum_rep.self).pointee
-         self = Array(result.ses.ShareInfo.Level1.Buffer.pointee)
+extension Array where Element == SMB2Share {
+    init(_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
+        defer { smb2_free_data(client.context, dataPtr) }
+        let result = try dataPtr.unwrap().assumingMemoryBound(to: srvsvc_NetrShareEnum_rep.self).pointee
+        self = Array(result.ses.ShareInfo.Level1.Buffer.pointee)
     }
 
-     init(_ ctr1: srvsvc_SHARE_INFO_1_carray) {
+    init(_ ctr1: srvsvc_SHARE_INFO_1_carray) {
         self = [srvsvc_SHARE_INFO_1](
             UnsafeBufferPointer(start: ctr1.share_info_1, count: Int(ctr1.max_count))
         ).map {
@@ -40,7 +40,7 @@ extension String {
             )
         }
     }
- }
+}
 
 extension OpaquePointer {
     init(_: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {

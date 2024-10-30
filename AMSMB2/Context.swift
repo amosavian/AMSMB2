@@ -322,8 +322,8 @@ extension SMB2Client {
         }
     }
     
-    func unlink(_ path: String, flags: Int32) throws {
-        let file = try SMB2FileHandle(path: path, flags: O_RDWR | flags, on: self)
+    private func unlinkSymlink(_ path: String) throws {
+        let file = try SMB2FileHandle(path: path, flags: O_RDWR | O_SYMLINK, on: self)
         var inputBuffer = [UInt8](repeating: 0, count: 8)
         inputBuffer[0] = 0x01 // DeletePending set to true
         try withExtendedLifetime(file) { file in
@@ -343,6 +343,19 @@ extension SMB2Client {
                     smb2_cmd_set_info_async(context, &req, SMB2Client.generic_handler, cbPtr)
                 }
             }
+        }
+    }
+    
+    func unlink(_ path: String, type: smb2_stat_64.ResourceType = .file) throws {
+        switch type {
+        case .directory:
+            throw POSIXError(.EFTYPE, description: "Use rmdir() to delete a directory.")
+        case .file:
+            try unlink(path)
+        case .link:
+            try unlinkSymlink(path)
+        default:
+            preconditionFailure("Not supported file type.")
         }
     }
 

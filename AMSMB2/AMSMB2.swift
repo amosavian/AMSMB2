@@ -735,7 +735,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                 try client.unlink(path)
             } catch POSIXError.ENOLINK, POSIXError.ENETRESET {
                 // Try to remove file as a symbolic link.
-                try client.unlink(path, flags: O_SYMLINK)
+                try client.unlink(path, type: .link)
             }
         }
     }
@@ -773,10 +773,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
             switch stat.resourceType {
             case .directory:
                 try self.removeDirectory(client: client, path: path, recursive: true)
-            case .file:
-                try client.unlink(path)
-            case .link:
-                try client.unlink(path, flags: O_SYMLINK)
+            case .file, .link:
+                try client.unlink(path, type: stat.resourceType)
             default:
                 break
             }
