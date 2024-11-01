@@ -999,7 +999,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                 let file = try SMB2FileHandle(forReadingAtPath: path, on: client)
                 try file.lseek(offset: range.lowerBound, whence: .set)
                 while offset < range.upperBound {
-                    let data = try file.read()
+                    // Read optimal read size, or less if less is remaining.
+                    let remainingLength = range.upperBound - offset
+                    let optimizedReadSize = file.optimizedReadSize
+                    let length = remainingLength < optimizedReadSize ? Int(remainingLength) : optimizedReadSize
+                    let data = try file.read(length: length)
                     if data.isEmpty {
                         break
                     }
