@@ -3,13 +3,11 @@
 
 This is small Swift library for iOS, macOS and tvOS which wraps [libsmb2](https://github.com/sahlberg/libsmb2) and allows to connect a SMB2/3 share and do file operation.
 
-[![Swift Version][swift-image]][swift-url]
-[![Platform][platform-image]](#)
+[![Swift Version Compatibility][swift-version-image]][swift-version-url]
+[![Platform Compatibility ][platform-image]][platform-url]
 [![License][license-image]][license-url]
 [![Release version][release-image]][release-url]
 
-[![Swift Version Compatibility][swift-version-image]][swift-version-url]
-[![Platform Compatibility ][platform-image]][platform-url]
 
 ## Getting Started
 
@@ -99,15 +97,11 @@ While source code shipped with project is MIT licensed, but it has static link t
 
 You **must** link this library dynamically to your app if you intend to distribute your app on App Store.
 
-[swift-image]: https://img.shields.io/badge/swift-5.0-orange.svg
-[swift-url]: https://swift.org/
-[platform-image]: https://img.shields.io/cocoapods/p/AMSMB2.svg
-[license-image]: https://img.shields.io/github/license/amosavian/AMSMB2.svg
-[license-url]: LICENSE
-
 [swift-version-image]: https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Famosavian%2FAMSMB2%2Fbadge%3Ftype%3Dswift-versions
 [swift-version-url]: https://swiftpackageindex.com/amosavian/AMSMB2
 [platform-image]: https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2Famosavian%2FAMSMB2%2Fbadge%3Ftype%3Dplatforms
 [platform-url]: https://swiftpackageindex.com/amosavian/AMSMB2
+[license-image]: https://img.shields.io/github/license/amosavian/AMSMB2.svg
+[license-url]: LICENSE
 [release-image]: https://img.shields.io/github/release/amosavian/AMSMB2.svg
 [release-url]: https://github.com/amosavian/AMSMB2/releases

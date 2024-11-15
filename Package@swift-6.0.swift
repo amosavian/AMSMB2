@@ -1,4 +1,4 @@
-// swift-tools-version:5.8
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
@@ -9,6 +9,7 @@ let package = Package(
         .macCatalyst(.v13),
         .tvOS(.v14),
         .watchOS(.v6),
+        .visionOS(.v1),
     ],
     products: [
         .library(
@@ -28,16 +29,16 @@ let package = Package(
                 "lib/CMakeLists.txt",
                 "lib/libsmb2.syms",
                 "lib/Makefile.am",
-                "lib/Makefile.DC_KOS",
-                "lib/Makefile.PS2_EE",
-                "lib/Makefile.PS2_IOP",
+                "lib/Makefile.AMIGA",
+                "lib/Makefile.AMIGA_AROS",
+                "lib/Makefile.AMIGA_OS3",
                 "lib/Makefile.PS3_PPU",
-                "lib/Makefile.PS4",
+                "lib/ps2",
             ],
             sources: [
                 "lib",
             ],
-            publicHeadersPath: ".",
+            publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("include"),
                 .headerSearchPath("include/apple"),
@@ -64,16 +65,12 @@ let package = Package(
             ],
             path: "AMSMB2Tests"
         ),
-    ],
-    swiftLanguageVersions: [.v5]
+    ]
 )
 
 for target in package.targets {
-    var swiftSettings: [SwiftSetting] = [
-        .enableExperimentalFeature("StrictConcurrency=complete"),
+    let swiftSettings: [SwiftSetting] = [
+        .enableUpcomingFeature("ExistentialAny"),
     ]
-#if swift(>=5.9)
-    swiftSettings.append(.enableUpcomingFeature("ExistentialAny"))
-#endif
     target.swiftSettings = swiftSettings
 }

@@ -1,3 +1,3 @@
 [submodule "Dependencies/libsmb2"]
 	path = Dependencies/libsmb2
-	url = https://github.com/amosavian/libsmb2.git
+	url = https://github.com/sahlberg/libsmb2

@@ -1,4 +1,4 @@
-// swift-tools-version:5.6
+// swift-tools-version:5.9
 import PackageDescription
 
 let package = Package(
@@ -28,19 +28,19 @@ let package = Package(
                 "lib/CMakeLists.txt",
                 "lib/libsmb2.syms",
                 "lib/Makefile.am",
-                "lib/Makefile.DC_KOS",
-                "lib/Makefile.PS2_EE",
-                "lib/Makefile.PS2_IOP",
+                "lib/Makefile.AMIGA",
+                "lib/Makefile.AMIGA_AROS",
+                "lib/Makefile.AMIGA_OS3",
                 "lib/Makefile.PS3_PPU",
-                "lib/Makefile.PS4",
+                "lib/ps2",
             ],
             sources: [
                 "lib",
             ],
-            publicHeadersPath: ".",
+            publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("include"),
-                .headerSearchPath("include/apple"),
+                .headerSearchPath("include/apple", .when(platforms: [.iOS, .macOS, .macCatalyst, .tvOS, .watchOS])),
                 .headerSearchPath("include/smb2"),
                 .headerSearchPath("lib"),
                 .define("_U_", to: "__attribute__((unused))"),
@@ -67,3 +67,13 @@ let package = Package(
     ],
     swiftLanguageVersions: [.v5]
 )
+
+for target in package.targets {
+    var swiftSettings: [SwiftSetting] = [
+        .enableExperimentalFeature("StrictConcurrency=complete"),
+    ]
+#if swift(>=5.9)
+    swiftSettings.append(.enableUpcomingFeature("ExistentialAny"))
+#endif
+    target.swiftSettings = swiftSettings
+}

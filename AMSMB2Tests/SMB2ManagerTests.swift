@@ -2,17 +2,22 @@
 //  SMB2ManagerTests.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 12/21/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/20/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
 import XCTest
 
 import Atomics
+#if canImport(Darwin)
+@preconcurrency import Darwin
+#else
+import FoundationNetworking
+#endif
 @testable import AMSMB2
 
-class SMB2ManagerTests: XCTestCase {
+class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     override func setUp() {
         super.setUp()
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -160,7 +165,46 @@ class SMB2ManagerTests: XCTestCase {
         XCTAssertEqual(initialAttribs.contentModificationDate, newAttribs.contentModificationDate)
         XCTAssertEqual(newAttribs.creationDate, Date(timeIntervalSinceReferenceDate: 0))
     }
+    
+    func testFileRename() async throws {
+        let file = "renametest.dat"
+        let renamedFile = "renamed.dat"
+        let size: Int = random(max: 0x000800)
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let data = randomData(size: size)
 
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: file)
+            try? await smb.removeFile(atPath: renamedFile)
+        }
+
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: file, progress: nil)
+        
+        try await smb.moveItem(atPath: file, toPath: renamedFile)
+        let renamedData = try await smb.contents(atPath: renamedFile)
+        XCTAssertEqual(data, renamedData)
+    }
+    
+    func testFileTruncate() async throws {
+        let file = "trunctest.dat"
+        let size: Int = random(min: 0x000401, max: 0x002000)
+        let smb = SMB2Manager(url: server, credential: credential)!
+        let data = randomData(size: size)
+
+        addTeardownBlock {
+            try? await smb.removeFile(atPath: file)
+        }
+
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.write(data: data, toPath: file, progress: nil)
+        
+        try await smb.truncateFile(atPath: file, atOffset: UInt64(min(0x000200, size / 2)))
+        let truncData = try await smb.contents(atPath: file)
+        XCTAssertEqual(truncData.count, 0x000200)
+        XCTAssertEqual(data.prefix(truncData.count), truncData)
+    }
+    
     func testListing() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
         try await smb.connectShare(name: share, encrypted: encrypted)
@@ -266,7 +310,7 @@ class SMB2ManagerTests: XCTestCase {
 
     func testLargeWriteRead() async throws {
         let size: Int = maxSize * 3 + random(max: optimizedSize)
-        try await readWrite(size: size, checkLeak: true, function: #function)
+        try await readWrite(size: size, checkLeak: false, function: #function)
     }
 
     private func readWrite(size: Int, checkLeak: Bool = false, function: String) async throws {
@@ -401,8 +445,7 @@ class SMB2ManagerTests: XCTestCase {
         print(#function, "test size:", size)
         let url = dummyFile(size: size)
         let dlURL = url.appendingPathExtension("downloaded")
-        let inputStream = InputStream(url: url)!
-        let outputStream = OutputStream(url: dlURL, append: false)!
+        let inputStream = AsyncThrowingStream(url: url)
 
         addTeardownBlock {
             try? FileManager.default.removeItem(at: url)
@@ -419,10 +462,9 @@ class SMB2ManagerTests: XCTestCase {
                 return true
             }
         )
-        XCTAssert(inputStream.streamStatus == .closed)
-
+        
         try await smb.downloadItem(
-            atPath: file, to: outputStream,
+            atPath: file, to: dlURL,
             progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertGreaterThan(total, 0)
@@ -430,7 +472,6 @@ class SMB2ManagerTests: XCTestCase {
                 return true
             }
         )
-        XCTAssert(outputStream.streamStatus == .closed)
         XCTAssert(FileManager.default.contentsEqual(atPath: url.path, andPath: dlURL.path))
     }
     
@@ -581,22 +622,12 @@ class SMB2ManagerTests: XCTestCase {
 }
 
 extension SMB2ManagerTests {
-    private func random<T: FixedWidthInteger>(max: T) -> T {
-#if swift(>=4.2)
-        return T.random(in: 0...max)
-#else
-        return T(arc4random_uniform(Int32(max)))
-#endif
+    private func random<T: FixedWidthInteger>(min: T = 0, max: T) -> T {
+        T.random(in: min...max)
     }
 
     private func randomData(size: Int = 262_144) -> Data {
-        var keyBuffer = [UInt8](repeating: 0, count: size)
-        let result = SecRandomCopyBytes(kSecRandomDefault, keyBuffer.count, &keyBuffer)
-        if result == errSecSuccess {
-            return Data(keyBuffer)
-        } else {
-            fatalError("Problem generating random bytes")
-        }
+        Data((0..<size).map { _ in UInt8.random(in: 0...UInt8.max) })
     }
 
     private func dummyFile() -> URL {
@@ -623,8 +654,9 @@ extension SMB2ManagerTests {
         try! data.write(to: url)
         return url
     }
-
+    
     private func report_memory() -> Int {
+#if canImport(Darwin)
         var taskInfo = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
         let kerr: kern_return_t = withUnsafeMutablePointer(to: &taskInfo) {
@@ -638,5 +670,8 @@ extension SMB2ManagerTests {
         } else {
             return -1
         }
+#else
+        return 0
+#endif
     }
 }

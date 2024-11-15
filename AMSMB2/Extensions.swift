@@ -2,13 +2,18 @@
 //  Extensions.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 5/21/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
 import Foundation
 import SMB2
+
+#if !canImport(Darwin)
+let USEC_PER_SEC = 1_000_000
+let NSEC_PER_SEC = 1_000_000_000
+#endif
 
 extension Optional {
     func unwrap() throws -> Wrapped {
@@ -19,8 +24,8 @@ extension Optional {
     }
 }
 
-extension Optional where Wrapped: SMB2Context {
-    func unwrap() throws -> SMB2Context {
+extension Optional where Wrapped: SMB2Client {
+    func unwrap() throws -> SMB2Client {
         guard let self = self, self.fileDescriptor >= 0 else {
             throw POSIXError(.ENOTCONN, description: "SMB2 server not connected.")
         }
@@ -48,17 +53,18 @@ extension POSIXError {
         throw POSIXError(.init(errno), description: errorDesc)
     }
 
-    static func throwIfErrorStatus(_ status: UInt32) throws {
-        if status & SMB2_STATUS_SEVERITY_MASK == SMB2_STATUS_SEVERITY_ERROR {
-            let errorNo = nterror_to_errno(status)
-            let description = nterror_to_str(status).map(String.init(cString:)) ?? "Unknown"
-            throw POSIXError(.init(errorNo), description: "Error 0x\(String(status, radix: 16, uppercase: true)): \(description)")
+    static func throwIfErrorStatus(_ status: NTStatus) throws {
+        if status.severity == .error {
+            throw POSIXError(
+                status.posixErrorCode,
+                description: "Error 0x\(String(status.rawValue, radix: 16, uppercase: true)): \(status.localizedDescription)"
+            )
         }
     }
 
     init(_ code: POSIXError.Code, description: String?) {
         let userInfo: [String: Any] =
-            description.map { [NSLocalizedFailureReasonErrorKey: $0] } ?? [:]
+            description.map { [NSLocalizedDescriptionKey: $0] } ?? [:]
         self = POSIXError(code, userInfo: userInfo)
     }
 }
@@ -133,8 +139,8 @@ extension Dictionary where Key == URLResourceKey {
     }
 }
 
-extension Array where Element == [URLResourceKey: Any] {
-    func sortedByPath(_ comparison: ComparisonResult) -> [[URLResourceKey: Any]] {
+extension Array where Element == [URLResourceKey: any Sendable] {
+    func sortedByPath(_ comparison: ComparisonResult) -> [[URLResourceKey: any Sendable]] {
         sorted {
             guard let firstPath = $0.path, let secPath = $1.path else {
                 return false
@@ -243,45 +249,6 @@ extension String {
     }
 }
 
-extension Stream {
-    func withOpenStream(_ handler: () throws -> Void) rethrows {
-        let shouldCloseStream = streamStatus == .notOpen
-        if streamStatus == .notOpen {
-            open()
-        }
-        defer {
-            if shouldCloseStream {
-                close()
-            }
-        }
-        try handler()
-    }
-}
-
-extension InputStream {
-    func readData(maxLength length: Int) throws -> Data {
-        var buffer = [UInt8](repeating: 0, count: length)
-        let result = read(&buffer, maxLength: buffer.count)
-        if result < 0 {
-            throw streamError ?? POSIXError(.EIO, description: "Unknown stream error.")
-        } else {
-            return Data(buffer.prefix(result))
-        }
-    }
-}
-
-extension OutputStream {
-    func write<DataType: DataProtocol>(_ data: DataType) throws -> Int {
-        var buffer = Array(data)
-        let result = write(&buffer, maxLength: buffer.count)
-        if result < 0 {
-            throw streamError ?? POSIXError(.EIO, description: "Unknown stream error.")
-        } else {
-            return result
-        }
-    }
-}
-
 func asyncHandler(_ continuation: CheckedContinuation<Void, any Error>) -> @Sendable (_ error: (any Error)?) -> Void {
     { error in
         if let error = error {
@@ -292,7 +259,9 @@ func asyncHandler(_ continuation: CheckedContinuation<Void, any Error>) -> @Send
     }
 }
 
-func asyncHandler<T>(_ continuation: CheckedContinuation<T, any Error>) -> @Sendable (Result<T, any Error>) -> Void {
+func asyncHandler<T>(_ continuation: CheckedContinuation<T, any Error>)
+    -> @Sendable (Result<T, any Error>) -> Void where T: Sendable
+{
     { result in
         continuation.resume(with: result)
     }

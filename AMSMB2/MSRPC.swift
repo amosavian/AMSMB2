@@ -2,15 +2,15 @@
 //  MSRPC.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 7/31/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
 import Foundation
 
 enum MSRPC {
-    struct NetShareEnumAllLevel1: IOCtlReply {
+    struct NetShareEnumAllLevel1: DecodableResponse {
         let shares: [SMB2Share]
 
         init(shares: [SMB2Share]) {
@@ -60,7 +60,7 @@ enum MSRPC {
 
                 offset += 12
                 if offset + nameActualCount * 2 > data.count {
-                    throw POSIXError(.EBADRPC)
+                    throw POSIXError(.EINVAL, userInfo: [:])
                 }
 
                 // Getting utf16le data, omitting nul char
@@ -81,7 +81,7 @@ enum MSRPC {
 
                 offset += 12
                 if offset + commentActualCount * 2 > data.count {
-                    throw POSIXError(.EBADRPC)
+                    throw POSIXError(.EINVAL, userInfo: [:])
                 }
 
                 // Getting utf16le data, omitting nul char
@@ -113,7 +113,7 @@ enum MSRPC {
         }
     }
 
-    struct DCEHeader: IOCtlArgument {
+    struct DCEHeader: EncodableArgument {
         enum Command: UInt8 {
             case request = 0x00
             case bind = 0x0b
@@ -155,7 +155,7 @@ enum MSRPC {
         }
     }
 
-    struct SrvsvcBindData: IOCtlArgument {
+    struct SrvsvcBindData: EncodableArgument {
         typealias Element = UInt8
 
         var regions: [Data] {
@@ -189,7 +189,7 @@ enum MSRPC {
         }
     }
 
-    struct NetShareEnumAllRequest: IOCtlArgument {
+    struct NetShareEnumAllRequest: EncodableArgument {
         typealias Element = UInt8
 
         let serverName: String

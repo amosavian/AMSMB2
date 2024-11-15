@@ -2,17 +2,17 @@
 //  Fsctl.swift
 //  AMSMB2
 //
-//  Created by Amir Abbas on 11/20/23.
-//  Copyright © 2023 Mousavian. Distributed under MIT license.
+//  Created by Amir Abbas on 7/10/18.
+//  Copyright © 2018 Mousavian. Distributed under MIT license.
 //  All rights reserved.
 //
 
 import Foundation
 import SMB2
 
-protocol IOCtlArgument: ContiguousBytes & DataProtocol where Index == Int, Element == UInt8 {}
+protocol EncodableArgument: ContiguousBytes & DataProtocol where Index == Int, Element == UInt8 {}
 
-extension IOCtlArgument {
+extension EncodableArgument {
     var startIndex: Int {
         0
     }
@@ -43,12 +43,12 @@ extension IOCtlArgument {
     }
 }
 
-protocol IOCtlReply {
+protocol DecodableResponse {
     init(data: Data) throws
-    init(_ context: SMB2Context, _ dataPtr: UnsafeMutableRawPointer?) throws
+    init(_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws
 }
 
-struct AnyIOCtlReply: IOCtlReply {
+struct AnyDecodableResponse: DecodableResponse {
     private let data: Data
 
     init(data: Data) {
@@ -90,7 +90,7 @@ extension IOCtl.Command {
 }
 
 extension IOCtl {
-    struct SrvCopyChunk: IOCtlArgument {
+    struct SrvCopyChunk: EncodableArgument {
         typealias Element = UInt8
         
         let sourceOffset: UInt64
@@ -113,7 +113,7 @@ extension IOCtl {
         }
     }
     
-    struct SrvCopyChunkCopy: IOCtlArgument {
+    struct SrvCopyChunkCopy: EncodableArgument {
         typealias Element = UInt8
         
         let sourceKey: Data
@@ -133,12 +133,12 @@ extension IOCtl {
         }
     }
     
-    struct RequestResumeKey: IOCtlReply {
+    struct RequestResumeKey: DecodableResponse {
         let resumeKey: Data
         
         init(data: Data) throws {
             guard data.count >= 24 else {
-                throw POSIXError(.ENODATA)
+                throw POSIXError(.ENODATA, userInfo: [:])
             }
             self.resumeKey = data.prefix(24)
         }
@@ -153,7 +153,7 @@ extension IOCtl.Command {
 }
 
 extension IOCtl {
-    struct Reparse: IOCtlReply, IOCtlArgument {
+    struct Reparse: DecodableResponse, EncodableArgument {
         typealias Element = UInt8
         private static let headerLength = 8
         
@@ -176,17 +176,17 @@ extension IOCtl {
         
         init(data: Data) throws {
             guard data.count >= Self.headerLength else {
-                throw POSIXError(.EINVAL)
+                throw POSIXError(.EINVAL, userInfo: [:])
             }
             self.reparseTag = data.scanValue(offset: 0, as: UInt32.self) ?? SMB2_REPARSE_TAG_SYMLINK
             
             let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
-            guard count + 8 == data.count else { throw POSIXError(.EINVAL) }
+            guard count + 8 == data.count else { throw POSIXError(.EINVAL, userInfo: [:]) }
             self.buffer = data.dropFirst(Int(Self.headerLength))
         }
     }
     
-    struct SymbolicLinkReparse: IOCtlReply, IOCtlArgument {
+    struct SymbolicLinkReparse: DecodableResponse, EncodableArgument {
         typealias Element = UInt8
 
         private static let headerLength = 20
@@ -204,10 +204,10 @@ extension IOCtl {
 
         init(data: Data) throws {
             guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
-                throw POSIXError(.EINVAL)
+                throw POSIXError(.EINVAL, userInfo: [:])
             }
             let count = try data.scanInt(offset: 4, as: UInt16.self).unwrap()
-            guard count + 8 == data.count else { throw POSIXError(.EINVAL) }
+            guard count + 8 == data.count else { throw POSIXError(.EINVAL, userInfo: [:]) }
 
             let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()
             let substituteLen = try data.scanInt(offset: 10, as: UInt16.self).unwrap()
@@ -255,7 +255,7 @@ extension IOCtl {
         }
     }
     
-    struct SymbolicLinkGUIDReparse: IOCtlArgument {
+    struct SymbolicLinkGUIDReparse: EncodableArgument {
         typealias Element = UInt8
 
         // This reparse data buffer MUST be used only with reparse tag values
@@ -281,7 +281,7 @@ extension IOCtl {
         }
     }
 
-    struct MountPointReparse: IOCtlReply, IOCtlArgument {
+    struct MountPointReparse: DecodableResponse, EncodableArgument {
         typealias Element = UInt8
 
         private static let headerLength = 16
@@ -291,7 +291,7 @@ extension IOCtl {
 
         init(data: Data) throws {
             guard data.scanValue(offset: 0, as: UInt32.self) == reparseTag else {
-                throw POSIXError(.EINVAL)
+                throw POSIXError(.EINVAL, userInfo: [:])
             }
 
             let substituteOffset = try data.scanInt(offset: 8, as: UInt16.self).unwrap()
