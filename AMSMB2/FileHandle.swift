@@ -247,7 +247,7 @@ final class SMB2FileHandle: @unchecked Sendable {
     }
 
     var optimizedWriteSize: Int {
-        min(maxWriteSize, context.minWriteSize)
+        maxWriteSize
     }
 
     func write<DataType: DataProtocol>(data: DataType) throws -> Int {
