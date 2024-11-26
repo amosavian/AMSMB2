@@ -520,9 +520,11 @@ extension SMB2FileHandle {
         static let addSubdirectory = Self(rawValue: SMB2_FILE_ADD_SUBDIRECTORY)
         static let traverse = Self(rawValue: SMB2_FILE_TRAVERSE)
         
-        static let read: Access = [.readData, .fileReadAttributes, .fileReadEA, .readControl]
+        static let read: Access = [.readData, .readAttributes]
         static let write: Access = [.writeData, .appendData, .fileWriteAttributes, .fileWriteEA, .readControl]
-        static let executeList: Access = [.execute, .fileReadAttributes, .fileReadEA, .readControl]
+        static let executeList: Access = [.execute, .readAttributes]
+        
+        private static let readAttributes: Access = [.fileReadAttributes, .fileReadEA, .readControl]
     }
     
     struct ShareAccess: OptionSet, Sendable {

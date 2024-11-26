@@ -349,7 +349,7 @@ extension SMB2Client {
     func unlink(_ path: String, type: smb2_stat_64.ResourceType = .file) throws {
         switch type {
         case .directory:
-            throw POSIXError(.EFTYPE, description: "Use rmdir() to delete a directory.")
+            throw POSIXError(.EINVAL, description: "Use rmdir() to delete a directory.")
         case .file:
             try unlink(path)
         case .link:

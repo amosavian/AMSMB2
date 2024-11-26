@@ -17,6 +17,14 @@ import FoundationNetworking
 #endif
 @testable import AMSMB2
 
+private func folderName(postfix: String = "", name: String = #function) -> String {
+    "\(name.trimmingCharacters(in: .init(charactersIn: "()")))\(postfix)"
+}
+
+private func fileName(postfix: String = "", name: String = #function) -> String {
+    "\(name.trimmingCharacters(in: .init(charactersIn: "()")))\(postfix).dat"
+}
+
 class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     override func setUp() {
         super.setUp()
@@ -27,7 +35,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
         super.tearDown()
     }
-
+    
     @available(iOS 11.0, macOS 10.13, tvOS 11.0, *)
     func testNSCodable() {
         let url = URL(string: "smb://192.168.1.1/share")!
@@ -137,7 +145,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     }
     
     func testFileAttributes() async throws {
-        let file = "attribstest.dat"
+        let file = fileName()
         let size: Int = random(max: 0x000800)
         let smb = SMB2Manager(url: server, credential: credential)!
         let data = randomData(size: size)
@@ -167,8 +175,8 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     }
     
     func testFileRename() async throws {
-        let file = "renametest.dat"
-        let renamedFile = "renamed.dat"
+        let file = fileName()
+        let renamedFile = fileName(postfix: "Renamed")
         let size: Int = random(max: 0x000800)
         let smb = SMB2Manager(url: server, credential: credential)!
         let data = randomData(size: size)
@@ -187,7 +195,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     }
     
     func testFileTruncate() async throws {
-        let file = "trunctest.dat"
+        let file = fileName()
         let size: Int = random(min: 0x000401, max: 0x002000)
         let smb = SMB2Manager(url: server, credential: credential)!
         let data = randomData(size: size)
@@ -234,8 +242,8 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     
     func testCreateSymlink() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
-        let target = "testSymlinkTarget.dat"
-        let link = "testSymlink.dat"
+        let target = fileName(postfix: "Target")
+        let link = fileName()
         let data = randomData(size: 0x000800)
         
         addTeardownBlock {
@@ -259,8 +267,8 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     
     func testRemoveSymlink() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
-        let target = "testRemoveSymlinkTarget.dat"
-        let link = "testRemoveSymlink.dat"
+        let target = fileName(postfix: "Target")
+        let link = fileName()
         let data = randomData(size: 0x000800)
         
         addTeardownBlock {
@@ -320,12 +328,12 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         let baseMemUsage = report_memory()
 
         addTeardownBlock {
-            try? await smb.removeFile(atPath: "writetest.dat")
+            try? await smb.removeFile(atPath: fileName(name: function))
         }
 
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.write(
-            data: data, toPath: "writetest.dat",
+            data: data, toPath: fileName(name: function),
             progress: { progress -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 print(function, "uploaded:", progress, "of", size)
@@ -337,7 +345,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         }
 
         let rdata = try await smb.contents(
-            atPath: "writetest.dat",
+            atPath: fileName(name: function),
             progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertEqual(total, Int64(data.count))
@@ -351,7 +359,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(data, rdata)
 
         let trdata = try await smb.contents(
-            atPath: "writetest.dat", range: ..<UInt64(10), progress: nil
+            atPath: fileName(name: function), range: ..<UInt64(10), progress: nil
         )
         XCTAssertEqual(data.prefix(10), trdata)
 
@@ -362,7 +370,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     }
 
     func testChunkedLoad() async throws {
-        let file = "chunkedreadtest.dat"
+        let file = fileName()
         let size: Int = random(max: 0xf00000)
         let smb = SMB2Manager(url: server, credential: credential)!
         print(#function, "test size:", size)
@@ -402,13 +410,13 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         addTeardownBlock {
             try? FileManager.default.removeItem(at: url)
             try? FileManager.default.removeItem(at: dlURL)
-            try? await smb.removeFile(atPath: "uploadtest.dat")
+            try? await smb.removeFile(atPath: fileName())
             try await smb.disconnectShare(gracefully: true)
         }
 
         try await smb.connectShare(name: share, encrypted: encrypted)
         try await smb.uploadItem(
-            at: url, toPath: "uploadtest.dat",
+            at: url, toPath: fileName(),
             progress: { progress -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 print(#function, "uploaded:", progress, "of", size)
@@ -416,7 +424,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
             }
         )
         do {
-            try await smb.uploadItem(at: url, toPath: "uploadtest.dat", progress: nil)
+            try await smb.uploadItem(at: url, toPath: fileName(), progress: nil)
             XCTAssert(false, "Upload must fail.")
         } catch {
             let error = error as? POSIXError
@@ -425,7 +433,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         }
 
         try await smb.downloadItem(
-            atPath: "uploadtest.dat", to: dlURL,
+            atPath: fileName(), to: dlURL,
             progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertGreaterThan(total, 0)
@@ -439,7 +447,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     }
 
     func testStreamUploadDownload() async throws {
-        let file = "uploadtest.dat"
+        let file = fileName()
         let smb = SMB2Manager(url: server, credential: credential)!
         let size: Int = random(max: 0xf00000)
         print(#function, "test size:", size)
@@ -478,7 +486,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
     func testSimultaneousUpload() async throws {
         let redownload = false
         let fileNums = 5
-        let files = (1...fileNums).map { "uploadsimtest\($0).dat" }
+        let files = (1...fileNums).map { fileName(postfix: "\($0)") }
         let urls = (1...fileNums).map {
             let size: Int = random(max: 0xf00000)
             print(#function, "test size \($0):", size)
@@ -532,7 +540,7 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         let smb = SMB2Manager(url: server, credential: credential)!
         let size: Int = random(max: 0xf00000)
         let url = dummyFile(size: size)
-        let file = "tructest.dat"
+        let file = fileName()
 
         addTeardownBlock {
             try? FileManager.default.removeItem(at: url)
@@ -556,14 +564,14 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         let data = randomData(size: size)
 
         addTeardownBlock {
-            try? await smb.removeFile(atPath: "copyTest.dat")
-            try? await smb.removeFile(atPath: "copyTestDest.dat")
+            try? await smb.removeFile(atPath: fileName())
+            try? await smb.removeFile(atPath: fileName(postfix: "Dest"))
         }
 
         try await smb.connectShare(name: share, encrypted: encrypted)
-        try await smb.write(data: data, toPath: "copyTest.dat", progress: nil)
+        try await smb.write(data: data, toPath: fileName(), progress: nil)
         try await smb.copyItem(
-            atPath: "copyTest.dat", toPath: "copyTestDest.dat", recursive: false,
+            atPath: fileName(), toPath: fileName(postfix: "Dest"), recursive: false,
             progress: { progress, total -> Bool in
                 XCTAssertGreaterThan(progress, 0)
                 XCTAssertEqual(total, Int64(data.count))
@@ -571,25 +579,25 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
                 return true
             }
         )
-        let attribs = try await smb.attributesOfItem(atPath: "copyTestDest.dat")
+        let attribs = try await smb.attributesOfItem(atPath: fileName(postfix: "Dest"))
         XCTAssertEqual(attribs.fileSize, Int64(data.count))
     }
 
     func testMove() async throws {
         let smb = SMB2Manager(url: server, credential: credential)!
         addTeardownBlock {
-            try? await smb.removeFile(atPath: "moveTest")
-            try? await smb.removeFile(atPath: "moveTestDest")
+            try? await smb.removeFile(atPath: folderName())
+            try? await smb.removeFile(atPath: folderName(postfix: "Dest"))
         }
 
         try await smb.connectShare(name: share, encrypted: encrypted)
-        try await smb.createDirectory(atPath: "moveTest")
-        try await smb.moveItem(atPath: "moveTest", toPath: "moveTestDest")
+        try await smb.createDirectory(atPath: folderName())
+        try await smb.moveItem(atPath: folderName(), toPath: folderName(postfix: "Dest"))
     }
 
     func testRecursiveCopyRemove() async throws {
-        let root = "recCopyTest"
-        let rootCopy = "recCopyTest Copy"
+        let root = folderName()
+        let rootCopy = folderName(postfix: " Copy")
         let smb = SMB2Manager(url: server, credential: credential)!
 
         addTeardownBlock {
@@ -610,14 +618,43 @@ class SMB2ManagerTests: XCTestCase, @unchecked Sendable {
         let smb = SMB2Manager(url: server, credential: credential)!
 
         addTeardownBlock {
-            try? await smb.removeDirectory(atPath: "removeTest", recursive: true)
+            try? await smb.removeDirectory(atPath: folderName(), recursive: true)
         }
 
         try await smb.connectShare(name: share, encrypted: encrypted)
-        try await smb.createDirectory(atPath: "removeTest")
-        try await smb.createDirectory(atPath: "removeTest/subdir")
-        try await smb.write(data: Data(), toPath: "removeTest/file", progress: nil)
-        try await smb.removeDirectory(atPath: "removeTest", recursive: true)
+        try await smb.createDirectory(atPath: "\(folderName())")
+        try await smb.createDirectory(atPath: "\(folderName())/subdir")
+        try await smb.write(data: Data(), toPath: "\(folderName())/file", progress: nil)
+        try await smb.removeDirectory(atPath: "\(folderName())", recursive: true)
+    }
+    
+    func testMonitor() async throws {
+        try XCTSkipIf(true)
+        let smb = SMB2Manager(url: server, credential: credential)!
+
+        addTeardownBlock {
+            try? await smb.removeDirectory(atPath: "\(folderName())", recursive: true)
+        }
+
+        try await smb.connectShare(name: share, encrypted: encrypted)
+        try await smb.createDirectory(atPath: "\(folderName())")
+        try await smb.createDirectory(atPath: "\(folderName())/subdir")
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                do {
+                    try await smb.monitorItem(atPath: "\(folderName())", for: .contentModify)
+                } catch {
+                    print(error)
+                    throw error
+                }
+            }
+            try await Task.sleep(for: .seconds(1))
+            group.addTask {
+                try await smb.write(data: Data(), toPath: "\(folderName())/file", progress: nil)
+            }
+            try await group.waitForAll()
+        }
+        try await smb.removeDirectory(atPath: "\(folderName())", recursive: true)
     }
 }
 
@@ -629,21 +666,9 @@ extension SMB2ManagerTests {
     private func randomData(size: Int = 262_144) -> Data {
         Data((0..<size).map { _ in UInt8.random(in: 0...UInt8.max) })
     }
-
-    private func dummyFile() -> URL {
-        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
-            "dummyfile.dat"
-        )
-
-        if !FileManager.default.fileExists(atPath: url.path) {
-            let data = randomData()
-            try! data.write(to: url)
-        }
-        return url
-    }
-
-    private func dummyFile(size: Int, name: String = #function) -> URL {
-        let name = name.trimmingCharacters(in: CharacterSet(charactersIn: "()"))
+    
+    private func dummyFile(size: Int = 262_144, name: String = #function) -> URL {
+        let name = fileName(name: name)
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
 
         if FileManager.default.fileExists(atPath: url.path) {
