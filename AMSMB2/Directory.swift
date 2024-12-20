@@ -26,6 +26,9 @@ final class SMB2Directory: Collection {
 
     deinit {
         let handle = self.handle
+        guard unsafeBitCast(handle, to: UInt.self) & 0xffff_f000 > 0 else {
+            return
+        }
         try? client.withThreadSafeContext { context in
             smb2_closedir(context, handle)
         }
@@ -44,9 +47,11 @@ final class SMB2Directory: Collection {
     }
     
     func safeHandle() -> smb2dir? {
-        if unsafeBitCast(handle, to: UInt.self) & 0xffff_f000 == 0 {
+        var handle = handle
+        while unsafeBitCast(handle, to: UInt.self) & 0xffff_f000 == 0 {
             do {
                 handle = try Self.openHandle(path, on: client)
+                self.handle = handle
             } catch {
                 return nil
             }
