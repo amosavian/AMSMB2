@@ -16,6 +16,8 @@ final class SMB2Client: CustomDebugStringConvertible, CustomReflectable, @unchec
     private var _context_lock = NSRecursiveLock()
     var timeout: TimeInterval
 
+    var minWriteSize: Int = 32 * 1024
+
     init(timeout: TimeInterval) throws {
         self.context = try smb2_init_context().unwrap()
         self.timeout = timeout
