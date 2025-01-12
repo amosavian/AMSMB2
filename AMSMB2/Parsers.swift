@@ -42,6 +42,26 @@ extension Array where Element == SMB2Share {
     }
 }
 
+extension Array where Element == SMB2FileChangeInfo {
+    init(_: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
+        var result = [SMB2FileChangeInfo]()
+        dataPtr?.withMemoryRebound(to: smb2_file_notify_change_information.self, capacity: 1) { ptr in
+            var ptr = ptr
+            if ptr.pointee.name != nil {
+                result.append(.init(ptr.pointee))
+            }
+            
+            while ptr.pointee.next != nil {
+                if ptr.pointee.name != nil {
+                    result.append(.init(ptr.pointee))
+                }
+                ptr = ptr.pointee.next
+            }
+        }
+        self = result
+    }
+}
+
 extension OpaquePointer {
     init(_: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?) throws {
         self = try OpaquePointer(dataPtr.unwrap())

@@ -10,60 +10,34 @@
 import Foundation
 import SMB2
 
-typealias smb2dir = OpaquePointer
+typealias smb2dirPointer = UnsafeMutablePointer<smb2dir>?
 
 /// - Note: This class is NOT thread-safe.
 final class SMB2Directory: Collection {
     private let path: String
     private let client: SMB2Client
-    private var handle: smb2dir
+    private var handle: smb2dirPointer
 
     init(_ path: String, on client: SMB2Client) throws {
         self.path = path
-        self.handle = try Self.openHandle(path, on: client)
+        let (_, handle) = try client.async_await(dataHandler: OpaquePointer.init) { context, cbPtr -> Int32 in
+            smb2_opendir_async(context, path, SMB2Client.generic_handler, cbPtr)
+        }
+        
         self.client = client
+        self.handle = .init(handle)
     }
 
     deinit {
-        let handle = self.handle
-        guard unsafeBitCast(handle, to: UInt.self) & 0xffff_f000 > 0 else {
-            return
-        }
         try? client.withThreadSafeContext { context in
             smb2_closedir(context, handle)
         }
     }
     
-    static func openHandle(_ path: String, on client: SMB2Client) throws -> smb2dir {
-        // Due to a unexpected free in closedir, async version is not usable.
-        let handle = try client.withThreadSafeContext { context in
-            smb2_opendir(context, path)
-        }
-        guard let handle else {
-            throw POSIXError(client.ntError.posixErrorCode, description: client.error)
-        }
-        
-        return handle
-    }
-    
-    func safeHandle() -> smb2dir? {
-        var handle = handle
-        while unsafeBitCast(handle, to: UInt.self) & 0xffff_f000 == 0 {
-            do {
-                handle = try Self.openHandle(path, on: client)
-                self.handle = handle
-            } catch {
-                return nil
-            }
-        }
-        return handle
-    }
-
     func makeIterator() -> AnyIterator<smb2dirent> {
         let context = client.context
-        let handle = safeHandle()
         smb2_rewinddir(context, handle)
-        return AnyIterator {
+        return AnyIterator { [handle] in
             smb2_readdir(context, handle)?.pointee
         }
     }
@@ -78,7 +52,6 @@ final class SMB2Directory: Collection {
 
     var count: Int {
         let context = client.context
-        let handle = safeHandle()
         let currentPos = smb2_telldir(context, handle)
         defer {
             smb2_seekdir(context, handle, currentPos)
@@ -94,7 +67,6 @@ final class SMB2Directory: Collection {
 
     subscript(_: Int) -> smb2dirent {
         let context = client.context
-        let handle = safeHandle()
         let currentPos = smb2_telldir(context, handle)
         smb2_seekdir(context, handle, 0)
         defer {

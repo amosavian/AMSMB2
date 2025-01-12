@@ -1372,7 +1372,11 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     ///   - path: Path of file or folder to be monitored for changes.
     ///   - filter: Change types that will be monitored.
     ///   - completionHandler: closure will be run after a change in montored file/folder.
-    func monitorItem(atPath path: String, for filter: SMB2FileChangeType, completionHandler: SimpleCompletionHandler) {
+    func monitorItem(
+        atPath path: String,
+        for filter: SMB2FileChangeType,
+        completionHandler: @Sendable @escaping (_ result: Result<[SMB2FileChangeInfo], any Error>) -> Void
+    ) {
         with(completionHandler: completionHandler) { client in
             var flags = O_RDONLY | O_SYNC
             switch try client.stat(path).resourceType {
@@ -1384,7 +1388,7 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
                 break
             }
             let file = try SMB2FileHandle(path: path, flags: flags, on: client)
-            try file.changeNotify(for: filter)
+            return try file.changeNotify(for: filter)
         }
     }
     
@@ -1393,7 +1397,8 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
     /// - Parameters:
     ///   - path: Path of file or folder to be monitored for changes.
     ///   - filter: Change types that will be monitored.
-    func monitorItem(atPath path: String, for filter: SMB2FileChangeType) async throws {
+    @discardableResult
+    func monitorItem(atPath path: String, for filter: SMB2FileChangeType) async throws -> [SMB2FileChangeInfo] {
         try await withCheckedThrowingContinuation { continuation in
             monitorItem(atPath: path, for: filter, completionHandler: asyncHandler(continuation))
         }

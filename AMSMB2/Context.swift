@@ -315,45 +315,18 @@ extension SMB2Client {
             smb2_rmdir_async(context, path.canonical, SMB2Client.generic_handler, cbPtr)
         }
     }
-
-    func unlink(_ path: String) throws {
-        try async_await { context, cbPtr -> Int32 in
-            smb2_unlink_async(context, path.canonical, SMB2Client.generic_handler, cbPtr)
-        }
-    }
-    
-    private func unlinkSymlink(_ path: String) throws {
-        let file = try SMB2FileHandle(path: path, flags: O_RDWR | O_SYMLINK, on: self)
-        var inputBuffer = [UInt8](repeating: 0, count: 8)
-        inputBuffer[0] = 0x01 // DeletePending set to true
-        try withExtendedLifetime(file) { file in
-            try inputBuffer.withUnsafeMutableBytes { buf in
-                var req = smb2_set_info_request(
-                    info_type: UInt8(SMB2_0_INFO_FILE),
-                    file_info_class: UInt8(SMB2_FILE_DISPOSITION_INFORMATION),
-                    buffer_length: UInt32(buf.count),
-                    buffer_offset: 0,
-                    additional_information: 0,
-                    file_id: file.fileId.uuid,
-                    input_data: buf.baseAddress
-                )
-                
-                try async_await_pdu(dataHandler: EmptyReply.init) {
-                    context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-                    smb2_cmd_set_info_async(context, &req, SMB2Client.generic_handler, cbPtr)
-                }
-            }
-        }
-    }
     
     func unlink(_ path: String, type: smb2_stat_64.ResourceType = .file) throws {
         switch type {
         case .directory:
             throw POSIXError(.EINVAL, description: "Use rmdir() to delete a directory.")
         case .file:
-            try unlink(path)
+            try async_await { context, cbPtr -> Int32 in
+                smb2_unlink_async(context, path.canonical, SMB2Client.generic_handler, cbPtr)
+            }
         case .link:
-            try unlinkSymlink(path)
+            let file = try SMB2FileHandle(path: path, flags: O_RDWR | O_SYMLINK, on: self)
+            try file.setInfo(smb2_file_disposition_info(delete_pending: 1), infoClass: .disposition)
         default:
             preconditionFailure("Not supported file type.")
         }
@@ -503,9 +476,16 @@ extension SMB2Client {
 }
 
 extension SMB2Client {
-    struct NegotiateSigning: OptionSet {
+    struct NegotiateSigning: OptionSet, Sendable, CustomStringConvertible {
         var rawValue: UInt16
-
+        
+        var description: String {
+            var result: [String] = []
+            if contains(.enabled) { result.append("Enabled") }
+            if contains(.required) { result.append("Required") }
+            return result.joined(separator: ", ")
+        }
+        
         static let enabled = NegotiateSigning(rawValue: SMB2_NEGOTIATE_SIGNING_ENABLED)
         static let required = NegotiateSigning(rawValue: SMB2_NEGOTIATE_SIGNING_REQUIRED)
     }
@@ -514,7 +494,7 @@ extension SMB2Client {
     typealias Security = smb2_sec
 }
 
-extension SMB2.smb2_negotiate_version: Swift.Hashable {
+extension SMB2.smb2_negotiate_version: Swift.Hashable, Swift.CustomStringConvertible {
     static let any = SMB2_VERSION_ANY
     static let v2 = SMB2_VERSION_ANY2
     static let v3 = SMB2_VERSION_ANY3
@@ -523,6 +503,20 @@ extension SMB2.smb2_negotiate_version: Swift.Hashable {
     static let v3_00 = SMB2_VERSION_0300
     static let v3_02 = SMB2_VERSION_0302
     static let v3_11 = SMB2_VERSION_0311
+    
+    public var description: String {
+        switch self {
+        case .any: return "Any"
+        case .v2: return "2.0"
+        case .v3: return "3.0"
+        case .v2_02: return "2.02"
+        case .v2_10: return "2.10"
+        case .v3_00: return "3.00"
+        case .v3_02: return "3.02"
+        case .v3_11: return "3.11"
+        default: return "Unknown"
+        }
+    }
 
     static func ==(lhs: smb2_negotiate_version, rhs: smb2_negotiate_version) -> Bool {
         lhs.rawValue == rhs.rawValue
@@ -533,10 +527,19 @@ extension SMB2.smb2_negotiate_version: Swift.Hashable {
     }
 }
 
-extension SMB2.smb2_sec: Swift.Hashable {
+extension SMB2.smb2_sec: Swift.Hashable, Swift.CustomStringConvertible {
     static let undefined = SMB2_SEC_UNDEFINED
     static let ntlmSsp = SMB2_SEC_NTLMSSP
     static let kerberos5 = SMB2_SEC_KRB5
+    
+    public var description: String {
+        switch self {
+        case .undefined: return "Undefined"
+        case .ntlmSsp: return "NTLM SSP"
+        case .kerberos5: return "Kerberos5"
+        default: return "Unknown"
+        }
+    }
 
     static func ==(lhs: smb2_sec, rhs: smb2_sec) -> Bool {
         lhs.rawValue == rhs.rawValue
@@ -573,11 +576,20 @@ struct ShareProperties: RawRepresentable {
 }
 
 struct NTStatus: LocalizedError, Hashable, Sendable {
-    enum Severity: UInt32, Hashable, Sendable {
+    enum Severity: UInt32, Hashable, Sendable, CustomStringConvertible {
         case success
         case info
         case warning
         case error
+        
+        var description: String {
+            switch self {
+            case .success: return "Success"
+            case .info: return "Info"
+            case .warning: return "Warning"
+            case .error: return "Error"
+            }
+        }
         
         init(status: NTStatus) {
             self = switch status.rawValue & SMB2_STATUS_SEVERITY_MASK {

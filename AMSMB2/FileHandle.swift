@@ -99,7 +99,7 @@ final class SMB2FileHandle: @unchecked Sendable {
         self.handle = smb2_fh_from_file_id(client.context, &fileDescriptor)
     }
 
-    // This initializer does not support O_DIRECTORY and O_SYMLINK.
+    // This initializer does not support O_SYMLINK.
     private init(_ path: String, flags: Int32, lock: OpLock = .none, on client: SMB2Client) throws {
         let (_, handle) = try client.async_await(dataHandler: OpaquePointer.init) {
             context, cbPtr -> Int32 in
@@ -147,38 +147,42 @@ final class SMB2FileHandle: @unchecked Sendable {
         return st
     }
     
-    func set(stat: smb2_stat_64, attributes: Attributes) throws {
+    func setInfo<T>(_ value: T, type: InfoType = .file, infoClass: InfoClass) throws {
         try client.async_await_pdu(dataHandler: EmptyReply.init) {
             context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-            var bfi = smb2_file_basic_info(
-                creation_time: smb2_timeval(
-                    tv_sec: .init(stat.smb2_btime),
-                    tv_usec: .init(stat.smb2_btime_nsec / 1000)
-                ),
-                last_access_time: smb2_timeval(
-                    tv_sec: .init(stat.smb2_atime),
-                    tv_usec: .init(stat.smb2_atime_nsec / 1000)
-                ),
-                last_write_time: smb2_timeval(
-                    tv_sec: .init(stat.smb2_mtime),
-                    tv_usec: .init(stat.smb2_mtime_nsec / 1000)
-                ),
-                change_time: smb2_timeval(
-                    tv_sec: .init(stat.smb2_ctime),
-                    tv_usec: .init(stat.smb2_ctime_nsec / 1000)
-                ),
-                file_attributes: attributes.rawValue
-            )
-            
-            var req = smb2_set_info_request()
-            req.file_id = fileId.uuid
-            req.info_type = .init(SMB2_0_INFO_FILE)
-            req.file_info_class = .init(SMB2_FILE_BASIC_INFORMATION)
-            return withUnsafeMutablePointer(to: &bfi) { bfi in
-                req.input_data = .init(bfi)
+            var value = value
+            return withUnsafeMutablePointer(to: &value) { buf in
+                var req = smb2_set_info_request()
+                req.file_id = fileId.uuid
+                req.info_type = type.rawValue
+                req.file_info_class = infoClass.rawValue
+                req.input_data = .init(buf)
                 return smb2_cmd_set_info_async(context, &req, SMB2Client.generic_handler, cbPtr)
             }
         }
+    }
+    
+    func set(stat: smb2_stat_64, attributes: Attributes) throws {
+        let bfi = smb2_file_basic_info(
+            creation_time: smb2_timeval(
+                tv_sec: .init(stat.smb2_btime),
+                tv_usec: .init(stat.smb2_btime_nsec / 1000)
+            ),
+            last_access_time: smb2_timeval(
+                tv_sec: .init(stat.smb2_atime),
+                tv_usec: .init(stat.smb2_atime_nsec / 1000)
+            ),
+            last_write_time: smb2_timeval(
+                tv_sec: .init(stat.smb2_mtime),
+                tv_usec: .init(stat.smb2_mtime_nsec / 1000)
+            ),
+            change_time: smb2_timeval(
+                tv_sec: .init(stat.smb2_ctime),
+                tv_usec: .init(stat.smb2_ctime_nsec / 1000)
+            ),
+            file_attributes: attributes.rawValue
+        )
+        try setInfo(bfi, infoClass: .basic)
     }
 
     func ftruncate(toLength: UInt64) throws {
@@ -313,16 +317,18 @@ final class SMB2FileHandle: @unchecked Sendable {
         }
     }
     
-    func changeNotify(for type: SMB2FileChangeType) throws {
-        try client.async_await_pdu { context, cbPtr in
-            var request = smb2_change_notify_request(
-                flags: UInt16(type.contains([.recursive]) ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
-                output_buffer_length: 32768,
-                file_id: fileId.uuid,
-                completion_filter: type.completionFilter
+    func changeNotify(for type: SMB2FileChangeType) throws -> [SMB2FileChangeInfo] {
+        let (_, result) = try client.async_await(dataHandler: [SMB2FileChangeInfo].init) { context, dataPtr in
+            smb2_notify_change_filehandle_async(
+                context, handle,
+                UInt16(type.contains([.recursive]) ? SMB2_CHANGE_NOTIFY_WATCH_TREE : 0),
+                type.completionFilter,
+                0,
+                SMB2Client.generic_handler,
+                dataPtr
             )
-            return smb2_cmd_change_notify_async(context, &request, SMB2Client.generic_handler, cbPtr)
         }
+        return result
     }
 
     @discardableResult
@@ -356,8 +362,25 @@ final class SMB2FileHandle: @unchecked Sendable {
 }
 
 extension SMB2FileHandle {
-    struct SeekWhence: RawRepresentable, Sendable {
+    struct SeekWhence: RawRepresentable, Hashable, Sendable, CustomStringConvertible {
         var rawValue: Int32
+        
+        init(rawValue: Int32) {
+            self.rawValue = rawValue
+        }
+        
+        var description: String {
+            switch self {
+            case .set:
+                return "Set"
+            case .current:
+                return "Current"
+            case .end:
+                return "End"
+            default:
+                return "Unknown"
+            }
+        }
 
         static let set = SeekWhence(rawValue: SEEK_SET)
         static let current = SeekWhence(rawValue: SEEK_CUR)
@@ -677,6 +700,52 @@ extension SMB2FileHandle {
             self.key = key
             self.parentKey = parentKey
         }
+    }
+
+    struct InfoType: RawRepresentable, Sendable {
+        var rawValue: UInt8
+        
+        init(rawValue: UInt8) {
+            self.rawValue = rawValue
+        }
+
+        static let file = Self(rawValue: SMB2_0_INFO_FILE)
+        static let fileSystem = Self(rawValue: SMB2_0_INFO_FILESYSTEM)
+        static let security = Self(rawValue: SMB2_0_INFO_SECURITY)
+        static let quota = Self(rawValue: SMB2_0_INFO_QUOTA)
+    }
+    
+    struct InfoClass: RawRepresentable, Sendable {
+        var rawValue: UInt8
+        
+        init(rawValue: UInt8) {
+            self.rawValue = rawValue
+        }
+
+        static let directory = Self(rawValue: SMB2_FILE_DIRECTORY_INFORMATION)
+        static let fullDirectory = Self(rawValue: SMB2_FILE_FULL_DIRECTORY_INFORMATION)
+        static let bothDirectory = Self(rawValue: SMB2_FILE_BOTH_DIRECTORY_INFORMATION)
+        static let basic = Self(rawValue: SMB2_FILE_BASIC_INFORMATION)
+        static let standard = Self(rawValue: SMB2_FILE_STANDARD_INFORMATION)
+        static let `internal` = Self(rawValue: SMB2_FILE_INTERNAL_INFORMATION)
+        static let extendedAttribute = Self(rawValue: SMB2_FILE_EA_INFORMATION)
+        static let access = Self(rawValue: SMB2_FILE_ACCESS_INFORMATION)
+        static let name = Self(rawValue: SMB2_FILE_NAME_INFORMATION)
+        static let rename = Self(rawValue: SMB2_FILE_RENAME_INFORMATION)
+        static let link = Self(rawValue: SMB2_FILE_LINK_INFORMATION)
+        static let named = Self(rawValue: SMB2_FILE_NAMES_INFORMATION)
+        static let disposition = Self(rawValue: SMB2_FILE_DISPOSITION_INFORMATION)
+        static let position = Self(rawValue: SMB2_FILE_POSITION_INFORMATION)
+        static let fullExtendedAttribute = Self(rawValue: SMB2_FILE_FULL_EA_INFORMATION)
+        static let mode = Self(rawValue: SMB2_FILE_MODE_INFORMATION)
+        static let alignment = Self(rawValue: SMB2_FILE_ALIGNMENT_INFORMATION)
+        static let all = Self(rawValue: SMB2_FILE_ALL_INFORMATION)
+        static let endOfFile = Self(rawValue: SMB2_FILE_END_OF_FILE_INFORMATION)
+        static let alternativeName = Self(rawValue: SMB2_FILE_ALTERNATE_NAME_INFORMATION)
+        static let objectID = Self(rawValue: SMB2_FILE_OBJECT_ID_INFORMATION)
+        static let attributeTag = Self(rawValue: SMB2_FILE_ATTRIBUTE_TAG_INFORMATION)
+        static let normalizedName = Self(rawValue: SMB2_FILE_NORMALIZED_NAME_INFORMATION)
+        static let id = Self(rawValue: SMB2_FILE_ID_INFORMATION)
     }
 }
 

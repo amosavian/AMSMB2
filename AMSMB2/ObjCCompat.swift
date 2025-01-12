@@ -535,19 +535,6 @@ extension SMB2Manager {
     ) {
         downloadItem(atPath: path, to: url, progress: progress, completionHandler: completionHandler)
     }
-    
-    /// Monitor file/folder for changes and calls `completionHandler` when a change occurs.
-    ///
-    /// - Parameters:
-    ///   - path: Path of file or folder to be monitored for changes.
-    ///   - filter: Change types that will be monitored.
-    ///   - completionHandler: closure will be run after a change in montored file/folder.
-    ///   @available(swift, obsoleted: 1.0)
-    @available(swift, obsoleted: 1.0)
-    @objc(monitorItemAtPath:for:completionHandler:)
-    func __monitorItem(atPath path: String, for filter: UInt32, completionHandler: SimpleCompletionHandler) {
-        monitorItem(atPath: path, for: .init(rawValue: filter), completionHandler: completionHandler)
-    }
 }
 
 extension SMB2Manager {
