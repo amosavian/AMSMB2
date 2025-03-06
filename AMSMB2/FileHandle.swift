@@ -56,26 +56,24 @@ final class SMB2FileHandle: @unchecked Sendable {
         createOptions: CreateOptions = [], on client: SMB2Client
     ) throws {
         var leaseData = opLock.leaseContext.map { Data($0.regions.joined()) } ?? .init()
-        
-        let (_, result) = try withExtendedLifetime(leaseData) {
-            try path.replacingOccurrences(of: "/", with: "\\").withCString { path in
-                try client.async_await_pdu(dataHandler: SMB2FileID.init) {
-                    context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-                    var req = smb2_create_request()
-                    req.requested_oplock_level = opLock.lockLevel
-                    req.impersonation_level = impersonation.rawValue
-                    req.desired_access = desiredAccess.rawValue
-                    req.file_attributes = fileAttributes.rawValue
-                    req.share_access = shareAccess.rawValue
-                    req.create_disposition = createDisposition.rawValue
-                    req.create_options = createOptions.rawValue
-                    req.name = path
-                    leaseData.withUnsafeMutableBytes {
-                        req.create_context = $0.count > 0 ? $0.baseAddress?.assumingMemoryBound(to: UInt8.self) : nil
-                        req.create_context_length = UInt32($0.count)
-                    }
-                    return smb2_cmd_create_async(context, &req, SMB2Client.generic_handler, cbPtr)
+        defer { withExtendedLifetime(leaseData) {} }
+        let (_, result) = try path.replacingOccurrences(of: "/", with: "\\").withCString { path in
+            try client.async_await_pdu(dataHandler: SMB2FileID.init) {
+                context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+                var req = smb2_create_request()
+                req.requested_oplock_level = opLock.lockLevel
+                req.impersonation_level = impersonation.rawValue
+                req.desired_access = desiredAccess.rawValue
+                req.file_attributes = fileAttributes.rawValue
+                req.share_access = shareAccess.rawValue
+                req.create_disposition = createDisposition.rawValue
+                req.create_options = createOptions.rawValue
+                req.name = path
+                leaseData.withUnsafeMutableBytes {
+                    req.create_context = $0.count > 0 ? $0.baseAddress?.assumingMemoryBound(to: UInt8.self) : nil
+                    req.create_context_length = UInt32($0.count)
                 }
+                return smb2_cmd_create_async(context, &req, SMB2Client.generic_handler, cbPtr)
             }
         }
         try self.init(fileDescriptor: result.rawValue, on: client)
@@ -335,24 +333,23 @@ final class SMB2FileHandle: @unchecked Sendable {
     func fcntl<DataType: DataProtocol, R: DecodableResponse>(
         command: IOCtl.Command, args: DataType = Data()
     ) throws -> R {
-        try withExtendedLifetime(args) { args in
-            var inputBuffer = [UInt8](args)
-            return try inputBuffer.withUnsafeMutableBytes { buf in
-                var req = smb2_ioctl_request(
-                    ctl_code: command.rawValue,
-                    file_id: fileId.uuid,
-                    input_offset: 0, input_count: .init(buf.count),
-                    max_input_response: 0,
-                    output_offset: 0, output_count: UInt32(client.maximumTransactionSize),
-                    max_output_response: 65535,
-                    flags: .init(SMB2_0_IOCTL_IS_FSCTL),
-                    input: buf.baseAddress
-                )
-                return try client.async_await_pdu(dataHandler: R.init) {
-                    context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-                    smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
-                }.data
-            }
+        defer { withExtendedLifetime(args) {} }
+        var inputBuffer = [UInt8](args)
+        return try inputBuffer.withUnsafeMutableBytes { buf in
+            var req = smb2_ioctl_request(
+                ctl_code: command.rawValue,
+                file_id: fileId.uuid,
+                input_offset: 0, input_count: .init(buf.count),
+                max_input_response: 0,
+                output_offset: 0, output_count: UInt32(client.maximumTransactionSize),
+                max_output_response: 65535,
+                flags: .init(SMB2_0_IOCTL_IS_FSCTL),
+                input: buf.baseAddress
+            )
+            return try client.async_await_pdu(dataHandler: R.init) {
+                context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+                smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
+            }.data
         }
     }
     
