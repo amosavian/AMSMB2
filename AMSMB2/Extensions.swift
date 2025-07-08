@@ -15,6 +15,10 @@ let USEC_PER_SEC = 1_000_000
 let NSEC_PER_SEC = 1_000_000_000
 #endif
 
+#if swift(<6.2)
+public typealias SendableMetatype = Any
+#endif
+
 extension Optional {
     func unwrap() throws -> Wrapped {
         guard let self = self else {
@@ -224,7 +228,7 @@ extension Data {
         return T(littleEndian: withUnsafeBytes { $0.load(fromByteOffset: offset, as: T.self) })
     }
 
-    func scanInt<T: FixedWidthInteger>(offset: Int, as _: T.Type) -> Int? {
+    func scanInt<T: FixedWidthInteger & SendableMetatype>(offset: Int, as _: T.Type) -> Int? {
         scanValue(offset: offset, as: T.self).map(Int.init)
     }
 }
