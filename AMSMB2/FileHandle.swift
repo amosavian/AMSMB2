@@ -628,11 +628,19 @@ extension SMB2FileHandle {
         
         init(flags: Int32) {
             self = []
-            if (flags & O_SYNC) != 0 {
-                insert(.noIntermediateBuffering)
-            }
-            if (flags & O_DIRECTORY) != 0 {
+            let isDirectory = (flags & O_DIRECTORY) != 0
+            if isDirectory {
                 insert(.directoryFile)
+            }
+            // FILE_NO_INTERMEDIATE_BUFFERING is invalid on directories
+            // per MS-FSCC §2.1.5.1; Windows enforces this strictly and
+            // rejects the CREATE with STATUS_INVALID_PARAMETER when
+            // both FILE_DIRECTORY_FILE and FILE_NO_INTERMEDIATE_BUFFERING
+            // are present on the same open. Suppress the buffering flag
+            // when O_DIRECTORY is also set so callers don't have to
+            // remember the constraint at every directory open site.
+            if (flags & O_SYNC) != 0 && !isDirectory {
+                insert(.noIntermediateBuffering)
             }
             if (flags & O_SYMLINK) != 0 {
                 insert(.openReparsePoint)
