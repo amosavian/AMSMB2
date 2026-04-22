@@ -1378,21 +1378,14 @@ public class SMB2Manager: NSObject, NSSecureCoding, Codable, NSCopying, CustomRe
         completionHandler: @Sendable @escaping (_ result: Result<[SMB2FileChangeInfo], any Error>) -> Void
     ) {
         with(completionHandler: completionHandler) { client in
-            // Drop O_SYNC for directory opens. O_SYNC maps to libsmb2's
-            // SMB2_FILE_NO_INTERMEDIATE_BUFFERING; per MS-FSCC §2.1.5.1
-            // that option does not apply to directories and Windows
-            // rejects the CREATE with STATUS_INVALID_PARAMETER when
-            // both FILE_DIRECTORY_FILE and FILE_NO_INTERMEDIATE_BUFFERING
-            // are set on the same CREATE.
-            var flags: Int32 = O_RDONLY
+            var flags = O_RDONLY | O_SYNC
             switch try client.stat(path).resourceType {
             case .directory:
                 flags |= O_DIRECTORY
             case .link:
                 flags |= O_SYMLINK
-                flags |= O_SYNC
             default:
-                flags |= O_SYNC
+                break
             }
             let file = try SMB2FileHandle(path: path, flags: flags, on: client)
             return try file.changeNotify(for: filter)
