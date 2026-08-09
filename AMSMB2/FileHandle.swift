@@ -199,13 +199,15 @@ final class SMB2FileHandle: @unchecked Sendable {
         }
     }
 
+    // libsmb2 writes through this pointer when the reply lands — see `SMB2Client.stat`, which is
+    // why the storage belongs to the request.
     func fstat() throws -> smb2_stat_64 {
         let handle = try handle.unwrap()
-        var st = smb2_stat_64()
-        try client.async_await { context, cbPtr -> Int32 in
-            smb2_fstat_async(context, handle, &st, SMB2Client.generic_handler, cbPtr)
+        let st = RequestValue(smb2_stat_64())
+        try client.async_await(owning: [st]) { context, cbPtr -> Int32 in
+            smb2_fstat_async(context, handle, st.pointer, SMB2Client.generic_handler, cbPtr)
         }
-        return st
+        return st.value
     }
     
     func setInfo<T>(_ value: T, type: InfoType = .file, infoClass: InfoClass) throws {
@@ -277,15 +279,15 @@ final class SMB2FileHandle: @unchecked Sendable {
 
         let handle = try handle.unwrap()
         let count = length > 0 ? length : optimizedReadSize
-        var buffer = Data(repeating: 0, count: count)
-        let result = try buffer.withUnsafeMutableBytes { buffer in
-            try client.async_await { context, cbPtr -> Int32 in
-                smb2_read_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Client.generic_handler, cbPtr
-                )
-            }
+        // libsmb2 scatters the reply straight into this buffer — it goes into the PDU's
+        // in-iovector uncopied — so the buffer has to outlive the call that asked for it.
+        let buffer = RequestBuffer(count: count)
+        let result = try client.async_await(owning: [buffer]) { context, cbPtr -> Int32 in
+            smb2_read_async(
+                context, handle, buffer.pointer, .init(buffer.count), SMB2Client.generic_handler, cbPtr
+            )
         }
-        return Data(buffer.prefix(Int(result)))
+        return buffer.data(count: Int(result))
     }
 
     func read(toAbsoluteOffset offset: UInt64, length: Int = 0) throws -> Data {
@@ -295,16 +297,15 @@ final class SMB2FileHandle: @unchecked Sendable {
 
         let handle = try handle.unwrap()
         let count = length > 0 ? length : optimizedReadSize
-        var buffer = Data(repeating: 0, count: count)
-        let result = try buffer.withUnsafeMutableBytes { buffer in
-            try client.async_await { context, cbPtr -> Int32 in
-                smb2_pread_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Client.generic_handler,
-                    cbPtr
-                )
-            }
+        // Same request-owned reply buffer as `read`.
+        let buffer = RequestBuffer(count: count)
+        let result = try client.async_await(owning: [buffer]) { context, cbPtr -> Int32 in
+            smb2_pread_async(
+                context, handle, buffer.pointer, .init(buffer.count), offset, SMB2Client.generic_handler,
+                cbPtr
+            )
         }
-        return buffer.prefix(Int(result))
+        return buffer.data(count: Int(result))
     }
 
     var maxWriteSize: Int {
@@ -321,12 +322,14 @@ final class SMB2FileHandle: @unchecked Sendable {
         )
 
         let handle = try handle.unwrap()
-        let result = try Data(data).withUnsafeBytes { buffer in
-            try client.async_await { context, cbPtr -> Int32 in
-                smb2_write_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), SMB2Client.generic_handler, cbPtr
-                )
-            }
+        // The payload goes into the PDU's out-iovector uncopied, so libsmb2 reads it when the
+        // request is actually transmitted — possibly after this call returned. A request-owned
+        // copy gives it a pointer that stays valid until then.
+        let buffer = RequestBuffer(copying: data)
+        let result = try client.async_await(owning: [buffer]) { context, cbPtr -> Int32 in
+            smb2_write_async(
+                context, handle, buffer.pointer, .init(buffer.count), SMB2Client.generic_handler, cbPtr
+            )
         }
 
         return Int(result)
@@ -338,13 +341,13 @@ final class SMB2FileHandle: @unchecked Sendable {
         )
 
         let handle = try handle.unwrap()
-        let result = try Data(data).withUnsafeBytes { buffer in
-            try client.async_await { context, cbPtr -> Int32 in
-                smb2_pwrite_async(
-                    context, handle, buffer.baseAddress, .init(buffer.count), offset, SMB2Client.generic_handler,
-                    cbPtr
-                )
-            }
+        // Same request-owned outgoing payload as `write`.
+        let buffer = RequestBuffer(copying: data)
+        let result = try client.async_await(owning: [buffer]) { context, cbPtr -> Int32 in
+            smb2_pwrite_async(
+                context, handle, buffer.pointer, .init(buffer.count), offset, SMB2Client.generic_handler,
+                cbPtr
+            )
         }
 
         return Int(result)
@@ -396,24 +399,24 @@ final class SMB2FileHandle: @unchecked Sendable {
     func fcntl<DataType: DataProtocol, R: DecodableResponse>(
         command: IOCtl.Command, args: DataType = Data()
     ) throws -> R {
-        defer { withExtendedLifetime(args) {} }
-        var inputBuffer = [UInt8](args)
-        return try inputBuffer.withUnsafeMutableBytes { buf in
-            var req = smb2_ioctl_request(
-                ctl_code: command.rawValue,
-                file_id: fileId.uuid,
-                input_offset: 0, input_count: .init(buf.count),
-                max_input_response: 0,
-                output_offset: 0, output_count: UInt32(client.maximumTransactionSize),
-                max_output_response: 65535,
-                flags: .init(SMB2_0_IOCTL_IS_FSCTL),
-                input: buf.baseAddress
-            )
-            return try client.async_await_pdu(dataHandler: R.init) {
-                context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
-                smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
-            }.data
-        }
+        // `smb2_cmd_ioctl_async` adds `req.input` to the PDU's out-iovector uncopied, so the input
+        // outlives this call whenever the request is abandoned. A request-owned copy keeps that
+        // pointer valid for as long as libsmb2 can still read it.
+        let input = RequestBuffer(copying: args)
+        var req = smb2_ioctl_request(
+            ctl_code: command.rawValue,
+            file_id: fileId.uuid,
+            input_offset: 0, input_count: .init(input.count),
+            max_input_response: 0,
+            output_offset: 0, output_count: UInt32(client.maximumTransactionSize),
+            max_output_response: 65535,
+            flags: .init(SMB2_0_IOCTL_IS_FSCTL),
+            input: .init(input.pointer)
+        )
+        return try client.async_await_pdu(owning: [input], dataHandler: R.init) {
+            context, cbPtr -> UnsafeMutablePointer<smb2_pdu>? in
+            smb2_cmd_ioctl_async(context, &req, SMB2Client.generic_handler, cbPtr)
+        }.data
     }
     
     func fcntl<DataType: DataProtocol>(command: IOCtl.Command, args: DataType = Data()) throws {

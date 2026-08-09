@@ -27,6 +27,13 @@ final class SMB2Client: CustomDebugStringConvertible, CustomReflectable, @unchec
     
     init() throws {
         self.context = try smb2_init_context().unwrap()
+        // Every async request hands libsmb2 a +1 that its callback consumes exactly once (see
+        // `generic_handler`). With passthrough ON, socket.c dispatches the interim
+        // `SMB2_STATUS_PENDING` reply through that same callback WITHOUT delisting the PDU, so the
+        // real reply dispatches a second time and over-releases the box. Pinned here rather than
+        // trusted to libsmb2's default, so the ownership contract holds by construction instead of
+        // by nobody having flipped it yet.
+        passthrough = false
     }
 
     deinit {
@@ -238,11 +245,31 @@ extension SMB2Client {
     }
 
     func service(revents: Int32) throws {
+        // Held here rather than left to the caller: the failure path destroys the context, and no
+        // other thread may be reading it meanwhile. The lock is recursive, so the usual call from
+        // inside `withThreadSafeContext` still works.
+        _context_lock.lock()
+        defer { _context_lock.unlock() }
         let result = smb2_service(context, revents)
         if result < 0 {
-            smb2_destroy_context(context)
+            // Read the error out while the context is still readable.
+            let description = errorString
+            // Clear the pointer BEFORE destroying, never after — `deinit` already gets this order
+            // right and this path did not.
+            //
+            // `smb2_destroy_context` dispatches `SMB2_STATUS_SHUTDOWN` to every PDU left in the out,
+            // pending and wait queues, freeing each as it goes. Those callbacks run arbitrary Swift:
+            // `generic_handler` releases the request box, and anything the box was keeping alive is
+            // released with it. If that lands on the last reference to this client, `deinit` runs
+            // part-way through the walk and destroys the very context being walked — a second pass
+            // over half-freed queues. `_context_lock` cannot stop it, because it is recursive and
+            // the re-entry is on the same thread.
+            //
+            // Nil first and that second pass becomes a no-op against `deinit`'s own nil guard.
+            let doomed = context
             context = nil
-            try POSIXError.throwIfError(result, description: errorString)
+            smb2_destroy_context(doomed)
+            try POSIXError.throwIfError(result, description: description)
         }
     }
 }
@@ -301,20 +328,28 @@ extension SMB2Client {
 // MARK: File information
 
 extension SMB2Client {
+    // libsmb2 keeps this pointer in its own `stat_data` and `getinfo_cb_2`/`_3` write through it
+    // when the reply lands — for an abandoned request, long after this call returned. So the
+    // storage belongs to the request, not to this frame.
     func stat(_ path: String) throws -> smb2_stat_64 {
-        var st = smb2_stat_64()
-        try async_await { context, cbPtr -> Int32 in
-            smb2_stat_async(context, path.trimmedPath, &st, SMB2Client.generic_handler, cbPtr)
+        let st = RequestValue(smb2_stat_64())
+        try async_await(owning: [st]) { context, cbPtr -> Int32 in
+            smb2_stat_async(
+                context, path.trimmedPath, st.pointer, SMB2Client.generic_handler, cbPtr
+            )
         }
-        return st
+        return st.value
     }
 
+    // Same request-owned out-parameter as `stat`.
     func statvfs(_ path: String) throws -> smb2_statvfs {
-        var st = smb2_statvfs()
-        try async_await { context, cbPtr -> Int32 in
-            smb2_statvfs_async(context, path.trimmedPath, &st, SMB2Client.generic_handler, cbPtr)
+        let st = RequestValue(smb2_statvfs())
+        try async_await(owning: [st]) { context, cbPtr -> Int32 in
+            smb2_statvfs_async(
+                context, path.trimmedPath, st.pointer, SMB2Client.generic_handler, cbPtr
+            )
         }
-        return st
+        return st.value
     }
 
     func readlink(_ path: String) throws -> String {
@@ -381,10 +416,28 @@ extension SMB2Client {
 // MARK: Async operation handler
 
 extension SMB2Client {
-    private class CBData {
+    /// One request's callback state, owned by the request itself.
+    ///
+    /// The box is a heap object handed to libsmb2 as a +1 retain, and it also owns every allocation
+    /// the request lends libsmb2 a raw pointer into (`owned`) — libsmb2's own intermediate
+    /// callbacks (`getinfo_cb_2`/`_3`) write through those pointers before they ever reach
+    /// `generic_handler`. So an abandoned request outlives its Swift call safely: its memory stays
+    /// valid until a callback finally fires, and dies with it.
+    ///
+    /// The +1 is consumed at most once. Every dispatch libsmb2 makes for a queued request — a
+    /// reply, PDU retirement, or `smb2_destroy_context`'s shutdown walk — is one call, with one
+    /// exception: the walk invokes only the head of a compound chain (init.c) and `smb2_free_pdu`
+    /// frees the rest of the chain silently (pdu.c), so a request whose reporting callback sits
+    /// behind the head is never dispatched at all. That box leaks; it never dangles.
+    ///
+    /// `_context_lock` is what serializes all of it — box creation, callback dispatch (only ever
+    /// out of `smb2_service`), and `wait_for_reply`'s polling all run under that lock.
+    private class CBData: @unchecked Sendable {
         var result: Int32 = .init(NTStatus.success.rawValue)
         var isFinished: Bool = false
         var dataHandler: ((UnsafeMutableRawPointer?) -> Void)?
+        /// Storage the C request holds raw pointers into, kept alive by the request.
+        var owned: [AnyObject] = []
         var status: NTStatus {
             NTStatus(rawValue: result)
         }
@@ -413,7 +466,7 @@ extension SMB2Client {
         }
         
     }
-    private func wait_for_reply(_ cb: inout CBData) throws {
+    private func wait_for_reply(_ cb: CBData) throws {
         let startDate = Date()
         while !cb.isFinished {
             var pfd = pollfd()
@@ -434,16 +487,21 @@ extension SMB2Client {
         }
     }
 
-    static let generic_handler: smb2_command_cb = { smb2, status, command_data, cbdata in
-        do {
-            guard try smb2.unwrap().pointee.fd > 0 else { return }
-            let cbdata = try cbdata.unwrap().bindMemory(to: CBData.self, capacity: 1).pointee
-            if NTStatus(rawValue: status) != .success {
-                cbdata.result = status
-            }
-            cbdata.dataHandler?(command_data)
-            cbdata.isFinished = true
-        } catch {}
+    // The callback consumes the +1 the request was queued with, so the box and everything it owns
+    // dies with its one dispatch — including the `SMB2_STATUS_SHUTDOWN` dispatch
+    // `smb2_destroy_context` makes for every request still in its queues.
+    //
+    // This is why `init` pins `passthrough` off: with it set, an interim `SMB2_STATUS_PENDING` reply
+    // is dispatched through this same callback without delisting the PDU (socket.c), which would
+    // consume the +1 twice.
+    static let generic_handler: smb2_command_cb = { _, status, command_data, cbdata in
+        guard let cbdata else { return }
+        let cb = Unmanaged<CBData>.fromOpaque(cbdata).takeRetainedValue()
+        if NTStatus(rawValue: status) != .success {
+            cb.result = status
+        }
+        cb.dataHandler?(command_data)
+        cb.isFinished = true
     }
 
     typealias ContextHandler<R> = (_ client: SMB2Client, _ dataPtr: UnsafeMutableRawPointer?)
@@ -452,77 +510,221 @@ extension SMB2Client {
         _ context: UnsafeMutablePointer<smb2_context>, _ dataPtr: UnsafeMutableRawPointer?
     ) throws -> R
 
+    /// Builds one request box and hands libsmb2 the +1 it will consume in the callback. `owning` is
+    /// the storage the C call is about to borrow raw pointers into — see `CBData` for why it may
+    /// not live in the caller's frame.
+    private func makeRequestBox<DataType>(
+        owning: [AnyObject],
+        dataHandler: @escaping ContextHandler<DataType>
+    ) -> (cb: CBData, cbPtr: UnsafeMutableRawPointer, outcome: RequestOutcome<DataType>) {
+        let cb = CBData()
+        cb.owned = owning
+        let outcome = RequestOutcome<DataType>()
+        // `unowned(unsafe)`, never strong: an abandoned request's box outlives its Swift call, and
+        // a strong client reference would mean the client never deinits, so
+        // `smb2_destroy_context` never runs, so the very callback that frees the box never fires.
+        // Safe because libsmb2 can only dispatch through a live context, and the only places a
+        // context is destroyed are inside the client itself (`deinit`, `service`) while it is still
+        // in memory. For the same reason no `dataHandler` may retain the client: the shutdown walk
+        // runs from `deinit`, so the `self` it dispatches with is already mid-deallocation.
+        cb.dataHandler = { [unowned(unsafe) self] ptr in
+            do {
+                outcome.data = try dataHandler(self, ptr)
+            } catch {
+                outcome.error = error
+            }
+        }
+        return (cb, Unmanaged.passRetained(cb).toOpaque(), outcome)
+    }
+
+    /// Releases the +1 above when — and only when — nothing will ever consume it.
+    ///
+    /// `isFinished` is the discriminator: libsmb2 has failure paths that invoke the callback AND
+    /// still return an error (`smb2_stat_async`'s compound-close allocation failure, for one), so
+    /// releasing on the error alone would be an over-release.
+    private func releaseUnconsumedRequest(_ cb: CBData, _ cbPtr: UnsafeMutableRawPointer) {
+        guard !cb.isFinished else { return }
+        Unmanaged<CBData>.fromOpaque(cbPtr).release()
+    }
+
+    /// Throws whatever failure `generic_handler` recorded, in the encoding libsmb2 reported it in.
+    ///
+    /// A command callback receives one of two things: `-errno` from libsmb2's path-level wrappers
+    /// (libsmb2.c), or a raw NT status from the paths that dispatch the callback themselves — PDU
+    /// retirement passes `SMB2_STATUS_IO_TIMEOUT` (pdu.c) and the shutdown walk passes
+    /// `SMB2_STATUS_SHUTDOWN` (init.c). The two never collide: an errno is a small number, an NT
+    /// status carries its severity in the top bits. Reading a status as an errno would report a
+    /// retired request as an unrelated code instead of `ETIMEDOUT`.
+    private func throwIfCallbackFailed(_ cb: CBData) throws {
+        // Lowest value still readable as `-errno`; every NT status is far below it.
+        let errnoFloor: Int32 = -4096
+        guard cb.result < 0 else { return }
+        if cb.result > errnoFloor {
+            try POSIXError.throwIfError(cb.result, description: errorString)
+        } else {
+            try cb.status.throwIfError()
+        }
+    }
+
     @discardableResult
-    func async_await(execute handler: UnsafeContextHandler<Int32>) throws -> Int32 {
-        try async_await(dataHandler: { _, _ in }, execute: handler).result
+    func async_await(
+        owning: [AnyObject] = [],
+        execute handler: UnsafeContextHandler<Int32>
+    )
+        throws -> Int32
+    {
+        try async_await(owning: owning, dataHandler: { _, _ in }, execute: handler).result
     }
 
     @discardableResult
     func async_await<DataType>(
+        owning: [AnyObject] = [],
         dataHandler: @escaping ContextHandler<DataType>,
         execute handler: UnsafeContextHandler<Int32>
     )
         throws -> (result: Int32, data: DataType)
     {
         try withThreadSafeContext { context -> (Int32, DataType) in
-            var cb = CBData()
-            var resultData: DataType?
-            var dataHandlerError: (any Error)?
-            cb.dataHandler = { ptr in
-                do {
-                    resultData = try dataHandler(self, ptr)
-                } catch {
-                    dataHandlerError = error
-                }
+            let (cb, cbPtr, outcome) = makeRequestBox(owning: owning, dataHandler: dataHandler)
+            let result: Int32
+            do {
+                result = try handler(context, cbPtr)
+            } catch {
+                releaseUnconsumedRequest(cb, cbPtr)
+                throw error
             }
-            let result = try withUnsafeMutablePointer(to: &cb) { cb in
-                try handler(context, cb)
-            }
+            // A negative return means the request was never queued, so past this point the box is
+            // libsmb2's to consume — including when `wait_for_reply` gives up below.
+            if result < 0 { releaseUnconsumedRequest(cb, cbPtr) }
             try POSIXError.throwIfError(result, description: errorString)
-            try wait_for_reply(&cb)
-            let cbResult = cb.result
-            
-            try POSIXError.throwIfError(cbResult, description: errorString)
-            if let error = dataHandlerError { throw error }
-            return try (cbResult, resultData.unwrap())
+            try wait_for_reply(cb)
+
+            try throwIfCallbackFailed(cb)
+            if let error = outcome.error { throw error }
+            return try (cb.result, outcome.data.unwrap())
         }
     }
 
     @discardableResult
-    func async_await_pdu(execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>)
+    func async_await_pdu(
+        owning: [AnyObject] = [],
+        execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>
+    )
         throws -> UInt32
     {
-        try async_await_pdu(dataHandler: { _, _ in }, execute: handler).status
+        try async_await_pdu(owning: owning, dataHandler: { _, _ in }, execute: handler).status
     }
 
     @discardableResult
     func async_await_pdu<DataType>(
+        owning: [AnyObject] = [],
         dataHandler: @escaping ContextHandler<DataType>,
         execute handler: UnsafeContextHandler<UnsafeMutablePointer<smb2_pdu>?>
     )
         throws -> (status: UInt32, data: DataType)
     {
         try withThreadSafeContext { context -> (UInt32, DataType) in
-            var cb = CBData()
-            var resultData: DataType?
-            var dataHandlerError: (any Error)?
-            cb.dataHandler = { ptr in
-                do {
-                    resultData = try dataHandler(self, ptr)
-                } catch {
-                    dataHandlerError = error
-                }
-            }
-            let pdu = try withUnsafeMutablePointer(to: &cb) { cb in
-                try handler(context, cb).unwrap()
+            let (cb, cbPtr, outcome) = makeRequestBox(owning: owning, dataHandler: dataHandler)
+            let pdu: UnsafeMutablePointer<smb2_pdu>
+            do {
+                pdu = try handler(context, cbPtr).unwrap()
+            } catch {
+                // No PDU means nothing holds the box — `smb2_cmd_*_async` allocates but does not
+                // queue, so a nil return leaves the request non-existent.
+                releaseUnconsumedRequest(cb, cbPtr)
+                throw error
             }
             smb2_queue_pdu(context, pdu)
-            try wait_for_reply(&cb)
+            try wait_for_reply(cb)
 
             try cb.status.throwIfError()
-            if let error = dataHandlerError { throw error }
-            return try (cb.status.rawValue, resultData.unwrap())
+            if let error = outcome.error { throw error }
+            return try (cb.status.rawValue, outcome.data.unwrap())
         }
+    }
+}
+
+/// What one request's data handler produced, on the heap.
+///
+/// The box belongs to the request rather than to the frame that started it, so a late callback
+/// writes into memory that is still alive.
+///
+/// Serialized by `_context_lock`: only the data handler writes it, from a libsmb2 dispatch.
+private final class RequestOutcome<DataType>: @unchecked Sendable {
+    var data: DataType?
+    var error: (any Error)?
+}
+
+/// One C value a request writes its result into (`stat`'s `smb2_stat_64`, and so on).
+///
+/// libsmb2 keeps the pointer in its own heap state (`struct stat_data`) and writes through it when
+/// the reply lands, so the value must outlive the Swift call that asked for it. Handed to
+/// `async_await(owning:)`, which keeps it alive for exactly as long as the callback can still fire.
+///
+/// Serialized by `_context_lock`: libsmb2 writes through `pointer` only while dispatching under it.
+final class RequestValue<Value>: @unchecked Sendable {
+    let pointer: UnsafeMutablePointer<Value>
+
+    init(_ initial: Value) {
+        pointer = .allocate(capacity: 1)
+        pointer.initialize(to: initial)
+    }
+
+    /// The result, copied out. Read only after the request completed successfully.
+    var value: Value {
+        pointer.pointee
+    }
+
+    deinit {
+        pointer.deinitialize(count: 1)
+        pointer.deallocate()
+    }
+}
+
+/// One byte buffer a request reads from or writes into.
+///
+/// libsmb2 adds the caller's buffer to the PDU's iovector WITHOUT copying it (`smb2_add_iovector`
+/// with a nil free function, in smb2-cmd-read.c / smb2-cmd-write.c / smb2-cmd-ioctl.c), so the
+/// reply is scattered straight into it and an outgoing payload is read straight out of it — both
+/// possibly long after the Swift call returned. Handed to `async_await(owning:)` to live that long.
+///
+/// Serialized by `_context_lock`: libsmb2 touches the bytes only while servicing the context.
+final class RequestBuffer: @unchecked Sendable {
+    let pointer: UnsafeMutablePointer<UInt8>
+    let count: Int
+
+    /// A zero-filled buffer for a reply to be read into.
+    init(count: Int) {
+        self.count = max(0, count)
+        pointer = .allocate(capacity: max(1, self.count))
+        pointer.initialize(repeating: 0, count: max(1, self.count))
+    }
+
+    /// A private copy of an outgoing payload.
+    init<DataType: DataProtocol>(copying bytes: DataType) {
+        let byteCount = bytes.count
+        count = byteCount
+        pointer = .allocate(capacity: max(1, byteCount))
+        guard byteCount > 0 else {
+            pointer.initialize(repeating: 0, count: 1)
+            return
+        }
+        let destination = pointer
+        Data(bytes).withUnsafeBytes { source in
+            destination.initialize(
+                from: source.baseAddress!.assumingMemoryBound(to: UInt8.self), count: byteCount
+            )
+        }
+    }
+
+    /// The first `length` bytes, copied out.
+    func data(count length: Int) -> Data {
+        Data(bytes: pointer, count: min(max(0, length), count))
+    }
+
+    deinit {
+        pointer.deinitialize(count: max(1, count))
+        pointer.deallocate()
     }
 }
 
