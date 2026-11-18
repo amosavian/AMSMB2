@@ -419,8 +419,14 @@ extension SMB2Client {
             var pfd = pollfd()
             pfd.fd = fileDescriptor.rawValue
             pfd.events = try whichEvents()
-            if pfd.fd < 0 || (poll(&pfd, 1, 1000) < 0 && errno != .resourceTemporarilyUnavailable) {
-                throw POSIXError(errno, description: errorString)
+            if pfd.fd < 0 {
+                throw POSIXError(.socketNotConnected, description: errorString)
+            }
+            if poll(&pfd, 1, 1000) < 0 {
+                // `errno` inside this class is the last NT status; poll() sets C's errno.
+                let code = Errno(rawValue: posixErrno())
+                if code == .interrupted || code == .resourceTemporarilyUnavailable { continue }
+                throw POSIXError(code, description: errorString)
             }
             
             if pfd.revents == 0 {
@@ -691,4 +697,9 @@ struct NTStatus: LocalizedError, Hashable, CustomStringConvertible, Sendable {
     }
     
     static let success = Self(rawValue: SMB2_STATUS_SUCCESS)
+}
+
+/// C's `errno`, which `SMB2Client.errno` shadows inside the class.
+private func posixErrno() -> Int32 {
+    errno
 }
