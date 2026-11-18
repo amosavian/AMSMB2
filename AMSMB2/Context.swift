@@ -399,7 +399,6 @@ extension SMB2Client {
     }
     
     private func wait(_ cb: inout CBData) async throws {
-        let startDate = Date()
         let source = switch try whichEvents() {
         case Int16(POLL_IN):
             DispatchSource.makeReadSource(fileDescriptor: fileDescriptor.rawValue)
@@ -413,14 +412,40 @@ extension SMB2Client {
         }
         
     }
+    /// When waiting fails (timeout, poll error), the request is still queued in libsmb2 and
+    /// its callback still points at `cb`, which lives on the caller's stack. A late reply,
+    /// read by the next request or by `disconnect()`, would then call into memory that is
+    /// gone. So the connection is closed: `smb2_destroy_context()` closes the socket before it
+    /// cancels what is queued, and `generic_handler` ignores callbacks without a socket.
     private func wait_for_reply(_ cb: inout CBData) throws {
+        do {
+            try poll_for_reply(&cb)
+        } catch {
+            abandonConnection()
+            throw error
+        }
+    }
+
+    private func abandonConnection() {
+        guard let context else { return }
+        self.context = nil
+        smb2_destroy_context(context)
+    }
+
+    private func poll_for_reply(_ cb: inout CBData) throws {
         let startDate = Date()
         while !cb.isFinished {
             var pfd = pollfd()
             pfd.fd = fileDescriptor.rawValue
             pfd.events = try whichEvents()
-            if pfd.fd < 0 || (poll(&pfd, 1, 1000) < 0 && errno != .resourceTemporarilyUnavailable) {
-                throw POSIXError(errno, description: errorString)
+            if pfd.fd < 0 {
+                throw POSIXError(.socketNotConnected, description: errorString)
+            }
+            if poll(&pfd, 1, 1000) < 0 {
+                // `errno` inside this class is the last NT status; poll() sets C's errno.
+                let code = Errno(rawValue: posixErrno())
+                if code == .interrupted || code == .resourceTemporarilyUnavailable { continue }
+                throw POSIXError(code, description: errorString)
             }
             
             if pfd.revents == 0 {
@@ -691,4 +716,9 @@ struct NTStatus: LocalizedError, Hashable, CustomStringConvertible, Sendable {
     }
     
     static let success = Self(rawValue: SMB2_STATUS_SUCCESS)
+}
+
+/// C's `errno`, which `SMB2Client.errno` shadows inside the class.
+private func posixErrno() -> Int32 {
+    errno
 }
