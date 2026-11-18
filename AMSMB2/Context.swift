@@ -413,7 +413,27 @@ extension SMB2Client {
         }
         
     }
+    /// When waiting fails (timeout, poll error), the request is still queued in libsmb2 and
+    /// its callback still points at `cb`, which lives on the caller's stack. A late reply,
+    /// read by the next request or by `disconnect()`, would then call into memory that is
+    /// gone. So the connection is closed: `smb2_destroy_context()` closes the socket before it
+    /// cancels what is queued, and `generic_handler` ignores callbacks without a socket.
     private func wait_for_reply(_ cb: inout CBData) throws {
+        do {
+            try poll_for_reply(&cb)
+        } catch {
+            abandonConnection()
+            throw error
+        }
+    }
+
+    private func abandonConnection() {
+        guard let context else { return }
+        self.context = nil
+        smb2_destroy_context(context)
+    }
+
+    private func poll_for_reply(_ cb: inout CBData) throws {
         let startDate = Date()
         while !cb.isFinished {
             var pfd = pollfd()
