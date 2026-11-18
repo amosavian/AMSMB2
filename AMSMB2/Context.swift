@@ -399,7 +399,6 @@ extension SMB2Client {
     }
     
     private func wait(_ cb: inout CBData) async throws {
-        let startDate = Date()
         let source = switch try whichEvents() {
         case Int16(POLL_IN):
             DispatchSource.makeReadSource(fileDescriptor: fileDescriptor.rawValue)
