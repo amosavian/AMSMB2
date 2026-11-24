@@ -240,9 +240,10 @@ extension SMB2Client {
     func service(revents: Int32) throws {
         let result = smb2_service(context, revents)
         if result < 0 {
+            let error = errorString
             smb2_destroy_context(context)
             context = nil
-            try POSIXError.throwIfError(result, description: errorString)
+            try POSIXError.throwIfError(result, description: error)
         }
     }
 }
@@ -461,7 +462,14 @@ extension SMB2Client {
 
     static let generic_handler: smb2_command_cb = { smb2, status, command_data, cbdata in
         do {
-            guard try smb2.unwrap().pointee.fd > 0 else { return }
+            let rawSMB2 = try smb2.unwrap()
+            let rawStatus = UInt32(bitPattern: status)
+            if rawSMB2.pointee.fd < 0,
+               rawStatus == UInt32(truncatingIfNeeded: SMB2_STATUS_SHUTDOWN)
+               || rawStatus == UInt32(truncatingIfNeeded: SMB2_STATUS_CANCELLED)
+            {
+                return
+            }
             let cbdata = try cbdata.unwrap().bindMemory(to: CBData.self, capacity: 1).pointee
             if NTStatus(rawValue: status) != .success {
                 cbdata.result = status
